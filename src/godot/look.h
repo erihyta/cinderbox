@@ -19,6 +19,7 @@
 #include "ozz/base/containers/vector.h"
 #include "ozz/base/maths/simd_math.h"
 
+#include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/material.hpp>
 #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
@@ -88,6 +89,19 @@ public:
 		godot::Transform3D local;
 		bool itemFrame = false; // `local` is in AnimSet::AttachFrame's frame (the hands made for a rig without)
 	};
+	// What the character's animations light, emit or sound (particles, lights, sounds): a node of
+	// the entity's, at its bone (-1: in the scene's frame), for the tracks to play.
+	struct Effect
+	{
+		godot::Node* source = nullptr; // a copy of the scene's, owned by the look
+		godot::String name;
+		int bone = -1;
+		godot::Transform3D local;
+	};
+	CharacterLook() = default;
+	~CharacterLook();
+	CharacterLook( const CharacterLook& ) = delete;
+	CharacterLook& operator=( const CharacterLook& ) = delete;
 
 	// From an instance of a character's scene (or a prefab with a CinderboxSkeleton), for `set`'s
 	// pose. Null when it has nothing to draw with.
@@ -104,6 +118,16 @@ public:
 	const std::vector<Socket>& Sockets() const
 	{
 		return m_sockets;
+	}
+	const std::vector<Effect>& Effects() const
+	{
+		return m_effects;
+	}
+	// The animations' other tracks (CbCharacter::build_track_library), their paths from the entity
+	// (its effects by name, its sockets' items); null when there are none.
+	const godot::Ref<godot::AnimationLibrary>& Tracks() const
+	{
+		return m_tracks;
 	}
 	// The skeleton's frame, and the pose's (CinderboxSkeleton's: ozz models are in it), in the root's.
 	const godot::Transform3D& SkeletonInRoot() const
@@ -155,6 +179,9 @@ private:
 	godot::Vector3 m_targetHipsRest;
 	std::vector<Mesh> m_meshes;
 	std::vector<Socket> m_sockets;
+	std::vector<Effect> m_effects;
+	godot::Ref<godot::AnimationLibrary> m_tracks;
+	void TakeTracks( godot::Node* root, const std::vector<std::pair<godot::Node*, godot::String>>& effectNodes );
 	godot::Transform3D m_skeletonInRoot;
 	godot::Transform3D m_poseInRoot;
 	bool m_useSlotColor = false;
@@ -179,6 +206,11 @@ public:
 	const godot::Transform3D& Global() const
 	{
 		return m_world;
+	}
+	// A bone of the skeleton as the last pose has it, in the skeleton's frame.
+	godot::Transform3D BoneGlobal( int bone ) const
+	{
+		return bone >= 0 && size_t( bone ) < m_body.globals.size() ? m_body.globals[size_t( bone )] : godot::Transform3D();
 	}
 	// The pose's frame in the world: where JointTransform's joints are from.
 	godot::Transform3D PoseGlobal() const
@@ -273,6 +305,76 @@ private:
 	godot::Transform3D m_viewHands[2];
 	ozz::vector<ozz::math::Float4x4> m_viewModels;
 	godot::Vector3 m_legsShift;
+};
+
+// An item as another player's hand (or holster) shows it: its meshes alone, drawn through the
+// RenderingServer with no node (M260). Only an item that does nothing but look so (no reaction, no
+// prediction, no particles, lights, sounds or animation of its own) is drawn this way; one that
+// does more keeps its scene, and so does every item of the viewer's own and every one lying in
+// the world.
+class ItemLook
+{
+public:
+	struct Part
+	{
+		godot::Ref<godot::Mesh> mesh;
+		godot::Transform3D local; // in the item's scene
+		std::vector<godot::Ref<godot::Material>> surfaces;
+		godot::Ref<godot::Material> materialOverride;
+		godot::Ref<godot::Material> overlay;
+		uint32_t layers = 1;
+		int castShadows = 1;
+		float lodBias = 1.0f;
+	};
+	static std::shared_ptr<ItemLook> FromScene( godot::Node* root );
+	// Whether it only looks (why not, when not).
+	bool Plain() const
+	{
+		return m_why.is_empty();
+	}
+	const godot::String& Why() const
+	{
+		return m_why;
+	}
+	const std::vector<Part>& Parts() const
+	{
+		return m_parts;
+	}
+	// The scene in the frame a hand carries it in (its carrying grip at the origin).
+	const godot::Transform3D& InCarriedFrame() const
+	{
+		return m_inCarriedFrame;
+	}
+
+private:
+	std::vector<Part> m_parts;
+	godot::Transform3D m_inCarriedFrame;
+	godot::String m_why;
+};
+
+class DrawnItem
+{
+public:
+	DrawnItem( std::shared_ptr<const ItemLook> look, const godot::RID& scenario );
+	~DrawnItem();
+	DrawnItem( const DrawnItem& ) = delete;
+	DrawnItem& operator=( const DrawnItem& ) = delete;
+	const ItemLook& Look() const
+	{
+		return *m_look;
+	}
+	// Where the item's scene is.
+	void Place( const godot::Transform3D& scene );
+	void SetVisible( bool visible );
+	void SetShadows( bool on );
+
+private:
+	std::shared_ptr<const ItemLook> m_look;
+	std::vector<godot::RID> m_instances;
+	godot::Transform3D m_at;
+	bool m_placed = false;
+	bool m_visible = false;
+	bool m_shadows = true;
 };
 
 } // namespace cb::gd

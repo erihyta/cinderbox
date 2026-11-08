@@ -754,8 +754,9 @@ void CinderboxClient::HandleEvents()
 					// draws it, as for anything else.
 					break;
 				}
-				// (Another player's item out of sight has no node: one is made when it comes into sight.)
-				Node3D* node = ItemOutOfSight( v ) ? nullptr : CreateNode( e.visual, v );
+				// (Another player's item out of sight has no node: one is made when it comes into sight;
+				// one that only looks is drawn without one, M260.)
+				Node3D* node = ItemOutOfSight( v ) || DrawsWithoutNode( v ) ? nullptr : CreateNode( e.visual, v );
 				emit_signal( "visual_spawned", int64_t( e.visual ), int64_t( e.netId ), String( KindName( e.kind ) ), node, position,
 							 e.withEffect, TemplateName( v.templateIndex ) );
 				break;
@@ -763,6 +764,10 @@ void CinderboxClient::HandleEvents()
 			case present::EventType::Destroying:
 			{
 				flecs::entity ve( visuals, e.visual );
+				if ( auto drawn = m_drawnItems.find( e.visual ); drawn != m_drawnItems.end() )
+				{
+					drawn->second->SetVisible( false );
+				}
 				if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Item )
 				{
 					// Out of the hand now, not when its destroy effect has played out: a new item may
@@ -787,6 +792,8 @@ void CinderboxClient::HandleEvents()
 				m_itemHolders.erase( e.visual );
 				m_sockets.erase( e.visual );
 				m_bodies.erase( e.visual );
+				m_drawnItems.erase( e.visual );
+				m_effects.erase( e.visual );
 				if ( m_firstPersonVisual == e.visual )
 				{
 					m_firstPersonVisual = 0;
@@ -1435,14 +1442,21 @@ void CinderboxClient::UpdateNodes()
 		std::vector<std::pair<uint64_t, present::Visual>> appearing;
 		m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
 								const present::RagdollAnim* ) {
-			if ( v.kind == present::VisualKind::Item && m_nodes.count( id ) == 0 && ItemOutOfSight( v ) == false )
+			if ( v.kind == present::VisualKind::Item && m_nodes.count( id ) == 0 && m_drawnItems.count( id ) == 0 && ItemOutOfSight( v ) == false )
 			{
 				appearing.emplace_back( id, v );
 			}
 		} );
 		for ( const auto& [id, v] : appearing )
 		{
-			CreateNode( id, v );
+			if ( DrawsWithoutNode( v ) )
+			{
+				m_drawnItems[id] = std::make_unique<DrawnItem>( PlainItemLook( v ), get_world_3d()->get_scenario() );
+			}
+			else
+			{
+				CreateNode( id, v );
+			}
 		}
 	}
 	{
@@ -1463,6 +1477,11 @@ void CinderboxClient::UpdateNodes()
 	}
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim* anim,
 							const present::RagdollAnim* ragdoll ) {
+		if ( auto drawn = m_drawnItems.find( id ); drawn != m_drawnItems.end() )
+		{
+			UpdateDrawnItem( id, v, *drawn->second );
+			return;
+		}
 		auto it = m_nodes.find( id );
 		if ( it == m_nodes.end() )
 		{
@@ -2009,6 +2028,7 @@ void CinderboxClient::UpdateMapVisual()
 	}
 	m_nodes.clear();
 	m_bodies.clear();
+	m_drawnItems.clear();
 	m_firstPersonVisual = 0;
 	m_stateHashes.clear();
 

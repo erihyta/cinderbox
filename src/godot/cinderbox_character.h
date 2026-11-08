@@ -99,6 +99,9 @@ public:
 	// animation of its AnimationPlayer, under the names the simulation plays clips by. Built when
 	// asked (the game asks once per character): there is no file of it. See cinderbox_track_player.h.
 	godot::Ref<godot::AnimationLibrary> build_track_library();
+	// What the game draws of this scene (look.h, M260): { meshes, skinned, effects, sockets, tracks
+	// (each "animation: path" as the entity plays it), not_drawn }.
+	godot::Dictionary describe_look();
 	godot::Callable get_bake_button();
 
 	void set_character_name( const godot::String& v )

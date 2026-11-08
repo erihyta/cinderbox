@@ -102,6 +102,7 @@ void CinderboxClient::add_item( const String& kind, const String& config )
 		if ( line.begins_with( "scene " ) )
 		{
 			m_itemLooks[key] = line.substr( 6 ).strip_edges();
+			m_plainItemLooks.erase( key );
 		}
 		else if ( line.begins_with( "name " ) )
 		{
@@ -150,6 +151,8 @@ void CinderboxClient::add_item( const String& kind, const String& config )
 void CinderboxClient::clear_world_scenes()
 {
 	m_itemLooks.clear();
+	m_plainItemLooks.clear();
+	m_drawnItems.clear();
 	m_itemNames.clear();
 	m_itemViewOffsets.clear();
 	m_itemViewFrames.clear();
@@ -389,6 +392,31 @@ Node3D* CinderboxClient::CreateBody( uint64_t visual, const present::Visual& v )
 		}
 		m_bodies[visual] = std::move( body );
 	}
+	// Its effects, at their bones, and the tracks that play them (only a character that has some).
+	std::vector<EffectPlace>& effects = m_effects[visual];
+	effects.clear();
+	if ( look != nullptr )
+	{
+		for ( const CharacterLook::Effect& e : look->Effects() )
+		{
+			Node* copy = e.source->duplicate();
+			copy->set_name( e.name );
+			node->add_child( copy );
+			EffectPlace place;
+			place.node = ObjectID( copy->get_instance_id() );
+			place.bone = e.bone;
+			place.local = e.local;
+			effects.push_back( place );
+		}
+		if ( look->Tracks().is_valid() )
+		{
+			auto* tracks = memnew( CbTrackPlayer );
+			tracks->set_name( "TrackPlayer" );
+			node->add_child( tracks );
+			tracks->setup( look->Tracks(), node );
+			m_trackPlayers[visual] = tracks->get_instance_id();
+		}
+	}
 	// Its sockets: children of the entity, placed from the pose ("^^/RightHand/Item" is the same path
 	// on every rig).
 	std::vector<SocketPlace>& places = m_sockets[visual];
@@ -488,7 +516,10 @@ void CinderboxClient::RebuildCharacterNodes( bool itemsToo, const std::vector<ui
 	auto picked = [&]( uint32_t netId ) { return std::find( only.begin(), only.end(), netId ) != only.end(); };
 	if ( only.empty() )
 	{
-		m_looks.clear(); // (made again from the scenes as they are now)
+		// (Made again from the scenes as they are now.)
+		m_looks.clear();
+		m_plainItemLooks.clear();
+		m_drawnItems.clear();
 	}
 	// (The characters first: an item goes into its holder's new socket.)
 	std::vector<std::pair<uint64_t, present::Visual>> rebuild, items;

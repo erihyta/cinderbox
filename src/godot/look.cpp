@@ -8,6 +8,7 @@
 #include "pose.h"
 #include "profile.h"
 
+#include <godot_cpp/classes/animation.hpp>
 #include <godot_cpp/classes/array_mesh.hpp>
 #include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/camera3d.hpp>
@@ -22,6 +23,15 @@
 #include <godot_cpp/classes/animation_player.hpp>
 #include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/audio_stream_player3d.hpp>
+#include <godot_cpp/classes/cpu_particles3d.hpp>
+#include <godot_cpp/classes/gpu_particles3d.hpp>
+#include <godot_cpp/classes/light3d.hpp>
+#include <godot_cpp/classes/area3d.hpp>
+#include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/marker3d.hpp>
+
+#include "cinderbox_motion.h" // CbMotionPart, CbCurve
+#include "cue_rules.h"
 
 #include <algorithm>
 #include <cmath>
@@ -304,7 +314,8 @@ std::shared_ptr<CharacterLook> CharacterLook::FromScene( Node* root, const anim:
 		look->m_notDrawn.push_back( "the bone boxes (the skeleton's meshes are drawn instead)" );
 	}
 
-	// The meshes, and what is not drawn.
+	// The meshes, the effects, and what is not drawn.
+	std::vector<std::pair<Node*, String>> effectNodes;
 	std::function<void( Node* )> walk = [&]( Node* n ) {
 		if ( n != root && Object::cast_to<CbSocket>( n ) != nullptr )
 		{
@@ -389,7 +400,37 @@ std::shared_ptr<CharacterLook> CharacterLook::FromScene( Node* root, const anim:
 				look->m_meshes.push_back( m );
 			}
 		}
-		else if ( Object::cast_to<VisualInstance3D>( n ) != nullptr || Object::cast_to<AudioStreamPlayer3D>( n ) != nullptr )
+		else if ( Object::cast_to<GPUParticles3D>( n ) != nullptr || Object::cast_to<CPUParticles3D>( n ) != nullptr ||
+				  Object::cast_to<Light3D>( n ) != nullptr || Object::cast_to<AudioStreamPlayer3D>( n ) != nullptr )
+		{
+			// An effect: a node of the entity's, at its bone (with what is under it), named uniquely.
+			Effect effect;
+			String name = n->get_name();
+			for ( int k = 2; std::any_of( look->m_effects.begin(), look->m_effects.end(), [&]( const Effect& e ) { return e.name == name; } ); ++k )
+			{
+				name = String( n->get_name() ) + String::num_int64( k );
+			}
+			effect.name = name;
+			BoneAttachment3D* on = nullptr;
+			for ( Node* p = n->get_parent(); p != nullptr && p != root; p = p->get_parent() )
+			{
+				if ( ( on = Object::cast_to<BoneAttachment3D>( p ) ) != nullptr )
+				{
+					break;
+				}
+			}
+			effect.bone = on != nullptr && target != nullptr && on->get_parent() == target ? target->find_bone( on->get_bone_name() ) : -1;
+			effect.local = effect.bone >= 0 ? RelativeTo( on, n ) : RelativeTo( root, n );
+			effect.source = n->duplicate();
+			if ( auto* spatial = Object::cast_to<Node3D>( effect.source ) )
+			{
+				spatial->set_transform( Transform3D() );
+			}
+			look->m_effects.push_back( effect );
+			effectNodes.emplace_back( n, name );
+			return; // (what is under it goes with it)
+		}
+		else if ( Object::cast_to<VisualInstance3D>( n ) != nullptr )
 		{
 			look->m_notDrawn.push_back( path + String( " (" ) + n->get_class() + String( ")" ) );
 		}
@@ -455,7 +496,93 @@ std::shared_ptr<CharacterLook> CharacterLook::FromScene( Node* root, const anim:
 	{
 		look->m_notDrawn.push_back( "(no mesh: the body is not drawn)" );
 	}
+	look->TakeTracks( root, effectNodes );
 	return look;
+}
+
+CharacterLook::~CharacterLook()
+{
+	for ( Effect& effect : m_effects )
+	{
+		if ( effect.source != nullptr )
+		{
+			memdelete( effect.source );
+		}
+	}
+}
+
+void CharacterLook::TakeTracks( Node* root, const std::vector<std::pair<Node*, String>>& effectNodes )
+{
+	auto* character = Object::cast_to<CbCharacter>( root );
+	if ( character == nullptr )
+	{
+		return;
+	}
+	Ref<AnimationLibrary> library = character->build_track_library();
+	auto* player = Object::cast_to<AnimationPlayer>(
+		character->get_animation_player_path().is_empty() ? nullptr : character->get_node_or_null( character->get_animation_player_path() ) );
+	if ( player == nullptr )
+	{
+		TypedArray<Node> players = character->find_children( "*", "AnimationPlayer", true, false );
+		player = players.is_empty() ? nullptr : Object::cast_to<AnimationPlayer>( players[0] );
+	}
+	Node* animationRoot = player != nullptr ? player->get_node_or_null( player->get_root_node() ) : nullptr;
+	if ( library.is_null() || animationRoot == nullptr )
+	{
+		return;
+	}
+	// Each track's path, from the entity now: an effect's node by its name, an item by its socket's
+	// ("RightHand/Item/AnimationPlayer"). A track into anything else is not played (not drawn).
+	TypedArray<Node> sockets = root->find_children( "*", "CbSocket", true, false );
+	TypedArray<StringName> names = library->get_animation_list();
+	for ( int64_t a = 0; a < names.size(); ++a )
+	{
+		Ref<Animation> animation = library->get_animation( names[a] );
+		for ( int32_t t = animation->get_track_count() - 1; t >= 0; --t )
+		{
+			const String path = String( animation->track_get_path( t ) );
+			const int colon = path.find( ":" );
+			const String nodePart = colon >= 0 ? path.substr( 0, colon ) : path;
+			const String property = colon >= 0 ? path.substr( colon ) : String();
+			Node* target = animationRoot->get_node_or_null( NodePath( nodePart ) );
+			String moved;
+			for ( const auto& [node, name] : effectNodes )
+			{
+				if ( target != nullptr && ( target == node || node->is_ancestor_of( target ) ) )
+				{
+					moved = name + ( target == node ? String() : String( "/" ) + String( node->get_path_to( target ) ) ) + property;
+				}
+			}
+			if ( moved.is_empty() )
+			{
+				const String full = String( root->get_path_to( animationRoot ) ) + String( "/" ) + nodePart;
+				for ( int64_t k = 0; k < sockets.size(); ++k )
+				{
+					Node* socket = Object::cast_to<Node>( sockets[k] );
+					const String at = String( root->get_path_to( socket ) );
+					if ( full.begins_with( at + String( "/" ) ) || full.begins_with( String( "./" ) + at + String( "/" ) ) )
+					{
+						moved = String( socket->get_name() ) + full.substr( full.find( at ) + at.length() ) + property;
+					}
+				}
+			}
+			if ( moved.is_empty() )
+			{
+				m_notDrawn.push_back( String( "the track " ) + path + String( " of " ) + String( names[a] ) );
+				animation->remove_track( t );
+				continue;
+			}
+			animation->track_set_path( t, NodePath( moved ) );
+		}
+		if ( animation->get_track_count() == 0 )
+		{
+			library->remove_animation( names[a] );
+		}
+	}
+	if ( library->get_animation_list().is_empty() == false )
+	{
+		m_tracks = library;
+	}
 }
 
 void CharacterLook::Bind( const anim::AnimSet& set )
@@ -1270,6 +1397,173 @@ void DrawnBody::PlaceViewArms( const Transform3D& camera, const Transform3D& lef
 	PushBones( m_arms );
 	PushPlaces( m_arms );
 	Show( m_arms, m_visible );
+}
+
+// --- ItemLook, DrawnItem ------------------------------------------------------------------------------
+
+namespace
+{
+// Whether a rules sheet has anything the viewer runs: a reaction (on, while) or a prediction. A
+// motion is the simulation's.
+bool RulesDoSomething( const String& path )
+{
+	const String text = FileAccess::get_file_as_string( path );
+	const PackedStringArray lines = text.split( "\n" );
+	for ( const String& line : lines )
+	{
+		if ( line.begins_with( "on " ) || line.begins_with( "while " ) || line.begins_with( "predict " ) )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+} // namespace
+
+std::shared_ptr<ItemLook> ItemLook::FromScene( Node* root )
+{
+	if ( root == nullptr )
+	{
+		return nullptr;
+	}
+	auto look = std::make_shared<ItemLook>();
+	look->m_inCarriedFrame = CbItem::CarryFrameUnder( root ).affine_inverse();
+	std::function<void( Node* )> walk = [&]( Node* n ) {
+		const String path = String( root->get_path_to( n ) );
+		if ( n != root && n->get_script().get_type() != Variant::NIL && look->m_why.is_empty() )
+		{
+			look->m_why = path + String( " has a script" );
+		}
+		if ( auto* mi = Object::cast_to<MeshInstance3D>( n ) )
+		{
+			Ref<godot::Mesh> mesh = mi->get_mesh();
+			if ( mesh.is_valid() && Shown( root, mi ) )
+			{
+				Part part;
+				part.mesh = mesh;
+				part.local = RelativeTo( root, mi );
+				for ( int s = 0; s < mesh->get_surface_count(); ++s )
+				{
+					part.surfaces.push_back( mi->get_surface_override_material( s ) );
+				}
+				part.materialOverride = mi->get_material_override();
+				part.overlay = mi->get_material_overlay();
+				part.layers = mi->get_layer_mask();
+				part.castShadows = int( mi->get_cast_shadows_setting() );
+				part.lodBias = float( mi->get_lod_bias() );
+				look->m_parts.push_back( part );
+			}
+		}
+		else if ( auto* rules = Object::cast_to<CbRules>( n ) )
+		{
+			if ( RulesDoSomething( rules->get_file() ) && look->m_why.is_empty() )
+			{
+				look->m_why = path + String( " reacts or predicts" );
+			}
+		}
+		else if ( n == root || Object::cast_to<CollisionShape3D>( n ) != nullptr || Object::cast_to<Area3D>( n ) != nullptr ||
+				  Object::cast_to<Marker3D>( n ) != nullptr || Object::cast_to<CbMotionPart>( n ) != nullptr ||
+				  Object::cast_to<CbCurve>( n ) != nullptr || n->get_class() == String( "Node3D" ) || n->get_class() == String( "Node" ) )
+		{
+			// (The simulation's: its body, its shapes, its motions; or places and groups.)
+		}
+		else if ( look->m_why.is_empty() )
+		{
+			look->m_why = path + String( " is a " ) + n->get_class();
+		}
+		for ( int i = 0; i < n->get_child_count(); ++i )
+		{
+			walk( n->get_child( i ) );
+		}
+	};
+	walk( root );
+	return look;
+}
+
+DrawnItem::DrawnItem( std::shared_ptr<const ItemLook> look, const RID& scenario ) : m_look( std::move( look ) )
+{
+	RenderingServer* rs = RS();
+	for ( const ItemLook::Part& part : m_look->Parts() )
+	{
+		RID instance = rs->instance_create2( part.mesh->get_rid(), scenario );
+		rs->instance_set_visible( instance, false );
+		rs->instance_set_layer_mask( instance, part.layers );
+		rs->instance_geometry_set_cast_shadows_setting( instance, RenderingServer::ShadowCastingSetting( part.castShadows ) );
+		for ( size_t s = 0; s < part.surfaces.size(); ++s )
+		{
+			if ( part.surfaces[s].is_valid() )
+			{
+				rs->instance_set_surface_override_material( instance, int32_t( s ), part.surfaces[s]->get_rid() );
+			}
+		}
+		if ( part.materialOverride.is_valid() )
+		{
+			rs->instance_geometry_set_material_override( instance, part.materialOverride->get_rid() );
+		}
+		if ( part.overlay.is_valid() )
+		{
+			rs->instance_geometry_set_material_overlay( instance, part.overlay->get_rid() );
+		}
+		if ( part.lodBias != 1.0f )
+		{
+			rs->instance_geometry_set_lod_bias( instance, part.lodBias );
+		}
+		m_instances.push_back( instance );
+	}
+}
+
+DrawnItem::~DrawnItem()
+{
+	if ( RenderingServer* rs = RS() )
+	{
+		for ( const RID& instance : m_instances )
+		{
+			rs->free_rid( instance );
+		}
+	}
+}
+
+void DrawnItem::Place( const Transform3D& scene )
+{
+	if ( m_placed && scene.is_equal_approx( m_at ) )
+	{
+		return;
+	}
+	m_at = scene;
+	m_placed = true;
+	const auto& parts = m_look->Parts();
+	for ( size_t i = 0; i < parts.size(); ++i )
+	{
+		RS()->instance_set_transform( m_instances[i], scene * parts[i].local );
+	}
+}
+
+void DrawnItem::SetVisible( bool visible )
+{
+	if ( visible == m_visible )
+	{
+		return;
+	}
+	m_visible = visible;
+	for ( const RID& instance : m_instances )
+	{
+		RS()->instance_set_visible( instance, visible );
+	}
+}
+
+void DrawnItem::SetShadows( bool on )
+{
+	if ( on == m_shadows )
+	{
+		return;
+	}
+	m_shadows = on;
+	const auto& parts = m_look->Parts();
+	for ( size_t i = 0; i < parts.size(); ++i )
+	{
+		RS()->instance_geometry_set_cast_shadows_setting(
+			m_instances[i], on ? RenderingServer::ShadowCastingSetting( parts[i].castShadows ) : RenderingServer::SHADOW_CASTING_SETTING_OFF );
+	}
 }
 
 } // namespace cb::gd

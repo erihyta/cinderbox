@@ -545,10 +545,25 @@ private:
 		bool itemFrame = false;	  // a built-in hand: `local` is in AnimSet::AttachFrame's frame
 	};
 	std::map<uint64_t, std::vector<SocketPlace>> m_sockets;
+	// A body's effects (CharacterLook::Effect): its nodes, placed at their bones when it is posed.
+	struct EffectPlace
+	{
+		godot::ObjectID node;
+		int bone = -1;
+		godot::Transform3D local;
+	};
+	std::map<uint64_t, std::vector<EffectPlace>> m_effects;
 	void PlaceSockets( uint64_t visual );
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
 	// Another player's item put away out of sight: it has no node (M260).
 	bool ItemOutOfSight( const present::Visual& v ) const;
+	// Another player's item in sight that does nothing but look so: drawn by its meshes, no node
+	// (M260, look.h's ItemLook). The looks by kind (null: its scene does more, or it has none).
+	bool DrawsWithoutNode( const present::Visual& v );
+	std::shared_ptr<const ItemLook> PlainItemLook( const present::Visual& v );
+	void UpdateDrawnItem( uint64_t visual, const present::Visual& v, DrawnItem& item );
+	std::map<std::string, std::shared_ptr<const ItemLook>> m_plainItemLooks;
+	std::unordered_map<uint64_t, std::unique_ptr<DrawnItem>> m_drawnItems;
 	void UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node );
 	// A copy lying in the world is its look, its body and its own reactions: what is about a holder
 	// (a reaction whose subject is "^^", a prediction, the motion nodes) is taken out while nobody
