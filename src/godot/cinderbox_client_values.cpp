@@ -517,15 +517,16 @@ Vector3 CinderboxClient::get_bone_position( int64_t net_id, const String& bone )
 	{
 		return Vector3();
 	}
-	if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+	flecs::entity ve = m_mirror ? m_mirror->VisualOf( uint32_t( net_id ) ) : flecs::entity();
+	if ( const DrawnBody* body = ve.is_valid() ? BodyOf( ve.id() ) : nullptr )
 	{
 		Transform3D joint;
 		// (Of the viewer's own player in first person: where the view draws it.)
-		bool view = m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() );
-		if ( bone.is_empty() == false && skeleton->JointTransform( bone, joint, false, view ) )
+		bool view = m_firstPersonVisual == ve.id();
+		if ( bone.is_empty() == false && body->JointTransform( bone, joint, false, view ) )
 		{
 			// (... which is at the camera: the view model is stitched to it.)
-			return ( ( view ? m_viewStitch : Transform3D() ) * skeleton->get_global_transform() * joint ).origin;
+			return ( ( view ? m_viewStitch : Transform3D() ) * body->PoseGlobal() * joint ).origin;
 		}
 	}
 	return node->get_global_position();

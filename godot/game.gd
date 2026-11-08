@@ -45,6 +45,7 @@ extends Node3D
 ##                            --replay=FILE --view=FILE
 ##                            --host-local[=MODS] --bots=N   start a server here, join it, stop it on leaving (host.gd)
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS --measure-from=SECONDS
+##                            --shots=DIR [--shots-at=S,S,...]   with --view: set moments from set places (look_shots.gd)
 ##                            --mods=DIR --workshop=DIR --config=FILE
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
 ## Autoplay also says how long its frames took and where that went, from --measure-from seconds in (3).
@@ -63,6 +64,7 @@ const Autoplay := preload("res://autoplay.gd")
 const Presentation := preload("res://presentation.gd")
 const ViewCamera := preload("res://view_camera.gd")
 const Keys := preload("res://keys.gd")
+const LookShots := preload("res://look_shots.gd")
 const NO_PEER := "This copy of the game has no peer extension, so it cannot %s."
 const NO_LINK := "This copy of the game does not have the peer extension, so it cannot join servers."
 ## How long a server may take to answer before the attempt is given up.
@@ -94,6 +96,7 @@ var auto: Autoplay # the unattended player
 var presentation: Presentation # reactions, items and their HUDs, screen effects
 var view_camera: ViewCamera # the camera and the view model
 var keys: Keys # the game's keys, the server's actions, the slots' keys, the help line
+var shots: LookShots # --shots: pictures of a view file's moments from set places (look_shots.gd)
 
 ## A screen of a mod's (an inventory) has the mouse: the cursor is free and the game does not use it.
 var _ui_cursor := false
@@ -122,6 +125,9 @@ func _ready() -> void:
 	view_camera = ViewCamera.new(self, camera)
 	RenderingServer.frame_pre_draw.connect(view_camera.update)
 	view_camera.make_view_model()
+	if args.has("shots"):
+		shots = LookShots.new(self, args)
+		RenderingServer.frame_pre_draw.connect(shots.place_camera)
 	if ClassDB.class_exists("CinderboxPeer"):
 		peer = ClassDB.instantiate("CinderboxPeer")
 	if args.has("rollback") and peer != null:
@@ -245,6 +251,8 @@ func _process(delta: float) -> void:
 	_update_hud()
 	presentation.update_kind_huds()
 	auto.finish()
+	if shots != null:
+		shots.step()
 
 
 # --- Joining and leaving --------------------------------------------------------------------------

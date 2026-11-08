@@ -785,6 +785,11 @@ void CinderboxClient::HandleEvents()
 				m_nodeCharacters.erase( e.visual );
 				m_itemHolders.erase( e.visual );
 				m_sockets.erase( e.visual );
+				m_bodies.erase( e.visual );
+				if ( m_firstPersonVisual == e.visual )
+				{
+					m_firstPersonVisual = 0;
+				}
 				auto it = m_nodes.find( e.visual );
 				if ( it != m_nodes.end() )
 				{
@@ -878,27 +883,27 @@ void CinderboxClient::HandleEvents()
 // put as one piece under the camera's eye, which stands still above the feet, and turned so that it
 // follows the camera; the arms are moved by the held item's view offset. The body's own pose is not
 // touched.
-void CinderboxClient::FirstPersonBody( uint32_t netId, uint8_t character, Node* node, const AnimState* state, present::Models& models )
+void CinderboxClient::FirstPersonBody( uint32_t netId, uint8_t character, uint64_t visual, const AnimState* state, present::Models& models )
 {
 	const present::CharacterAnim& look = m_mirror->Library().Of( character );
 	const anim::AnimSet& set = *look.set;
-	CinderboxSkeleton* skeleton = FindSkeleton( node );
+	DrawnBody* skeleton = BodyOf( visual );
 	bool on = m_firstPerson && state != nullptr && skeleton != nullptr;
-	if ( auto* was = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_firstPersonSkeleton ) ) )
+	if ( DrawnBody* was = BodyOf( m_firstPersonVisual ) )
 	{
 		if ( was != skeleton || on == false )
 		{
-			was->set_first_person_body( false );
-			was->set_view_arms( false );
-			was->set_view_hands( true, true );
+			was->SetFirstPerson( false );
+			was->SetViewArms( false );
+			was->SetViewHands( true, true );
 		}
 	}
-	m_firstPersonSkeleton = on ? ObjectID( skeleton->get_instance_id() ) : ObjectID();
+	m_firstPersonVisual = on ? visual : 0;
 	if ( on == false )
 	{
 		return;
 	}
-	skeleton->set_first_person_body( true );
+	skeleton->SetFirstPerson( true );
 	m_viewAimKnown = false;
 	// The body draws no arms of its own: the view's are a copy (CinderboxSkeleton::SetViewPose),
 	// drawn as what is held says: which hands, with what field of view, and bent onto it when it
@@ -931,8 +936,8 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, uint8_t character, Node* 
 		}
 	}
 	skeleton->SetViewMove( Transform3D() );
-	skeleton->set_view_arms( floats );
-	skeleton->set_view_hands( hands[0], hands[1] );
+	skeleton->SetViewArms( floats );
+	skeleton->SetViewHands( hands[0], hands[1] );
 	m_viewSpeed = state->groundSpeed;
 	int head = anim::FindJoint( set, "Head" );
 	int spine = anim::FindJoint( set, "Spine" );
@@ -1156,13 +1161,13 @@ void CinderboxClient::place_view_items( const Transform3D& camera, double delta 
 	m_viewCamera = camera;
 	m_viewCameraKnown = true;
 	static const StringName kFloating( "cb_floating" );
-	auto* skeleton = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_firstPersonSkeleton ) );
+	DrawnBody* skeleton = BodyOf( m_firstPersonVisual );
 	// The view model goes to the camera, as one piece: the arms, and the hands' sockets with what
 	// is in them. (What floats in the view is placed from the camera already, below.)
 	m_viewStitch = Transform3D();
-	if ( skeleton != nullptr && m_viewAimKnown && skeleton->get_view_arms() == false )
+	if ( skeleton != nullptr && m_viewAimKnown && skeleton->ViewArms() == false )
 	{
-		Transform3D body = skeleton->get_global_transform();
+		Transform3D body = skeleton->PoseGlobal();
 		m_viewStitch = camera * m_viewAimCamera.affine_inverse() * body.affine_inverse();
 		skeleton->PlaceViewRig( m_viewStitch );
 		flecs::entity local = m_mirror ? m_mirror->VisualOf( m_frame.frame.localNetId ) : flecs::entity();
@@ -1196,7 +1201,7 @@ void CinderboxClient::place_view_items( const Transform3D& camera, double delta 
 		if ( eye != nullptr && skeleton->JointTransform( "Hips", hips ) && skeleton->JointTransform( "Spine", spine ) )
 		{
 			const float kWaist = 0.24f; // metres from the hips to the front of the waist, and a margin
-			Transform3D body = skeleton->get_global_transform();
+			Transform3D body = skeleton->PoseGlobal();
 			Vector3 waist = body.xform( spine.origin );
 			float drop = float( camera.origin.y - waist.y );
 			float ahead = float( ( camera.origin - body.xform( hips.origin ) ).dot( level ) );
@@ -1327,7 +1332,7 @@ Dictionary CinderboxClient::get_local_animation() const
 
 double CinderboxClient::get_view_fov() const
 {
-	if ( m_firstPerson == false || ObjectDB::get_instance( m_firstPersonSkeleton ) == nullptr )
+	if ( m_firstPerson == false || BodyOf( m_firstPersonVisual ) == nullptr )
 	{
 		return 0.0;
 	}
@@ -1453,7 +1458,12 @@ void CinderboxClient::UpdateNodes()
 		if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
 		{
 			// A dead player is its ragdoll now (if the mod left one); its own node waits unseen.
+			DrawnBody* body = BodyOf( id );
 			node->set_visible( v.dead == false );
+			if ( body != nullptr )
+			{
+				body->SetVisible( v.dead == false );
+			}
 			if ( v.dead )
 			{
 				return;
@@ -1463,7 +1473,15 @@ void CinderboxClient::UpdateNodes()
 			{
 				origin -= Vector3( 0, m_mirror->Library().Of( v.character ).feet, 0 );
 			}
-			node->set_transform( Transform3D( rotation.scaled( Vector3( s, s, s ) ), origin ) );
+			const Transform3D placed( rotation.scaled( Vector3( s, s, s ) ), origin );
+			node->set_transform( placed );
+			if ( body != nullptr )
+			{
+				body->Place( placed );
+				// Its shadow within kShadowDistance of the camera (the viewer's own always).
+				body->SetShadows( m_eyeKnown == false || v.netId == m_frame.frame.localNetId ||
+								  m_eye.distance_squared_to( origin ) < kShadowDistance * kShadowDistance );
+			}
 
 			// The pose: evaluated for players, hung off the parts for ragdolls. (A player's only when it
 			// was posed again: far off and out of view it is now and then, M259.)
@@ -1488,16 +1506,17 @@ void CinderboxClient::UpdateNodes()
 				{
 					// The view's arms have a pose of their own; the body keeps this one.
 					m_viewModels = *models;
-					FirstPersonBody( v.netId, v.character, node, anim != nullptr ? &anim->shown : nullptr, m_viewModels );
-					if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+					FirstPersonBody( v.netId, v.character, id, anim != nullptr ? &anim->shown : nullptr, m_viewModels );
+					if ( body != nullptr )
 					{
-						skeleton->SetViewPose( m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() ) ? &m_viewModels : nullptr );
+						body->SetViewPose( m_firstPersonVisual == id ? &m_viewModels : nullptr );
 					}
 				}
-				if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+				if ( body != nullptr )
 				{
-					skeleton->ApplyPose( m_mirror->AnimSet( v.character ), *models );
+					body->ApplyPose( m_mirror->AnimSet( v.character ), *models );
 				}
+				PlaceSockets( id );
 			}
 			// What the playing animations do besides moving bones.
 			if ( anim != nullptr && posedAgain )
@@ -1520,7 +1539,6 @@ void CinderboxClient::UpdateNodes()
 					tracks->end_frame();
 				}
 			}
-			PlaceSockets( id, node );
 			return;
 		}
 
@@ -1736,6 +1754,8 @@ void CinderboxClient::_process( double delta )
 	if ( Camera3D* camera = get_viewport() != nullptr ? get_viewport()->get_camera_3d() : nullptr )
 	{
 		const Transform3D eye = camera->get_global_transform();
+		m_eye = eye.origin;
+		m_eyeKnown = true;
 		const Vector2 size = get_viewport()->get_visible_rect().size;
 		const double aspect = size.y > 0.0f ? double( size.x ) / double( size.y ) : 16.0 / 9.0;
 		const double tanHalf = std::tan( double( camera->get_fov() ) * 0.5 * Math_PI / 180.0 );
@@ -1962,6 +1982,8 @@ void CinderboxClient::UpdateMapVisual()
 		}
 	}
 	m_nodes.clear();
+	m_bodies.clear();
+	m_firstPersonVisual = 0;
 	m_stateHashes.clear();
 
 	if ( m_frame.mapName.empty() )

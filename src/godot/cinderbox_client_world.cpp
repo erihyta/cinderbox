@@ -332,8 +332,93 @@ void CinderboxClient::RetargetTracks( ViewCharacter& character, Node* entity, No
 	}
 }
 
+std::shared_ptr<const CharacterLook> CinderboxClient::LookOf( const present::Visual& v )
+{
+	const bool ragdoll = v.kind == present::VisualKind::Ragdoll;
+	const uint64_t key = ( uint64_t( v.templateIndex ) << 16 ) | ( uint64_t( v.character ) << 1 ) | ( ragdoll ? 1u : 0u );
+	if ( auto found = m_looks.find( key ); found != m_looks.end() )
+	{
+		return found->second;
+	}
+	// Made once from the scene (the guard's: a scene it refuses is not drawn), then the scene is gone.
+	std::shared_ptr<const CharacterLook> look;
+	Ref<PackedScene> prefab = Prefab( v );
+	if ( Node* instance = prefab.is_valid() ? cue::Instantiate( prefab ) : nullptr )
+	{
+		std::shared_ptr<CharacterLook> made = CharacterLook::FromScene( instance, m_mirror->AnimSet( v.character ) );
+		memdelete( instance );
+		if ( made != nullptr && made->NotDrawn().is_empty() == false )
+		{
+			UtilityFunctions::push_warning( "Cinderbox: ", prefab->get_path(), " is drawn without ", String( "; " ).join( made->NotDrawn() ) );
+		}
+		look = std::move( made );
+	}
+	m_looks[key] = look;
+	return look;
+}
+
+DrawnBody* CinderboxClient::BodyOf( uint64_t visual ) const
+{
+	auto it = visual != 0 ? m_bodies.find( visual ) : m_bodies.end();
+	return it != m_bodies.end() ? it->second.get() : nullptr;
+}
+
+Node3D* CinderboxClient::CreateBody( uint64_t visual, const present::Visual& v )
+{
+	// The entity: a node of its own, for what names it (reactions, scripts, the camera) and for its
+	// sockets, which hold its items. Nothing of the character's scene is in the tree: the body is
+	// its look's, drawn through the RenderingServer (look.h).
+	auto* node = memnew( Node3D );
+	node->set_name( EntityName( v ) );
+	Director()->add_child( node );
+	m_nodes[visual] = node->get_instance_id();
+	m_stateHashes.erase( visual );
+	Director()->add_entity( node, String( KindName( v.kind ) ), TemplateName( v.templateIndex ), int64_t( v.netId ) );
+	m_itemHolders[visual] = 0;
+	m_trackPlayers.erase( visual );
+	m_posesApplied.erase( visual );
+	m_nodeCharacters[visual] = v.character;
+	m_bodies.erase( visual );
+	std::shared_ptr<const CharacterLook> look = LookOf( v );
+	if ( look != nullptr && is_inside_tree() )
+	{
+		auto body = std::make_unique<DrawnBody>( look, get_world_3d()->get_scenario() );
+		if ( look->UsesSlotColor() )
+		{
+			body->SetBodyColor( kSlotColors[v.slot % ( sizeof( kSlotColors ) / sizeof( kSlotColors[0] ) )] );
+		}
+		m_bodies[visual] = std::move( body );
+	}
+	// Its sockets: children of the entity, placed from the pose ("^^/RightHand/Item" is the same path
+	// on every rig).
+	std::vector<SocketPlace>& places = m_sockets[visual];
+	places.clear();
+	if ( look != nullptr )
+	{
+		for ( const CharacterLook::Socket& s : look->Sockets() )
+		{
+			auto* socket = memnew( CbSocket );
+			socket->set_name( s.name );
+			socket->set_bone( s.bone );
+			node->add_child( socket );
+			SocketPlace place;
+			place.node = socket->get_instance_id();
+			place.name = s.name;
+			place.bone = s.bone;
+			place.local = s.local;
+			place.itemFrame = s.itemFrame;
+			places.push_back( place );
+		}
+	}
+	return node;
+}
+
 Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 {
+	if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
+	{
+		return CreateBody( visual, v );
+	}
 	HideMapLooks();
 	// Drawn by its own node in the map's scene (a prop's meshes), copied; else a prefab.
 	Node3D* node = MapLookCopy( v );
@@ -353,37 +438,6 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 		node = memnew( Node3D );
 	}
 	node->set_name( EntityName( v ) );
-	// A character's AnimationTree is where its state machine was authored; the simulation runs the
-	// baked one, so the tree stays off in the game (switched off before it enters the scene, so it
-	// never sets itself up).
-	if ( CbCharacter* character = FindInPrefab<CbCharacter>( node ); character != nullptr && character->get_animation_tree_path().is_empty() == false )
-	{
-		if ( auto* tree = Object::cast_to<AnimationTree>( character->get_node_or_null( character->get_animation_tree_path() ) ) )
-		{
-			tree->set_active( false );
-		}
-	}
-	// Its hitboxes are where they were authored; the server and the simulation read the baked
-	// ones (hitboxes.cfg). Gone from what is drawn, with the bone attachments they leave empty
-	// (on the mannequin, 11 of 15: the sockets' stay), each a node Godot would follow every frame.
-	if ( v.kind == present::VisualKind::Player )
-	{
-		TypedArray<Node> hitboxes = node->find_children( "*", "CbHitbox", true, false );
-		for ( int64_t i = 0; i < hitboxes.size(); ++i )
-		{
-			if ( Node* hitbox = Object::cast_to<Node>( hitboxes[i] ) )
-			{
-				Node* attachment = hitbox->get_parent();
-				attachment->remove_child( hitbox );
-				memdelete( hitbox );
-				if ( Object::cast_to<BoneAttachment3D>( attachment ) != nullptr && attachment->get_child_count() == 0 )
-				{
-					attachment->get_parent()->remove_child( attachment );
-					memdelete( attachment );
-				}
-			}
-		}
-	}
 	if ( v.kind == present::VisualKind::Item && v.holder == 0 )
 	{
 		LeanItem( node ); // (before it is in the tree: what is about a holder never registers)
@@ -417,65 +471,6 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 							  : TemplateName( v.templateIndex );
 	Director()->add_entity( node, String( KindName( v.kind ) ), templateName, int64_t( v.netId ) );
 	m_itemHolders[visual] = v.kind == present::VisualKind::Item ? v.holder : 0;
-	if ( v.kind == present::VisualKind::Player )
-	{
-		CollectSockets( visual, node );
-	}
-
-	m_trackPlayers.erase( visual );
-	m_posesApplied.erase( visual );
-	if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
-	{
-		m_nodeCharacters[visual] = v.character;
-	}
-	ViewCharacter* view = v.kind == present::VisualKind::Player ? ViewOf( v.character ) : nullptr;
-	if ( CbCharacter* character = view != nullptr ? FindInPrefab<CbCharacter>( node ) : nullptr )
-	{
-		if ( view->tracksBuilt == false )
-		{
-			view->tracksBuilt = true;
-			Ref<AnimationLibrary> library = character->build_track_library();
-			if ( library->get_animation_list().is_empty() == false )
-			{
-				// Its method tracks call methods on the character's nodes: only listed ones.
-				String problem = cue::CheckResource( library );
-				if ( problem.is_empty() )
-				{
-					view->tracks = library;
-				}
-				else
-				{
-					UtilityFunctions::push_warning( "Cinderbox: the animations of ", view->folder,
-													" play their bones only: a track has ", problem );
-				}
-			}
-		}
-		// The character's own AnimationPlayer names the root its tracks' paths start from.
-		if ( view->tracks.is_valid() )
-		{
-			auto* source = Object::cast_to<AnimationPlayer>( character->get_node_or_null( character->get_animation_player_path() ) );
-			Node* root = source != nullptr ? source->get_node_or_null( source->get_root_node() ) : nullptr;
-			if ( root != nullptr )
-			{
-				auto* tracks = memnew( CbTrackPlayer );
-				tracks->set_name( "TrackPlayer" );
-				source->get_parent()->add_child( tracks );
-				RetargetTracks( *view, node, root );
-				tracks->setup( view->tracks, root );
-				m_trackPlayers[visual] = tracks->get_instance_id();
-			}
-		}
-	}
-	if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
-	{
-		if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
-		{
-			if ( skeleton->get_use_slot_color() )
-			{
-				skeleton->set_body_color( kSlotColors[v.slot % ( sizeof( kSlotColors ) / sizeof( kSlotColors[0] ) )] );
-			}
-		}
-	}
 	return node;
 }
 
@@ -491,6 +486,10 @@ void CinderboxClient::RebuildCharacterNodes( bool itemsToo, const std::vector<ui
 		return;
 	}
 	auto picked = [&]( uint32_t netId ) { return std::find( only.begin(), only.end(), netId ) != only.end(); };
+	if ( only.empty() )
+	{
+		m_looks.clear(); // (made again from the scenes as they are now)
+	}
 	// (The characters first: an item goes into its holder's new socket.)
 	std::vector<std::pair<uint64_t, present::Visual>> rebuild, items;
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
@@ -514,6 +513,7 @@ void CinderboxClient::RebuildCharacterNodes( bool itemsToo, const std::vector<ui
 			old->set_name( "Removed" ); // the new one takes its name now
 			old->queue_free();
 		}
+		m_bodies.erase( id );
 		CreateNode( id, v );
 	}
 }

@@ -23,6 +23,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_map_nodes.cpp
 	cinderbox_motion.cpp
 	cinderbox_skeleton.cpp
+	look.cpp
 	object_source.cpp
 	register_types.cpp
 )

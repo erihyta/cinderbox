@@ -5,127 +5,40 @@ namespace cb::gd
 
 // --- Sockets and held items ------------------------------------------------------------------------
 
-namespace
-{
-
-Transform3D HandSocketFrame()
-{
-	return CbItem::HandSocketFrame();
-}
-
-void CollectSocketNodes( Node* node, std::vector<CbSocket*>& out )
-{
-	if ( auto* socket = Object::cast_to<CbSocket>( node ) )
-	{
-		out.push_back( socket );
-	}
-	for ( int i = 0; i < node->get_child_count(); ++i )
-	{
-		CollectSocketNodes( node->get_child( i ), out );
-	}
-}
-
-} // namespace
-
-void CinderboxClient::CollectSockets( uint64_t visual, Node3D* node )
-{
-	std::vector<SocketPlace>& places = m_sockets[visual];
-	places.clear();
-	m_socketMoves.clear();
-	std::vector<CbSocket*> found;
-	CollectSocketNodes( node, found );
-	for ( CbSocket* socket : found )
-	{
-		// What sits in a socket in the editor is a preview.
-		for ( int i = socket->get_child_count() - 1; i >= 0; --i )
-		{
-			Node* preview = socket->get_child( i );
-			socket->remove_child( preview );
-			preview->queue_free();
-		}
-		SocketPlace place;
-		place.node = socket->get_instance_id();
-		place.name = socket->get_name();
-		place.bone = socket->get_bone();
-		place.local = socket->get_transform();
-		if ( auto* attachment = Object::cast_to<BoneAttachment3D>( socket->get_parent() ) )
-		{
-			if ( place.bone.is_empty() )
-			{
-				place.bone = attachment->get_bone_name();
-			}
-		}
-		else
-		{
-			place.local = Transform3D(); // not under a bone: at the bone itself
-		}
-		places.push_back( place );
-		// In the game every socket is a child of the entity itself, placed from the pose every frame:
-		// "^^/RightHand/Item" is the same path on every rig.
-		if ( socket->get_parent() != node )
-		{
-			m_socketMoves.emplace_back( String( node->get_path_to( socket ) ), String( socket->get_name() ) );
-			socket->get_parent()->remove_child( socket );
-			node->add_child( socket );
-		}
-	}
-	// Every character has hands to hold things in, and a head to hang things on.
-	for ( const char* hand : { "RightHand", "LeftHand", "Head" } )
-	{
-		bool have = false;
-		for ( const SocketPlace& place : places )
-		{
-			have |= place.name == hand;
-		}
-		if ( have )
-		{
-			continue;
-		}
-		auto* socket = memnew( CbSocket );
-		socket->set_name( hand );
-		socket->set_bone( hand );
-		node->add_child( socket );
-		SocketPlace place;
-		place.node = socket->get_instance_id();
-		place.name = hand;
-		place.bone = hand;
-		bool isHand = String( hand ) != "Head";
-		place.local = isHand ? HandSocketFrame() : Transform3D();
-		place.itemFrame = isHand;
-		places.push_back( place );
-	}
-}
-
-void CinderboxClient::PlaceSockets( uint64_t visual, Node3D* node )
+void CinderboxClient::PlaceSockets( uint64_t visual )
 {
 	auto it = m_sockets.find( visual );
-	CinderboxSkeleton* skeleton = FindSkeleton( node );
-	if ( it == m_sockets.end() || skeleton == nullptr )
+	DrawnBody* body = BodyOf( visual );
+	if ( it == m_sockets.end() || body == nullptr )
 	{
 		return;
 	}
-	// From the pose itself, so what a socket holds is where the server's pose has the bone. The
-	// viewer's own hands in first person are where the view draws them (the view's pose), and
-	// where the body's pose has them is kept for the shadow of what they hold.
-	bool view = m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() );
+	// From the pose itself, so what a socket holds is where the server's pose has the bone; in the
+	// entity's frame (the sockets are its children: they move with it). The viewer's own hands in
+	// first person are where the view draws them (the view's pose), and where the body's pose has
+	// them is kept for the shadow of what they hold.
+	const bool view = m_firstPersonVisual == visual;
+	const Transform3D pose = body->Look().PoseInRoot();
 	for ( const SocketPlace& place : it->second )
 	{
 		auto* socket = Object::cast_to<Node3D>( ObjectDB::get_instance( place.node ) );
 		Transform3D joint;
-		if ( socket == nullptr || skeleton->JointTransform( place.bone, joint, place.itemFrame ) == false )
+		if ( socket == nullptr || body->JointTransform( place.bone, joint, place.itemFrame ) == false )
 		{
 			continue;
 		}
-		Transform3D body = skeleton->get_global_transform() * joint * place.local;
-		bool hand = place.name == String( "RightHand" ) || place.name == String( "LeftHand" );
-		if ( view && hand && skeleton->JointTransform( place.bone, joint, place.itemFrame, true ) )
+		const bool hand = place.name == String( "RightHand" ) || place.name == String( "LeftHand" );
+		if ( view && hand )
 		{
-			m_trueSockets[socket->get_instance_id()] = body;
-			socket->set_global_transform( skeleton->get_global_transform() * joint * place.local );
+			m_trueSockets[socket->get_instance_id()] = body->PoseGlobal() * joint * place.local;
+			if ( body->JointTransform( place.bone, joint, place.itemFrame, true ) )
+			{
+				socket->set_transform( pose * joint * place.local );
+			}
 			continue;
 		}
 		m_trueSockets.erase( socket->get_instance_id() );
-		socket->set_global_transform( body );
+		socket->set_transform( pose * joint * place.local );
 	}
 }
 

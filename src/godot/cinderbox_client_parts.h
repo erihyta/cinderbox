@@ -34,6 +34,7 @@
 #include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/light3d.hpp>
 #include <godot_cpp/classes/viewport.hpp>
+#include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/display_server.hpp>
@@ -114,10 +115,6 @@ T* FindInPrefab( Node* node )
 	return nullptr;
 }
 
-inline CinderboxSkeleton* FindSkeleton( Node* node )
-{
-	return FindInPrefab<CinderboxSkeleton>( node );
-}
 
 
 } // namespace client_parts

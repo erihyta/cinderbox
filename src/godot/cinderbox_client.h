@@ -26,6 +26,7 @@
 #include "cinderbox_item_look.h"
 #include "cue_director.h"
 #include "fields.h"
+#include "look.h"
 #include "mirror.h"
 #include "view.h"
 
@@ -301,6 +302,8 @@ private:
 	godot::Ref<godot::PackedScene> LoadPrefab( const char* name );
 	godot::Ref<godot::PackedScene> LoadScene( const godot::String& path );
 	godot::Node3D* CreateNode( uint64_t visual, const present::Visual& v );
+	// A player or a ragdoll: an entity node with its sockets, and its body drawn by its look (M260).
+	godot::Node3D* CreateBody( uint64_t visual, const present::Visual& v );
 	// Players and ragdolls again with the current prefab (after the characters changed); `only`:
 	// just these players' (by NetId), and what they hold.
 	void RebuildCharacterNodes( bool itemsToo = false, const std::vector<uint32_t>& only = {} );
@@ -335,6 +338,16 @@ private:
 	float FeetOf( uint64_t visual ) const; // how far below a body's centre its feet are
 	std::unordered_map<uint64_t, godot::ObjectID> m_trackPlayers; // visual id -> CbTrackPlayer
 	std::unordered_map<uint64_t, uint32_t> m_posesApplied; // visual id -> its PlayerAnim::posed put on its skeleton (M259)
+	// M260: every body drawn one way, by its character's look (look.h): the looks, made once from
+	// the scene (by character, ragdoll or not, and template), and each body's drawing by visual id.
+	std::map<uint64_t, std::shared_ptr<const CharacterLook>> m_looks;
+	std::unordered_map<uint64_t, std::unique_ptr<DrawnBody>> m_bodies;
+	std::shared_ptr<const CharacterLook> LookOf( const present::Visual& v );
+	DrawnBody* BodyOf( uint64_t visual ) const;
+	// Where the camera is (the last frame's): shadows are cast within kShadowDistance of it.
+	godot::Vector3 m_eye;
+	bool m_eyeKnown = false;
+	static constexpr float kShadowDistance = 40.0f;
 	// M259: the items by who holds them, made once a frame when asked (HeldOf): a HUD's lists and
 	// slots asked every visual for each slot, ten thousand of them at 255 players.
 	struct HeldRef
@@ -492,8 +505,8 @@ private:
 	void ViewLayers( godot::Node* node, bool on ); // an item's visuals onto the view model's layer, or back
 	void ShadowsOnly( godot::Node* node, bool on ); // an item's visuals cast their shadows and are not drawn, or as they were
 	bool m_firstPerson = false;
-	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
-	void FirstPersonBody( uint32_t netId, uint8_t character, godot::Node* node, const AnimState* state, present::Models& models );
+	uint64_t m_firstPersonVisual = 0; // whose body is looked out of now (its visual; 0: none)
+	void FirstPersonBody( uint32_t netId, uint8_t character, uint64_t visual, const AnimState* state, present::Models& models );
 	// The viewer's own pose as its animations have it, before the aim (see FirstPersonBody).
 	std::unique_ptr<anim::PoseEvaluator> m_viewPose;
 	const anim::AnimSet* m_viewPoseSet = nullptr;
@@ -532,8 +545,7 @@ private:
 		bool itemFrame = false;	  // a built-in hand: `local` is in AnimSet::AttachFrame's frame
 	};
 	std::map<uint64_t, std::vector<SocketPlace>> m_sockets;
-	void CollectSockets( uint64_t visual, godot::Node3D* node );
-	void PlaceSockets( uint64_t visual, godot::Node3D* node );
+	void PlaceSockets( uint64_t visual );
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
 	void UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node );
 	// A copy lying in the world is its look, its body and its own reactions: what is about a holder
