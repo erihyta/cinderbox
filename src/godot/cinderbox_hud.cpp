@@ -1,4 +1,5 @@
 #include "cinderbox_hud.h"
+#include "frame_prof.h"
 
 #include "cue_names.h"
 
@@ -57,6 +58,13 @@ const StringName& NamesMeta()
 {
 	static const StringName name = "cb_names";
 	return name;
+}
+
+// Whether what holds this is hidden (so nothing of it is drawn, whatever it says itself).
+bool HiddenAbove( Node* node )
+{
+	const CanvasItem* parent = Object::cast_to<CanvasItem>( node->get_parent() );
+	return parent != nullptr && parent->is_visible_in_tree() == false;
 }
 
 } // namespace
@@ -215,6 +223,7 @@ void CbPromptLabel::_ready()
 
 void CbPromptLabel::_process( double )
 {
+	godot_prof::Timed timed( godot_prof::Labels );
 	if ( is_queued_for_deletion() )
 	{
 		return; // leaving: its reaction has moved on to another target this frame
@@ -275,6 +284,13 @@ void CbFieldLabel::_ready()
 
 void CbFieldLabel::_process( double )
 {
+	godot_prof::Timed timed( godot_prof::Labels );
+	// (Not while what holds it is hidden: a scoreboard's rows, five labels a player, while Tab is not
+	// held. It says what it shows when that is shown. M259: 2,600 labels a frame at 255 players.)
+	if ( HiddenAbove( this ) )
+	{
+		return;
+	}
 	CinderboxClient* client = FindClient( this, m_client );
 	int rank = 0;
 	int64_t subject = SubjectOf( this, client, &rank );
@@ -345,6 +361,7 @@ void CbFieldBinding::_ready()
 
 void CbFieldBinding::_process( double )
 {
+	godot_prof::Timed timed( godot_prof::Labels );
 	CinderboxClient* client = FindClient( this, m_client );
 	Node* target = get_node_or_null( m_target );
 	if ( client == nullptr || target == nullptr )
@@ -557,6 +574,11 @@ void CbList::on_mod_event( const String& name, int64_t a, int64_t b, int64_t val
 
 void CbList::_process( double )
 {
+	godot_prof::Timed timed( godot_prof::Lists );
+	if ( HiddenAbove( this ) )
+	{
+		return; // (as a label: CbFieldLabel::_process)
+	}
 	CinderboxClient* client = FindClient( this, m_client );
 	if ( m_of == OF_EVENTS && m_connected == false && client != nullptr )
 	{
@@ -826,6 +848,7 @@ void CbKey::_ready()
 
 void CbKey::_process( double )
 {
+	godot_prof::Timed timed( godot_prof::Labels );
 	StringName action = "cb_" + m_action.strip_edges();
 	InputMap* map = InputMap::get_singleton();
 	CinderboxClient* client = FindClient( this, m_client );
@@ -1184,6 +1207,7 @@ CbItemIcon::CbItemIcon()
 
 void CbItemIcon::_process( double )
 {
+	godot_prof::Timed timed( godot_prof::Icons );
 	if ( InGame() == false )
 	{
 		return;

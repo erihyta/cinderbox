@@ -334,6 +334,19 @@ private:
 	std::unordered_map<uint64_t, uint8_t> m_nodeCharacters; // body visual id -> the character its node was made of
 	float FeetOf( uint64_t visual ) const; // how far below a body's centre its feet are
 	std::unordered_map<uint64_t, godot::ObjectID> m_trackPlayers; // visual id -> CbTrackPlayer
+	std::unordered_map<uint64_t, uint32_t> m_posesApplied; // visual id -> its PlayerAnim::posed put on its skeleton (M259)
+	// M259: the items by who holds them, made once a frame when asked (HeldOf): a HUD's lists and
+	// slots asked every visual for each slot, ten thousand of them at 255 players.
+	struct HeldRef
+	{
+		int64_t netId = 0;
+		int itemKind = 0;
+		int slotIndex = 0;
+	};
+	mutable std::unordered_map<int64_t, std::vector<HeldRef>> m_heldIndex;
+	mutable uint64_t m_heldIndexFrame = UINT64_MAX;
+	uint64_t m_mirrorFrames = 0;
+	const std::vector<HeldRef>* HeldOf( int64_t holder ) const;
 	std::unique_ptr<present::ViewSource> m_source;
 	void Open( std::unique_ptr<present::ViewSource> source );
 	// How many sources this viewer has had: mixed into each frame's reset generation, so the first
@@ -342,6 +355,30 @@ private:
 	present::ViewFrame m_frame;
 	bool m_haveFrame = false;
 	float m_alpha = 0.0f; // of the frame being drawn
+	// M259: where a frame's time goes on this thread, since reset_frame_times: taking the source's
+	// frame, the mirror (the poses within), the nodes, the rest; and the characters posed or kept.
+	enum FramePart
+	{
+		FrameIcons,
+		FrameHeldKinds,
+		FrameEvents,
+		FrameFields,
+		FrameLinks,
+		FramePushStates,
+		FrameDirector,
+		FramePartCount
+	};
+	struct FrameTimes
+	{
+		uint64_t frames = 0;
+		double total = 0.0, take = 0.0, mirror = 0.0, poses = 0.0, nodes = 0.0;
+		double parts[7] = {}; // (FramePart)
+		uint64_t events[8] = {}; // (by present::EventType)
+		uint64_t evaluated = 0, kept = 0;
+	};
+	FrameTimes m_frameTimes;
+	godot::Dictionary get_frame_times() const;
+	void reset_frame_times();
 	godot::String m_lastState;
 
 	std::unordered_map<uint64_t, godot::ObjectID> m_nodes; // visual id -> node

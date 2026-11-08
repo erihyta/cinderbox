@@ -66,11 +66,13 @@ void ThreadedSource::ThreadMain()
 bool ThreadedSource::Take( present::ViewFrame& out )
 {
 	std::lock_guard<std::mutex> lock( m_frameMutex );
-	if ( m_latest.serial == out.serial )
+	if ( m_latestTaken || m_latest.serial == out.serial )
 	{
 		return false;
 	}
-	out = m_latest;
+	// (Swapped, not copied: at 1023 players a frame is megabytes, 66 ms a copy. M259. What the viewer
+	// had goes back to be filled again; a source keeps nothing in it that it does not check.)
+	std::swap( out, m_latest );
 	m_latestTaken = true;
 	return true;
 }
@@ -85,7 +87,7 @@ void ThreadedSource::Publish( bool rolledBack, ActionBits localPressed )
 	bool skipped = m_latestTaken == false;
 	f.frame.rolledBack = rolledBack || ( skipped && m_latest.frame.rolledBack );
 	f.localPressed = localPressed | ( skipped ? m_latest.localPressed : 0 );
-	f.serial = m_latest.serial + 1;
+	f.serial = ++m_serial; // (m_latest may be the viewer's old frame: Take swaps)
 	std::swap( m_latest, f );
 	m_latestTaken = false;
 }

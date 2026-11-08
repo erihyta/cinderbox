@@ -470,6 +470,30 @@ out; this laptop's figures move by 10 to 20% from run to run):
   state (its serialization), the physics; on the state threads, a client's walk of every entity (an
   interest grid would cut it where players are spread out; in a crowd every one is near).
 
+**The game in front of a crowd** (M259, `tools\crowd_client.ps1`: a fight recorded with
+`--record-view` and played by the game, 1280x720, this laptop; live, the game joined to a server of
+fake players, which keeps up beside it to about 100):
+
+| | 96 players, live | 255 players, a recording | 1023 players, a recording |
+|---|---|---|---|
+| A frame | 19 ms (53 a second) | 58 ms (17) | 840 ms (1) |
+| The game's own thread | 7.3 ms | 26 ms | 600 ms |
+| Of it: poses (characters posed of all) | 0.9 (56 of 97) | 2.0 (134 of 255) | 6.6 (446 of 1023) |
+| The nodes (characters, items) | 3.3 | 9.2 | 31 |
+| The events (a visual made or freed, a reaction) | 1.7 | 8.8 | 467 (530 visuals made a frame) |
+| The skeletons (the pose put on each) | 1.5 | 3.9 | 14 |
+| Nodes in the scene | 9,200 | 19,400 | 80,000 |
+
+- **What went** (at 255, the same recording before and after): 170 ms a frame to 115 before the
+  recording was made again: poses 7.8 ms to 4.0 (by distance and view), the HUD's labels 17 to 4
+  and lists 11 to 7 (a scoreboard's rows, five labels a player, worked every frame while hidden; a
+  slot asked every visual for its item); a live game's source hands it its frame swapped, not copied.
+- **What is left is the drawing** (M260): every character a scene, every item it holds a node (at
+  1023, a few hundred made and freed a frame, ~1 ms each), a skeleton each with its modifier, Godot's
+  own work for 80,000 nodes. One baked look drawn through RenderingServer, with what a character
+  holds as kinds in its puppet, is what removes them. The mods' reactions to events (sounds,
+  effects) cost about 0.3 ms an event.
+
 **The milestones**:
 
 | Milestone | What |
@@ -482,7 +506,7 @@ out; this laptop's figures move by 10 to 20% from run to run):
 | **M256** (done) | **Frames carry the physics only**: the commands clients skip left out (and the joins and leaves); frames with the states, one datagram every 2 ticks, each frame in two; a pusher's place as a change against where it would be going on as it went, a packet's first frame against the two before; the states' head without the event rings (a client never read them). Asking for a gap was not needed (3% lost: the physics never waited). Pushers at the state rate: not done, it changes how they push (your call). Protocol 88 |
 | **M257** (done) | **A byte budget per client**: each other character's priority for a player grows by nearness, being in its view, doing something, aiming at it, and goes to 0 when sent; the most owed go until the player's budget is spent (`--client-budget`, 256 kbit/s of states sent). One that waited longer than a base is kept goes against the record the player has (carried), not whole. **Events go with their characters**: a mod's at a character, and what the others do themselves (motions, markers, slots: until now heard by no other player), once each, for half a second; a mod declares for everyone what all must hear (`Declarations::Event`'s `everyone`: the kill feed, a round's end). **Found and fixed**: CI's `net_chaos_hybrid` crash (a held item of a puppet, new on a client, had no turn). **Moved**: held items as kinds to M260 (it redraws what characters hold), the interest grid to M258 (it is the planner's processor time); far ones coarser not done (a far one is sent rarely). Protocol 90 |
 | **M258** (done) | **The server's processor at 1000**: profiled (each mod, the characters' parts, a state's keeping and planning by part); a state's updates made on the state threads while the next tick runs, sent with its frames once made; planning by group, in place; puppets, views and hashes on the state threads; a compressor per thread; the characters' movers and animation on threads (`Simulation::SetParallelFor`, each reads the world as the tick found it: the same on any number, `character_threads`); held kinds by holder; the expire mod's list. **Found**: mods heard 32 of a tick's events (a crowd's hits hurt no one); a far puppet slid across the map after a teleport. 255 fighting players at 60 Hz, just (22 ms to 15 to 17.5); 1023 at 55 ms (178). **Not done**: the interest grid (it helps where players are spread out, not in the bench's crowd), the motions' pass on threads, the mods' other per-player loops (the table above) |
-| M259 | **The client's processor at 1000 visible**: the Godot client measured against a crowd of fake players (poses, drawing, the rest); poses by distance and on screen (every frame near, every 8th far, none off screen). Nothing of the drawing that M260 replaces |
+| **M259** (done) | **The game in front of a crowd**: measured (`tools\crowd_client.ps1`: a fight of N fake players recorded and played by the game, or joined live; the unattended game says its frames and where they went, `--measure-from`); poses by distance and view (every frame within 15 m to every 8th beyond, out of view only when near, in turns; a pose not made again not put on the skeleton again); the HUD's labels and lists not worked while hidden, a holder's items found once a frame, a live source's frame swapped to the game. 255 visible at 17 frames a second, 1023 at 1: what is left is the drawing, a scene and nodes for every character and what it holds (M260). Test: `pose_level_of_detail` |
 | M260 | **One baked look for every character**: the look baked from its scene in the editor (meshes, skin binds, materials, sockets, item looks and their rules; tracks that do things as timed cues), drawn through RenderingServer (a skeleton and an instance per mesh each, bones straight from ozz, items at their sockets), the own one's first person too; shadows within 40 m; checked against the scenes' drawing by screenshots, then a playtest. From M257: what a character holds as kinds in its puppet, not entities (a character coming into view costs a few bytes, not ten records) |
 | M261 | **The uplink**: inputs repeated by measured loss (4, not 12) |
 

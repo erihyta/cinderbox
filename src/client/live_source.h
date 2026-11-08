@@ -37,6 +37,8 @@ public:
 
 private:
 	void Run() override;
+	double m_fillMs = 0.0; // (M259: the frames filled, and the time it took: stats)
+	uint64_t m_fills = 0;
 	void Fill( GameClient& client, uint64_t fingerprint );
 
 	ClientOptions m_options;

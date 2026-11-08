@@ -1,5 +1,6 @@
 #include "cinderbox_skeleton.h"
 #include "cinderbox_character.h" // CbSocket
+#include "frame_prof.h"
 
 #include "joint_math.h"
 #include "pose.h"
@@ -343,6 +344,7 @@ void CbPoseModifier::set_driver( CinderboxSkeleton* driver )
 
 void CbPoseModifier::_process_modification()
 {
+	godot_prof::Timed timed( godot_prof::Skeletons );
 	if ( auto* driver = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( ObjectID( m_driver ) ) ) )
 	{
 		driver->ReapplyPose( get_skeleton() );

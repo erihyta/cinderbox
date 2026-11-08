@@ -1,5 +1,6 @@
 #include "cinderbox_client_parts.h"
 #include "cinderbox_map_nodes.h"
+#include "frame_prof.h"
 
 namespace cb::gd
 {
@@ -82,6 +83,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "clear_world_scenes" ), &CinderboxClient::clear_world_scenes );
 	ClassDB::bind_method( D_METHOD( "get_director" ), &CinderboxClient::get_director );
 	ClassDB::bind_method( D_METHOD( "get_stats" ), &CinderboxClient::get_stats );
+	ClassDB::bind_method( D_METHOD( "get_frame_times" ), &CinderboxClient::get_frame_times );
+	ClassDB::bind_method( D_METHOD( "reset_frame_times" ), &CinderboxClient::reset_frame_times );
 	ClassDB::bind_method( D_METHOD( "get_source_state" ), &CinderboxClient::get_source_state );
 	ClassDB::bind_method( D_METHOD( "has_local_player" ), &CinderboxClient::has_local_player );
 	ClassDB::bind_method( D_METHOD( "get_local_player_position" ), &CinderboxClient::get_local_player_position );
@@ -402,6 +405,31 @@ int64_t CinderboxClient::get_selected_slot( int64_t player ) const
 	return ve.is_valid() && selected < ve.get<present::Visual>().slotCount ? int64_t( selected ) : -1;
 }
 
+const std::vector<CinderboxClient::HeldRef>* CinderboxClient::HeldOf( int64_t holder ) const
+{
+	if ( !m_mirror )
+	{
+		return nullptr;
+	}
+	if ( m_heldIndexFrame != m_mirrorFrames )
+	{
+		m_heldIndexFrame = m_mirrorFrames;
+		for ( auto& [who, items] : m_heldIndex )
+		{
+			items.clear();
+		}
+		m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+								const present::RagdollAnim* ) {
+			if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+			{
+				m_heldIndex[int64_t( v.holder )].push_back( { int64_t( v.netId ), int( v.itemKind ), int( v.slotIndex ) } );
+			}
+		} );
+	}
+	auto found = m_heldIndex.find( holder );
+	return found != m_heldIndex.end() ? &found->second : nullptr;
+}
+
 int64_t CinderboxClient::get_slot_item( int64_t player, int64_t slot ) const
 {
 	int64_t found = 0;
@@ -409,13 +437,13 @@ int64_t CinderboxClient::get_slot_item( int64_t player, int64_t slot ) const
 	{
 		return 0;
 	}
-	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
-							const present::RagdollAnim* ) {
-		if ( v.kind == present::VisualKind::Item && int64_t( v.holder ) == player && int64_t( v.slotIndex ) == slot )
+	if ( const std::vector<HeldRef>* held = HeldOf( player ) )
+	{
+		for ( const HeldRef& item : *held )
 		{
-			found = int64_t( v.netId );
+			found = int64_t( item.slotIndex ) == slot ? item.netId : found;
 		}
-	} );
+	}
 	return found;
 }
 
@@ -707,6 +735,7 @@ void CinderboxClient::HandleEvents()
 	const auto& visuals = m_mirror->World();
 	for ( const present::Event& e : m_mirror->Events() )
 	{
+		m_frameTimes.events[size_t( e.type ) < 8 ? size_t( e.type ) : 7] += 1;
 		Vector3 position = ToGodot( e.position );
 		switch ( e.type )
 		{
@@ -1436,12 +1465,16 @@ void CinderboxClient::UpdateNodes()
 			}
 			node->set_transform( Transform3D( rotation.scaled( Vector3( s, s, s ) ), origin ) );
 
-			// The pose: evaluated for players, hung off the parts for ragdolls.
+			// The pose: evaluated for players, hung off the parts for ragdolls. (A player's only when it
+			// was posed again: far off and out of view it is now and then, M259.)
 			present::Models* models = nullptr;
-			if ( anim != nullptr && anim->evaluator )
+			uint32_t& applied = m_posesApplied[id];
+			const bool posedAgain = anim != nullptr && ( anim->posed != applied || v.netId == m_frame.frame.localNetId );
+			if ( anim != nullptr && anim->evaluator && posedAgain )
 			{
 				m_pose = anim->evaluator->Models();
 				models = &m_pose;
+				applied = anim->posed;
 			}
 			else if ( ragdoll != nullptr && ragdoll->models.empty() == false )
 			{
@@ -1467,7 +1500,7 @@ void CinderboxClient::UpdateNodes()
 				}
 			}
 			// What the playing animations do besides moving bones.
-			if ( anim != nullptr )
+			if ( anim != nullptr && posedAgain )
 			{
 				auto playerIt = m_trackPlayers.find( id );
 				auto* tracks = playerIt != m_trackPlayers.end()
@@ -1647,12 +1680,21 @@ void CinderboxClient::_process( double delta )
 		return;
 	}
 
+	const auto frameFrom = std::chrono::steady_clock::now();
+	auto clock = frameFrom;
+	auto spentOn = [&clock]( double& ms ) {
+		const auto now = std::chrono::steady_clock::now();
+		ms += std::chrono::duration<double, std::milli>( now - clock ).count();
+		clock = now;
+	};
 	UpdateIcons();
+	spentOn( m_frameTimes.parts[FrameIcons] );
 	if ( m_source->Take( m_frame ) )
 	{
 		m_haveFrame = true;
 		m_frame.frame.resetGeneration += m_sourceCount << 32;
 	}
+	spentOn( m_frameTimes.take );
 	if ( m_haveFrame == false )
 	{
 		return;
@@ -1689,23 +1731,101 @@ void CinderboxClient::_process( double delta )
 
 	m_alpha = alpha;
 	LeadLocalPlayer( float( delta ) );
+	// Where the camera looks: characters far off, or out of view, are posed less often (M259). The
+	// cone round the view: the half of its diagonal, and a margin for a body's size.
+	if ( Camera3D* camera = get_viewport() != nullptr ? get_viewport()->get_camera_3d() : nullptr )
+	{
+		const Transform3D eye = camera->get_global_transform();
+		const Vector2 size = get_viewport()->get_visible_rect().size;
+		const double aspect = size.y > 0.0f ? double( size.x ) / double( size.y ) : 16.0 / 9.0;
+		const double tanHalf = std::tan( double( camera->get_fov() ) * 0.5 * Math_PI / 180.0 );
+		const double half = std::atan( tanHalf * std::sqrt( 1.0 + aspect * aspect ) ) + 10.0 * Math_PI / 180.0;
+		const Vector3 forward = -eye.basis.get_column( 2 ).normalized();
+		// (Zoomed in, what is far looks near: its distance as it looks against Godot's usual 75 degrees.)
+		const float scale = float( tanHalf / std::tan( 37.5 * Math_PI / 180.0 ) );
+		m_mirror->SetView( { eye.origin.x, eye.origin.y, eye.origin.z }, { forward.x, forward.y, forward.z },
+						   half >= Math_PI ? -1.0f : float( std::cos( half ) ), scale );
+	}
+	clock = std::chrono::steady_clock::now();
 	m_mirror->Update( m_frame.frame, alpha, float( delta ) );
+	m_mirrorFrames += 1;
+	spentOn( m_frameTimes.mirror );
+	const present::PoseStats posed = m_mirror->TakePoseStats();
+	m_frameTimes.poses += double( posed.ns ) / 1e6;
+	m_frameTimes.evaluated += posed.evaluated;
+	m_frameTimes.kept += posed.kept;
 	// A rollback is reported once; later updates of the same frame are ordinary.
 	m_frame.frame.rolledBack = false;
 
 	UpdateMapVisual();
 	RefreshHeldKinds();
+	spentOn( m_frameTimes.parts[FrameHeldKinds] );
 	HandleEvents();
+	spentOn( m_frameTimes.parts[FrameEvents] );
 	// Up to where the server has answered: a guess it left unanswered is taken back (CbDirector).
 	Director()->set_ticks( int64_t( m_frame.frame.tick ), int64_t( m_frame.confirmedTick ) );
 	// A source that plays someone else's input says what the local player pressed.
 	AnnouncePresses( m_frame.localPressed );
 	m_frame.localPressed = 0;
 	ApplyPredictedFields();
+	spentOn( m_frameTimes.parts[FrameFields] );
 	UpdateNodes();
+	spentOn( m_frameTimes.nodes );
 	UpdateLinks();
+	spentOn( m_frameTimes.parts[FrameLinks] );
 	PushStates();
+	spentOn( m_frameTimes.parts[FramePushStates] );
 	Director()->update();
+	spentOn( m_frameTimes.parts[FrameDirector] );
+	m_frameTimes.frames += 1;
+	m_frameTimes.total += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - frameFrom ).count();
+}
+
+Dictionary CinderboxClient::get_frame_times() const
+{
+	const double n = double( std::max<uint64_t>( m_frameTimes.frames, 1 ) );
+	Dictionary d;
+	d["frames"] = int64_t( m_frameTimes.frames );
+	d["total_ms"] = m_frameTimes.total / n;
+	d["take_ms"] = m_frameTimes.take / n;
+	d["mirror_ms"] = m_frameTimes.mirror / n;
+	d["poses_ms"] = m_frameTimes.poses / n;
+	d["nodes_ms"] = m_frameTimes.nodes / n;
+	d["posed"] = double( m_frameTimes.evaluated ) / n;
+	d["kept"] = double( m_frameTimes.kept ) / n;
+	int64_t players = 0;
+	if ( m_mirror )
+	{
+		m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*, const present::RagdollAnim* ) {
+			players += v.kind == present::VisualKind::Player ? 1 : 0;
+		} );
+	}
+	d["characters"] = players;
+	const char* eventNames[8] = { "spawned", "destroying", "removed", "jumped", "landed", "footstep", "impact", "mod" };
+	for ( int t = 0; t < 8; ++t )
+	{
+		d[String( "events_" ) + eventNames[t]] = double( m_frameTimes.events[t] ) / n;
+	}
+	const char* frameParts[FramePartCount] = { "icons_update", "held_kinds", "events", "fields", "links", "push_states", "director" };
+	for ( int p = 0; p < FramePartCount; ++p )
+	{
+		d[String( frameParts[p] ) + "_ms"] = m_frameTimes.parts[p] / n;
+	}
+	// The game's own nodes (M259: frame_prof.h).
+	const godot_prof::Parts& parts = godot_prof::TheParts();
+	const char* names[godot_prof::PartCount] = { "skeletons", "lists", "labels", "icons" };
+	for ( int p = 0; p < godot_prof::PartCount; ++p )
+	{
+		d[String( names[p] ) + "_ms"] = parts.ms[p] / n;
+		d[String( names[p] ) + "_count"] = double( parts.count[p] ) / n;
+	}
+	return d;
+}
+
+void CinderboxClient::reset_frame_times()
+{
+	m_frameTimes = FrameTimes{};
+	godot_prof::TheParts() = godot_prof::Parts{};
 }
 
 // Links: for each player that has one out, the scene its CbLinkLook names, stretched from the

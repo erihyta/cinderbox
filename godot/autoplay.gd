@@ -45,11 +45,22 @@ var _chat_seen := ""
 ## The viewer's guesses (CbPrediction) made, and the ones the server never answered (taken back).
 var _guesses := 0
 var _taken_back := {}
+## M259: the frames from a few seconds in (--measure-from=SECONDS, 3): how long each took, end to
+## end, and Godot's process time; what the client's own thread and its simulation's took is the
+## client's to say (get_frame_times, get_stats), from where the measuring began.
+var _measure_from := 3.0
+var _measuring := false
+var _measured_since := 0.0
+var _frame_ms: Array[float] = []
+var _last_frame_usec := 0
+var _process_ms := 0.0
+var _stats_at_start := {}
 
 
 func _init(owner: Node, args: Dictionary) -> void:
 	game = owner
 	seconds = float(args.get("autoplay", "0"))
+	_measure_from = float(args.get("measure-from", "3"))
 	view_probe = args.has("view-probe")
 	_probe_slot = int(args.get("view-probe", "0")) if view_probe else 0
 	# --probe-frames=DIR: the probe also keeps what was drawn, a run of frames from each part of
@@ -379,6 +390,61 @@ func on_mod_event(name: String, _a: int, _b: int, _value: int, _position: Vector
 
 
 ## Screenshots along the way, and at the end what the run saw; then the game quits.
+func _measure(elapsed: float) -> void:
+	var now := Time.get_ticks_usec()
+	if not _measuring:
+		if elapsed >= _measure_from:
+			_measuring = true
+			_measured_since = elapsed
+			_last_frame_usec = now
+			game.client.reset_frame_times()
+			_stats_at_start = game.client.get_stats()
+		return
+	_frame_ms.append(float(now - _last_frame_usec) / 1000.0)
+	_last_frame_usec = now
+	_process_ms += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+
+
+func _report_frames() -> void:
+	if _frame_ms.is_empty():
+		return
+	var sorted := _frame_ms.duplicate()
+	sorted.sort()
+	var n := sorted.size()
+	var total: float = sorted.reduce(func(a, b): return a + b, 0.0)
+	var mean := total / n
+	var p95: float = sorted[mini(n - 1, int(n * 0.95))]
+	print("frames: %d over %.1f s, %.1f ms on average (%.0f a second), %.1f at the 95th, %.1f at most; Godot's process %.2f ms a frame" % [
+		n, total / 1000.0, mean, 1000.0 / mean, p95, sorted[n - 1], _process_ms / n])
+	var t: Dictionary = game.client.get_frame_times()
+	print("the client's thread a frame: %.2f ms: taking the frame %.2f, the mirror %.2f (poses %.2f: %.0f of %d characters posed, %.0f kept), the nodes %.2f" % [
+		t.get("total_ms", 0.0), t.get("take_ms", 0.0), t.get("mirror_ms", 0.0), t.get("poses_ms", 0.0), t.get("posed", 0.0), t.get("characters", 0),
+		t.get("kept", 0.0), t.get("nodes_ms", 0.0)])
+	print("the game's nodes a frame: skeletons %.2f ms (%.0f), lists %.2f (%.0f), labels %.2f (%.0f), icons %.2f (%.0f)" % [
+		t.get("skeletons_ms", 0.0), t.get("skeletons_count", 0.0), t.get("lists_ms", 0.0), t.get("lists_count", 0.0),
+		t.get("labels_ms", 0.0), t.get("labels_count", 0.0), t.get("icons_ms", 0.0), t.get("icons_count", 0.0)])
+	print("the client's thread's other parts a frame: icons %.2f ms, held kinds %.2f, events %.2f, fields %.2f, links %.2f, states pushed %.2f, the director %.2f" % [
+		t.get("icons_update_ms", 0.0), t.get("held_kinds_ms", 0.0), t.get("events_ms", 0.0), t.get("fields_ms", 0.0), t.get("links_ms", 0.0),
+		t.get("push_states_ms", 0.0), t.get("director_ms", 0.0)])
+	print("events a frame: spawned %.1f, destroying %.1f, removed %.1f, jumped %.1f, landed %.1f, footsteps %.1f, impacts %.1f, mods' %.1f" % [
+		t.get("events_spawned", 0.0), t.get("events_destroying", 0.0), t.get("events_removed", 0.0), t.get("events_jumped", 0.0),
+		t.get("events_landed", 0.0), t.get("events_footstep", 0.0), t.get("events_impact", 0.0), t.get("events_mod", 0.0)])
+	print("nodes: %d" % Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
+	var s: Dictionary = game.client.get_stats()
+	if s.has("source_fill_ms") and _stats_at_start.has("source_fill_ms"):
+		var fills := int(s["source_fills"]) - int(_stats_at_start["source_fills"])
+		var line := "its source's thread: frames filled %.2f ms each (%d)" % [
+			(float(s["source_fill_ms"]) - float(_stats_at_start["source_fill_ms"])) / maxi(fills, 1), fills]
+		if s.has("hybrid_physics_ms") and _stats_at_start.has("hybrid_physics_ms"):
+			var ticks := int(s["hybrid_physics_ticks"]) - int(_stats_at_start["hybrid_physics_ticks"])
+			var states := int(s["hybrid_states"]) - int(_stats_at_start["hybrid_states"])
+			line += "; the physics %.2f ms a tick (%d), the others placed %.2f ms a state (%d), the prediction %.2f ms a tick" % [
+				(float(s["hybrid_physics_ms"]) - float(_stats_at_start["hybrid_physics_ms"])) / maxi(ticks, 1), ticks,
+				(float(s["hybrid_apply_ms"]) - float(_stats_at_start["hybrid_apply_ms"])) / maxi(states, 1), states,
+				(float(s["hybrid_predict_ms"]) - float(_stats_at_start["hybrid_predict_ms"])) / maxi(ticks, 1)]
+		print(line)
+
+
 func finish() -> void:
 	if seconds <= 0.0:
 		return
@@ -388,6 +454,7 @@ func finish() -> void:
 			playing_since = Time.get_ticks_msec() / 1000.0
 		return
 	var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since
+	_measure(elapsed)
 	if screenshot != "" and screenshot_every > 0.0 and elapsed >= _next_screenshot:
 		_next_screenshot = elapsed + screenshot_every
 		_screenshots += 1
@@ -399,6 +466,7 @@ func finish() -> void:
 	if screenshot != "":
 		await RenderingServer.frame_post_draw
 		game.get_viewport().get_texture().get_image().save_png(screenshot)
+	_report_frames()
 	var stats: Dictionary = client.get_stats()
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])

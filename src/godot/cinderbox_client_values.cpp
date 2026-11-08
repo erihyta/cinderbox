@@ -583,10 +583,24 @@ PackedInt64Array CinderboxClient::get_items( const String& kind, int64_t holder 
 	{
 		return out;
 	}
+	if ( holder != 0 )
+	{
+		// (What one holds: by holder, made once a frame. M259.)
+		if ( const std::vector<HeldRef>* held = HeldOf( holder ) )
+		{
+			for ( const HeldRef& item : *held )
+			{
+				if ( wanted < 0 || item.itemKind == wanted )
+				{
+					out.push_back( item.netId );
+				}
+			}
+		}
+		return out;
+	}
 	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
 							const present::RagdollAnim* ) {
-		if ( v.kind == present::VisualKind::Item && ( wanted < 0 || int( v.itemKind ) == wanted ) &&
-			 ( holder == 0 || int64_t( v.holder ) == holder ) )
+		if ( v.kind == present::VisualKind::Item && ( wanted < 0 || int( v.itemKind ) == wanted ) )
 		{
 			out.push_back( int64_t( v.netId ) );
 		}

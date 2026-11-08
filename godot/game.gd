@@ -44,9 +44,10 @@ extends Node3D
 ## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N
 ##                            --replay=FILE --view=FILE
 ##                            --host-local[=MODS] --bots=N   start a server here, join it, stop it on leaving (host.gd)
-##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
+##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS --measure-from=SECONDS
 ##                            --mods=DIR --workshop=DIR --config=FILE
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
+## Autoplay also says how long its frames took and where that went, from --measure-from seconds in (3).
 
 const MOUSE_SENSITIVITY := 0.003
 ## How far up and down the camera looks, in every view: nearly straight up and straight down (86

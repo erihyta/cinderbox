@@ -111,6 +111,8 @@ Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )
 		m_world.set<AnimLibrary>( { { first }, {} } );
 	}
 	m_world.set<FrameTiming>( {} );
+	m_world.set<PoseStats>( {} );
+	m_world.set<PoseView>( {} );
 	m_world.set<AnimLead>( {} );
 	m_world.set<HandGrips>( {} );
 	m_world.set_ctx( this );
