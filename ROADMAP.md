@@ -326,7 +326,7 @@ sent every nearby character as the simulation's own record, so a crowd costs pla
 | The cap | 1023 players (a slot becomes two bytes) |
 | The scope | the hybrid model only; the inputs model is kept as it is, for small servers |
 | Pushers (2026-11-06) | stay exact: a place every tick (not sent every other tick and filled in: that changes how they push) |
-| Drawing characters (2026-11-06) | one way for every character, the own one too: a look baked from its Godot scene (meshes, skins, materials, sockets, item looks with their field rules) drawn through RenderingServer, no scene per player (M260). Only what the bake understands is drawn; an animation's tracks that do things become timed cues; particles, lights and sounds are pooled nodes while they play. Shadows within 40 m. ozz stays on server and clients (the state machine is the simulation's; one sampler keeps hits where players are drawn) |
+| Drawing characters (2026-11-06; built in M260) | one way for every character, the own one too: a look made from its Godot scene (meshes skinned or on a bone, materials, layers, shadows, how the pose drives the bones, sockets), once per character, by the code the bake warns with; drawn through RenderingServer, no scene per player. Only what the look takes is drawn (scripts, other nodes, Godot animation on the skeleton, modifiers are not: the bake says so). Particles, lights and sounds a character has are nodes of its entity at their bones, for its animations' tracks; another player's item that only looks is its meshes, one that reacts keeps its scene. Shadows within 40 m. ozz stays on server and clients (the state machine is the simulation's; one sampler keeps hits where players are drawn) |
 | How it is measured | the crowd bench (M251): fake players inside the server, sent what a player would be, counted; a seed plays the same session however slow the machine |
 
 **Measured by M251** (`cb_server --character mannequin --fake-players N --fake-radius 15
@@ -494,6 +494,33 @@ fake players, which keeps up beside it to about 100):
   holds as kinds in its puppet, is what removes them. The mods' reactions to events (sounds,
   effects) cost about 0.3 ms an event.
 
+**Measured after M260** (the same recordings and the same live crowd; in brackets, M259's):
+
+| | 96 players, live | 255 players, a recording | 1023 players, a recording |
+|---|---|---|---|
+| A frame | 7.2 ms, 139 a second (19 ms, 53) | 21.5 ms, 47 (58 ms, 17) | 184 ms, 5 (840 ms, 1) |
+| The game's own thread | 2.8 ms (7.3) | 11.2 ms (26) | 110 ms (600) |
+| The events (a visual made or freed, a reaction) | | 2.8 (8.8) | 68 (467) |
+| Nodes in the scene | 3,700 (9,200) | 7,900 (19,400) | 28,800 (80,000) |
+
+| The crowd bench (`--bench 10`) | 255 players | 1023 players |
+|---|---|---|
+| What a client has of a state's entities | 778 of 2,556 (all of them) | 3,082 of 10,236 (all) |
+| Planning a state, a tick | 2.0 ms (3.5) | 12.6 ms (20.6) |
+| To each player | 512 kbit/s (the same) | 1.67 Mbit/s (the same) |
+
+- **The drawing**: every body is its look's (one skeleton and one instance for the mannequin), not
+  a scene of 40 nodes with a skeleton, a modifier and bone attachments; the shots of the same
+  moments differ from M259's by a few pixels (poses timed by the clock). In first person the body's
+  shadow now shows (the old body's did not, though it was meant to).
+- **Items**: of nine a fighter carries, eight are put away out of sight: no longer sent to the
+  others, nor drawn. Bytes are the same (unchanged items cost nothing since M253): what a client
+  keeps and walks is a third, and the server plans each state in two thirds of the time.
+- **What is left**: at 1023 recorded, the held bats made as they come into sight (a recording's
+  frames a second apart: far more than in play), the HUD's and the mirror's work for the others'
+  states; Godot's own drawing of a few hundred skinned characters. Pooling item scenes, and the far
+  characters as a GPU crowd, if a measured target needs them.
+
 **The milestones**:
 
 | Milestone | What |
@@ -507,7 +534,7 @@ fake players, which keeps up beside it to about 100):
 | **M257** (done) | **A byte budget per client**: each other character's priority for a player grows by nearness, being in its view, doing something, aiming at it, and goes to 0 when sent; the most owed go until the player's budget is spent (`--client-budget`, 256 kbit/s of states sent). One that waited longer than a base is kept goes against the record the player has (carried), not whole. **Events go with their characters**: a mod's at a character, and what the others do themselves (motions, markers, slots: until now heard by no other player), once each, for half a second; a mod declares for everyone what all must hear (`Declarations::Event`'s `everyone`: the kill feed, a round's end). **Found and fixed**: CI's `net_chaos_hybrid` crash (a held item of a puppet, new on a client, had no turn). **Moved**: held items as kinds to M260 (it redraws what characters hold), the interest grid to M258 (it is the planner's processor time); far ones coarser not done (a far one is sent rarely). Protocol 90 |
 | **M258** (done) | **The server's processor at 1000**: profiled (each mod, the characters' parts, a state's keeping and planning by part); a state's updates made on the state threads while the next tick runs, sent with its frames once made; planning by group, in place; puppets, views and hashes on the state threads; a compressor per thread; the characters' movers and animation on threads (`Simulation::SetParallelFor`, each reads the world as the tick found it: the same on any number, `character_threads`); held kinds by holder; the expire mod's list. **Found**: mods heard 32 of a tick's events (a crowd's hits hurt no one); a far puppet slid across the map after a teleport. 255 fighting players at 60 Hz, just (22 ms to 15 to 17.5); 1023 at 55 ms (178). **Not done**: the interest grid (it helps where players are spread out, not in the bench's crowd), the motions' pass on threads, the mods' other per-player loops (the table above) |
 | **M259** (done) | **The game in front of a crowd**: measured (`tools\crowd_client.ps1`: a fight of N fake players recorded and played by the game, or joined live; the unattended game says its frames and where they went, `--measure-from`); poses by distance and view (every frame within 15 m to every 8th beyond, out of view only when near, in turns; a pose not made again not put on the skeleton again); the HUD's labels and lists not worked while hidden, a holder's items found once a frame, a live source's frame swapped to the game. 255 visible at 17 frames a second, 1023 at 1: what is left is the drawing, a scene and nodes for every character and what it holds (M260). Test: `pose_level_of_detail` |
-| M260 | **One baked look for every character**: the look baked from its scene in the editor (meshes, skin binds, materials, sockets, item looks and their rules; tracks that do things as timed cues), drawn through RenderingServer (a skeleton and an instance per mesh each, bones straight from ozz, items at their sockets), the own one's first person too; shadows within 40 m; checked against the scenes' drawing by screenshots, then a playtest. From M257: what a character holds as kinds in its puppet, not entities (a character coming into view costs a few bytes, not ten records) |
+| **M260** (done) | **One look for every character**: a character's look made from its scene once (`look.h`: `CharacterLook`; the bake and `CbCharacter.describe_look` say what is not drawn), every body drawn by it through RenderingServer (`DrawnBody`: a skeleton and an instance per mesh, bones from the ozz pose when posed), the entity an empty node with its sockets; the own one's first person too (its legs and arms as copies, its body casting its shadow); shadows within 40 m; a character's particles, lights and sounds nodes at their bones, its tracks played on them and on its sockets' items. Another player's item put away out of sight is not sent (its holder's puppet names what it carries, by kind: protocol 91) and has no node; one in sight that only looks is its meshes (`ItemLook`), one that reacts keeps its scene without the viewer's predictions. Checked by the same moments drawn before and after (`--look-shots`), then a playtest. 255 recorded: 17 frames a second to 47; 1023: 1 to 5; 96 live: 53 to 139. Tests: `check_look.gd`, `net_hybrid_puppets` (what is put away is not sent), the codec's puppets with kinds |
 | M261 | **The uplink**: inputs repeated by measured loss (4, not 12) |
 
 **Targets** (1000 players in one area): another character ≤ 10 B moving, ≤ 2 B still; ≤ 0.5

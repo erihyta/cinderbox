@@ -6,8 +6,10 @@
 // file it plays itself, or an object from elsewhere that hands frames over as bytes (the peer
 // extension's CinderboxPeer: a live connection, a recording; or a script). This library holds no
 // simulation and no networking. It mirrors the frames and turns them into Godot nodes, one
-// instance of a prefab scene per simulation entity, moved every frame, with ozz poses applied to
-// players. Everything visual is data the game or mods provide:
+// instance of a prefab scene per simulation entity, moved every frame; but a player or a ragdoll is
+// an entity node with its sockets, its body drawn by its character's look through the
+// RenderingServer with the ozz pose (look.h, M260), and another player's item that only looks is its
+// meshes alone. Everything visual is data the game or mods provide:
 //   <prefab_dir>/static_box.tscn   level geometry        (unit box, scaled to size)
 //   <prefab_dir>/prop_box.tscn      box props             (unit box)
 //   <prefab_dir>/prop_sphere.tscn   sphere props          (unit-diameter sphere)
@@ -26,6 +28,7 @@
 #include "cinderbox_item_look.h"
 #include "cue_director.h"
 #include "fields.h"
+#include "look.h"
 #include "mirror.h"
 #include "view.h"
 
@@ -301,6 +304,8 @@ private:
 	godot::Ref<godot::PackedScene> LoadPrefab( const char* name );
 	godot::Ref<godot::PackedScene> LoadScene( const godot::String& path );
 	godot::Node3D* CreateNode( uint64_t visual, const present::Visual& v );
+	// A player or a ragdoll: an entity node with its sockets, and its body drawn by its look (M260).
+	godot::Node3D* CreateBody( uint64_t visual, const present::Visual& v );
 	// Players and ragdolls again with the current prefab (after the characters changed); `only`:
 	// just these players' (by NetId), and what they hold.
 	void RebuildCharacterNodes( bool itemsToo = false, const std::vector<uint32_t>& only = {} );
@@ -321,12 +326,6 @@ private:
 		godot::String folder; // res://characters/<name>/ ("": the built-in prefab)
 		bool loaded = false;  // false: drawn as the server's own
 		std::shared_ptr<const anim::AnimSet> set; // its baked skeleton and clips (null: not loaded)
-		// What its animations do besides moving bones, copied out of its AnimationPlayer when the
-		// first one is drawn (null: nothing, or not looked yet); its tracks pointed at the moved
-		// sockets once.
-		godot::Ref<godot::AnimationLibrary> tracks;
-		bool tracksBuilt = false;
-		bool retargeted = false;
 	};
 	std::vector<ViewCharacter> m_characters;
 	// The character a body is drawn as (null: none known yet, the built-in prefab).
@@ -335,6 +334,16 @@ private:
 	float FeetOf( uint64_t visual ) const; // how far below a body's centre its feet are
 	std::unordered_map<uint64_t, godot::ObjectID> m_trackPlayers; // visual id -> CbTrackPlayer
 	std::unordered_map<uint64_t, uint32_t> m_posesApplied; // visual id -> its PlayerAnim::posed put on its skeleton (M259)
+	// M260: every body drawn one way, by its character's look (look.h): the looks, made once from
+	// the scene (by character, ragdoll or not, and template), and each body's drawing by visual id.
+	std::map<uint64_t, std::shared_ptr<const CharacterLook>> m_looks;
+	std::unordered_map<uint64_t, std::unique_ptr<DrawnBody>> m_bodies;
+	std::shared_ptr<const CharacterLook> LookOf( const present::Visual& v );
+	DrawnBody* BodyOf( uint64_t visual ) const;
+	// Where the camera is (the last frame's): shadows are cast within kShadowDistance of it.
+	godot::Vector3 m_eye;
+	bool m_eyeKnown = false;
+	static constexpr float kShadowDistance = 40.0f;
 	// M259: the items by who holds them, made once a frame when asked (HeldOf): a HUD's lists and
 	// slots asked every visual for each slot, ten thousand of them at 255 players.
 	struct HeldRef
@@ -420,12 +429,6 @@ private:
 	// director, whose predictions show what the server will answer.
 	void AnnouncePresses( ActionBits pressed );
 	godot::String EntityName( const present::Visual& v ) const;
-	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on
-	// every rig); the animation tracks that reached an item through the socket's authored place are
-	// pointed at the new one, once per character.
-	std::vector<std::pair<godot::String, godot::String>> m_socketMoves; // from the entity: old path, new
-	void RetargetTracks( ViewCharacter& character, godot::Node* entity, godot::Node* root );
-
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
 	std::map<std::string, godot::String> m_itemLooks;
@@ -492,8 +495,8 @@ private:
 	void ViewLayers( godot::Node* node, bool on ); // an item's visuals onto the view model's layer, or back
 	void ShadowsOnly( godot::Node* node, bool on ); // an item's visuals cast their shadows and are not drawn, or as they were
 	bool m_firstPerson = false;
-	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
-	void FirstPersonBody( uint32_t netId, uint8_t character, godot::Node* node, const AnimState* state, present::Models& models );
+	uint64_t m_firstPersonVisual = 0; // whose body is looked out of now (its visual; 0: none)
+	void FirstPersonBody( uint32_t netId, uint8_t character, uint64_t visual, const AnimState* state, present::Models& models );
 	// The viewer's own pose as its animations have it, before the aim (see FirstPersonBody).
 	std::unique_ptr<anim::PoseEvaluator> m_viewPose;
 	const anim::AnimSet* m_viewPoseSet = nullptr;
@@ -532,9 +535,25 @@ private:
 		bool itemFrame = false;	  // a built-in hand: `local` is in AnimSet::AttachFrame's frame
 	};
 	std::map<uint64_t, std::vector<SocketPlace>> m_sockets;
-	void CollectSockets( uint64_t visual, godot::Node3D* node );
-	void PlaceSockets( uint64_t visual, godot::Node3D* node );
+	// A body's effects (CharacterLook::Effect): its nodes, placed at their bones when it is posed.
+	struct EffectPlace
+	{
+		godot::ObjectID node;
+		int bone = -1;
+		godot::Transform3D local;
+	};
+	std::map<uint64_t, std::vector<EffectPlace>> m_effects;
+	void PlaceSockets( uint64_t visual );
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
+	// Another player's item put away out of sight: it has no node (M260).
+	bool ItemOutOfSight( const present::Visual& v ) const;
+	// Another player's item in sight that does nothing but look so: drawn by its meshes, no node
+	// (M260, look.h's ItemLook). The looks by kind (null: its scene does more, or it has none).
+	bool DrawsWithoutNode( const present::Visual& v );
+	std::shared_ptr<const ItemLook> PlainItemLook( const present::Visual& v );
+	void UpdateDrawnItem( uint64_t visual, const present::Visual& v, DrawnItem& item );
+	std::map<std::string, std::shared_ptr<const ItemLook>> m_plainItemLooks;
+	std::unordered_map<uint64_t, std::unique_ptr<DrawnItem>> m_drawnItems;
 	void UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node );
 	// A copy lying in the world is its look, its body and its own reactions: what is about a holder
 	// (a reaction whose subject is "^^", a prediction, the motion nodes) is taken out while nobody

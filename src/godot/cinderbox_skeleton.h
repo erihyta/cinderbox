@@ -1,16 +1,17 @@
 #pragma once
 
-// Shows an ozz pose inside a player prefab.
+// Shows an ozz pose inside a character's scene: in the editor (a preview, an item's figure).
 // - By default draws one box per bone (the blocky placeholder look), via a MultiMesh.
 // - If `skeleton_path` points at a Skeleton3D, its bones are driven by name instead, so a
 //   modded skinned character follows the same animation. Set `draw_bone_boxes` off then.
 // The node's origin is the character's feet, facing +Z (the simulation's convention).
 //
+// The game does not run it: it draws every body by its look (look.h, M260), which reads this
+// node's settings (the skeleton, retarget, the boxes, the colour) and drives the bones the same way.
 // The ozz pose is the only thing that places a player's body bones: it is what the server's hit
 // tests pose too. A driven Skeleton3D gets a CbPoseModifier as its first modifier, which applies
-// the pose again after any AnimationPlayer or AnimationTree has run, so Godot animation on a player
-// can only add what the pose leaves alone (faces, fingers, props, materials) and modifiers placed
-// after it (look-at, springs) run on top of the pose.
+// the pose again after any AnimationPlayer or AnimationTree has run, so in the editor too Godot
+// animation can only add what the pose leaves alone.
 
 #include <godot_cpp/classes/multi_mesh.hpp>
 #include <godot_cpp/classes/multi_mesh_instance3d.hpp>
@@ -99,74 +100,6 @@ public:
 		return m_useSlotColor;
 	}
 
-	// The viewer's own body in first person. The body itself is not touched: it keeps the pose
-	// everyone sees and casts that pose's shadow. Its meshes are only set to cast their shadow
-	// without being drawn. What the viewer sees of itself are copies, made for the eye alone and
-	// casting nothing: the arms (below), and the legs: a copy of the body in the same pose of
-	// which only what is below the waist is left, which PlaceViewLegs slides back as the viewer
-	// looks down, so the waist is never in the picture.
-	void set_first_person_body( bool value )
-	{
-		m_firstPersonBody = value;
-	}
-	bool get_first_person_body() const
-	{
-		return m_firstPersonBody;
-	}
-	// `shift` (the world): how far the legs' copy is moved from where the body is.
-	void PlaceViewLegs( const godot::Vector3& shift );
-	// The view's arms (first person): a copy of this body of which only the arms are drawn, on the
-	// view model's layer (kViewLayer: a camera of the game's draws it over the world, with a field of
-	// view of its own). The body itself keeps the pose everyone sees and casts the shadow of it.
-	//
-	// SetViewPose gives the pose the arms are drawn in (the same animations, steadied under the
-	// camera: CinderboxClient::FirstPersonBody); none: no arms. set_view_hands: which of them is
-	// drawn. set_view_arms( true ): they are not drawn as posed but bent onto an item that floats
-	// in the view (PlaceViewArms).
-	static constexpr uint32_t kViewLayer = 1u << 19; // Godot's layer 20
-	void SetViewPose( const ozz::vector<ozz::math::Float4x4>* models )
-	{
-		if ( models != nullptr )
-		{
-			m_viewModels = *models;
-		}
-		else
-		{
-			m_viewModels.clear();
-		}
-	}
-	// How the view's hands, and what they hold, are moved and turned from where its pose has them
-	// (this node's frame): the arms are bent again to reach, from shoulders that stay.
-	void SetViewMove( const godot::Transform3D& move )
-	{
-		m_viewMove = move;
-	}
-	void set_view_hands( bool left, bool right )
-	{
-		m_viewHandShown[0] = left;
-		m_viewHandShown[1] = right;
-	}
-	void set_view_arms( bool value )
-	{
-		m_viewArms = value;
-	}
-	bool get_view_arms() const
-	{
-		return m_viewArms;
-	}
-	// The view's arms, as posed, are moved as one piece by `stitch` (the world): from where the
-	// simulation's aim has them to where the camera is this frame, once it has been placed.
-	void PlaceViewRig( const godot::Transform3D& stitch );
-	// A hand of the view's pose, in the world (0 left, 1 right): what the item in it is held by.
-	godot::Transform3D ViewHand( int side ) const
-	{
-		return m_viewHands[side != 0 ? 1 : 0];
-	}
-	// Puts the view's arms under `camera` (the eye, in the world) with the hands at `right` and
-	// `left` (the world). An arm that holds nothing, or is not shown, is not drawn.
-	void PlaceViewArms( const godot::Transform3D& camera, const godot::Transform3D& left, const godot::Transform3D& right, bool holdsLeft,
-						bool holdsRight );
-
 	void set_retarget( bool value );
 	bool get_retarget() const
 	{
@@ -181,8 +114,7 @@ public:
 	// Where a joint of the last applied pose is, relative to this node. False when the rig has no
 	// joint by that humanoid-profile name. forItems: in the frame items attach to (AnimSet::AttachFrame),
 	// the same on every rig, rather than the bone's own axes.
-	// `view`: of the view's pose (SetViewPose) when there is one, not of the body's.
-	bool JointTransform( const godot::String& profileName, godot::Transform3D& out, bool forItems = false, bool view = false ) const;
+	bool JointTransform( const godot::String& profileName, godot::Transform3D& out, bool forItems = false ) const;
 	// The same in world space, for scripts: where a hand or the head is right now.
 	godot::Transform3D get_joint_global_transform( const godot::String& profile_name ) const;
 
@@ -235,30 +167,6 @@ private:
 	void Bind( godot::Skeleton3D* target, const anim::AnimSet& set );
 	void EnsureModifier( godot::Skeleton3D* target );
 	void DriveSkeleton( godot::Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models );
-	void CutBody( godot::Skeleton3D* target );
-	int BoneOf( const char* profileName ) const; // the target's bone for a profile name, or -1
-	bool m_firstPersonBody = false;
-	void HideBody( godot::Skeleton3D* target );
-	godot::ObjectID m_hiddenBody; // the skeleton whose meshes only cast shadows now
-	std::vector<std::pair<godot::ObjectID, int>> m_hiddenCasts; // those meshes' own cast_shadow
-	void UpdateViewLegs( godot::Skeleton3D* target );
-	godot::ObjectID m_viewLegs; // the copy whose legs the viewer sees
-	godot::ObjectID m_viewLegsOf;
-	// A copy is drawn from the second time it is posed: the frame it is made in, its skin has not
-	// taken the pose yet, and it would be drawn whole, as the model's rest (seen from inside).
-	int m_viewLegsPosed = 0;
-	int m_viewRigPosed = 0;
-	bool m_viewArms = false;
-	void UpdateViewArms( godot::Skeleton3D* target );
-	godot::ObjectID m_viewRig; // the copy whose arms the view draws
-	godot::ObjectID m_viewRigOf;
-	godot::Transform3D m_viewHands[2];
-	ozz::vector<ozz::math::Float4x4> m_viewModels;
-	bool m_viewHandShown[2] = { true, true };
-	godot::Transform3D m_viewMove;
-	godot::Vector3 m_viewShort[2]; // how far short of where it was moved to each arm's reach left its hand (this node's frame)
-	void KeepArms( godot::Skeleton3D* rig, bool left, bool right );
-
 	// The last applied pose, for joint lookups.
 	const anim::AnimSet* m_lastSet = nullptr;
 	ozz::vector<ozz::math::Float4x4> m_lastModels;

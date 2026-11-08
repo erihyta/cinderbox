@@ -382,6 +382,9 @@ private:
 		// Each entity's group (by layout.entities): a character with what it holds, sent together
 		// (their changes are much alike, and compress well side by side). The index of its head.
 		std::vector<uint32_t> head;
+		// M260: an item a character has put away out of sight (no socket): sent to its holder alone;
+		// the others know it from the holder's puppet (its kinds).
+		std::vector<uint8_t> hidden;
 		// M258: the groups: each head (by layout.entities' order), each entity's group (its place in
 		// `heads`), and each group's other members (what it holds: `members` from memberAt[g] to
 		// memberAt[g + 1]).

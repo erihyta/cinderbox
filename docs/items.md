@@ -41,6 +41,19 @@ reactions in `prefabs/bat.tscn`:
 Nothing in the character knows about the bat: any character swings any item, and an item with no
 reaction on the swing is simply quiet. The pistol works the same way.
 
+**What the others see of it** (M260): what a player carries is said by its character, by kind
+(its puppet: the kinds, and which are in use), so `carried.<kind>`, `<kind>` and its state machine
+work for every player. Its items themselves:
+
+| An item of another player's | Sent to you | Drawn |
+|---|---|---|
+| put away out of sight (in no socket) | no | no |
+| in a socket, doing nothing but look (meshes, markers, its body, motions, a sheet with no `on`, `while` or `predict`) | yes | its meshes alone, no node (`^^/RightHand/Item` finds nothing) |
+| in a socket, doing more (reactions, particles, lights, sounds, its own animation: the bat, the pistol) | yes | its scene, without the predictions (yours alone) and the motion nodes (the simulation's) |
+| lying in the world | yes | its scene |
+
+Your own items are all sent to you and all drawn as their scenes.
+
 A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` gives, not
 `ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
 `ItemTarget` would find that one. What is in the hand decides: the melee mod swings any `melee.bat`

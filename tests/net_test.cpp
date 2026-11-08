@@ -2939,6 +2939,16 @@ void TestProtocol()
 									uint8_t( random( 4 ) ), random( 3 ) == 0 ? 0u : tick - 1 - random( 20000 ) };
 				}
 			}
+			// What it carries (M260): kinds, and which are in use.
+			if ( random( 5 ) == 0 )
+			{
+				p.kindCount = uint8_t( random( kPuppetKinds + 1 ) );
+				for ( size_t k = 0; k < kPuppetKinds; ++k )
+				{
+					p.kinds[k] = k < p.kindCount ? uint16_t( random( 300 ) ) : uint16_t( 0 );
+				}
+				p.kindsInUse = uint16_t( random( 65536 ) );
+			}
 			return p;
 		};
 		Puppet was;
@@ -7802,6 +7812,37 @@ void TestHybridPuppets()
 	CHECK( statesSeen.size() >= 4 ); // (it walked, jabbed and stood)
 	CHECK( same * 100 >= samples * 97 );
 	CHECK( within * 100 >= samples * 95 );
+
+	// What the fighter carries (M260): what it has put away out of sight (the brawl kit's other
+	// skills) is not on the watcher's game, which knows it all from its puppet; what is in its hand
+	// is. Its own game has every one of its items.
+	{
+		uint16_t onServerKinds[kPuppetKinds], watcherKinds[kPuppetKinds];
+		uint8_t onServerCount = 0, watcherCount = 0;
+		uint16_t onServerInUse = 0, watcherInUse = 0;
+		server.KindsOf( fighterId, onServerKinds, onServerCount, onServerInUse );
+		Simulation* seen = watcher.client->Sim();
+		seen->KindsOf( fighterId, watcherKinds, watcherCount, watcherInUse );
+		size_t items = 0, hiddenOnServer = 0, onWatcher = 0, onFighter = 0;
+		for ( uint32_t item : server.CarriedItemsOf( fighterId ) )
+		{
+			items += 1;
+			const flecs::entity e = server.FindEntity( item );
+			const HeldItem& held = e.get<HeldItem>();
+			const bool hidden = held.stowed != 0 && held.socket == kNoSocket;
+			hiddenOnServer += hidden ? 1 : 0;
+			onWatcher += seen->FindEntity( item ).is_valid() ? 1 : 0;
+			onFighter += fighter.client->Sim()->FindEntity( item ).is_valid() ? 1 : 0;
+		}
+		std::printf( "    what the fighter carries: %zu items (%zu put away out of sight); the watcher has %zu of them, the fighter "
+					 "%zu; its puppet names %u kinds (%u on the server)\n",
+					 items, hiddenOnServer, onWatcher, onFighter, unsigned( watcherCount ), unsigned( onServerCount ) );
+		CHECK( items >= 4 && hiddenOnServer >= 3 );
+		CHECK( onWatcher == items - hiddenOnServer );
+		CHECK( onFighter == items );
+		CHECK( watcherCount == onServerCount && watcherInUse == onServerInUse &&
+			   std::equal( watcherKinds, watcherKinds + watcherCount, onServerKinds ) );
+	}
 }
 
 // Sets a field only its player sees and one everyone sees on every player, each its slot + 7.

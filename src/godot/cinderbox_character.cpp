@@ -1,4 +1,5 @@
 #include "cinderbox_character.h"
+#include "look.h"
 
 #include "cinderbox_track_player.h"
 #include "cinderbox_skeleton.h"
@@ -267,6 +268,7 @@ void CbCharacter::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "bake_to", "folder" ), &CbCharacter::bake_to );
 	ClassDB::bind_method( D_METHOD( "bake" ), &CbCharacter::bake );
 	ClassDB::bind_method( D_METHOD( "build_track_library" ), &CbCharacter::build_track_library );
+	ClassDB::bind_method( D_METHOD( "describe_look" ), &CbCharacter::describe_look );
 	ClassDB::bind_method( D_METHOD( "get_bake_button" ), &CbCharacter::get_bake_button );
 
 #define CB_PROP( type, name, hint, hintText )                                                                                          \
@@ -1165,6 +1167,50 @@ void CbCharacter::bake()
 	}
 }
 
+Dictionary CbCharacter::describe_look()
+{
+	Dictionary out;
+	std::shared_ptr<const anim::AnimSet> procedural = anim::AnimSet::CreateProcedural();
+	std::shared_ptr<CharacterLook> look = CharacterLook::FromScene( this, *procedural );
+	if ( look == nullptr )
+	{
+		return out;
+	}
+	int64_t skinned = 0;
+	for ( const CharacterLook::Mesh& mesh : look->Meshes() )
+	{
+		skinned += mesh.skinned ? 1 : 0;
+	}
+	out["meshes"] = int64_t( look->Meshes().size() );
+	out["skinned"] = skinned;
+	PackedStringArray effects, sockets, tracks;
+	for ( const CharacterLook::Effect& effect : look->Effects() )
+	{
+		effects.push_back( effect.name );
+	}
+	for ( const CharacterLook::Socket& socket : look->Sockets() )
+	{
+		sockets.push_back( socket.name );
+	}
+	if ( look->Tracks().is_valid() )
+	{
+		TypedArray<StringName> names = look->Tracks()->get_animation_list();
+		for ( int64_t a = 0; a < names.size(); ++a )
+		{
+			Ref<Animation> animation = look->Tracks()->get_animation( names[a] );
+			for ( int32_t t = 0; t < animation->get_track_count(); ++t )
+			{
+				tracks.push_back( String( names[a] ) + ": " + String( animation->track_get_path( t ) ) );
+			}
+		}
+	}
+	out["effects"] = effects;
+	out["sockets"] = sockets;
+	out["tracks"] = tracks;
+	out["not_drawn"] = look->NotDrawn();
+	return out;
+}
+
 Ref<AnimationLibrary> CbCharacter::build_track_library()
 {
 	Ref<AnimationLibrary> library;
@@ -1745,40 +1791,21 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		return fail( "no hitboxes: add CbHitbox shapes under BoneAttachment3D nodes" );
 	}
 
-	// The ozz pose places the body; hitboxes follow it. Godot animation may add to a player, but
-	// nothing it does to a bone with a hitbox is seen by the server.
-	String hitBones;
-	for ( const anim::Hitbox& box : hitboxes.boxes )
+	// The game draws the character by its look (look.h, M260): what the look does not take is not
+	// in the game (scripts, other nodes, Godot animation on the skeleton, its modifiers).
+	PackedStringArray notDrawn;
+	if ( IsPack() == false )
 	{
-		String bone = String::utf8( box.bone.c_str() );
-		if ( hitBones.contains( bone ) == false )
+		std::shared_ptr<const anim::AnimSet> procedural = anim::AnimSet::CreateProcedural();
+		if ( std::shared_ptr<CharacterLook> look = CharacterLook::FromScene( this, *procedural ) )
 		{
-			hitBones += ( hitBones.is_empty() ? "" : ", " ) + bone;
+			notDrawn = look->NotDrawn();
+		}
+		for ( const String& part : notDrawn )
+		{
+			warnings += "not drawn in the game: " + part + "; ";
 		}
 	}
-	std::function<void( Node* )> scan = [&]( Node* node ) {
-		if ( auto* other = Object::cast_to<AnimationTree>( node ); other != nullptr && other != tree )
-		{
-			warnings += "AnimationTree " + String( other->get_name() ) +
-						" runs before the ozz pose: on players only what the pose leaves alone survives (faces, props, "
-						"materials; not " +
-						hitBones + "); ";
-		}
-		if ( auto* modifier = Object::cast_to<SkeletonModifier3D>( node ) )
-		{
-			if ( Object::cast_to<CbPoseModifier>( node ) == nullptr )
-			{
-				warnings += "skeleton modifier " + String( modifier->get_name() ) +
-							" runs after the ozz pose: keep it off the bones with hitboxes (" + hitBones +
-							"), or the server will hit where it is not drawn; ";
-			}
-		}
-		for ( int i = 0; i < node->get_child_count(); ++i )
-		{
-			scan( node->get_child( i ) );
-		}
-	};
-	scan( this );
 	if ( IsPack() == false && WriteText( folder + "hitboxes.cfg", anim::FormatHitboxes( hitboxes ), error ) == false )
 	{
 		return fail( error );
@@ -1794,6 +1821,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	result["clips"] = clips;
 	result["hitboxes"] = int64_t( hitboxes.boxes.size() );
 	result["warnings"] = warnings;
+	result["not_drawn"] = notDrawn;
 	return result;
 }
 

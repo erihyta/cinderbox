@@ -23,6 +23,9 @@ namespace cb
 inline constexpr size_t kPuppetLayers = 12;
 // Positions in a puppet, in steps per metre.
 inline constexpr float kPuppetGrid = 256.0f;
+// How many of what a character carries its puppet names (M260): by kind, so a client knows what it
+// holds and carries without its items (those put away out of sight are not sent to the others).
+inline constexpr size_t kPuppetKinds = 16;
 
 enum PuppetFlags : uint8_t
 {
@@ -67,10 +70,15 @@ struct Puppet
 	uint8_t stances[kPuppetLayers] = {};
 	PuppetLayer layers[kPuppetLayers];
 	uint32_t reserved = 0;
+	uint16_t kinds[kPuppetKinds] = {}; // what it carries, by item kind (its items in the state's order)
+	uint16_t kindsInUse = 0;		   // of those, a bit each: in use (in a hand), not put away
+	uint8_t kindCount = 0;
+	uint8_t reserved2 = 0;
+	uint32_t reserved3 = 0;
 
 	bool operator==( const Puppet& ) const = default;
 };
-static_assert( sizeof( PuppetLayer ) == 8 && sizeof( Puppet ) == 152, "Puppet has padding: a server hashes it as bytes" );
+static_assert( sizeof( PuppetLayer ) == 8 && sizeof( Puppet ) == 192, "Puppet has padding: a server hashes it as bytes" );
 
 // A puppet of one entity in a state (by NetId), and the state it was made in: a client keeps one
 // it was last sent while the entity is left out of later ones (by distance).

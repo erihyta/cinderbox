@@ -89,8 +89,12 @@ struct EntityFixed
 	uint32_t motionsOnLow; // the motions that are on, a bit each
 	uint32_t motionsOnHigh;
 	uint32_t container; // players: the container open to it
+	uint16_t kinds[16]; // players: what it carries (M260)
+	uint16_t kindsInUse;
+	uint8_t kindCount;
+	uint8_t reserved2;
 };
-static_assert( sizeof( EntityFixed ) == 112, "EntityFixed has padding" );
+static_assert( sizeof( EntityFixed ) == 148, "EntityFixed has padding" );
 static_assert( sizeof( EntityFixed ) % 4 == 0 );
 
 // And what is as long as the server made it: its animation's layers, its fields.
@@ -157,6 +161,9 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.slotCount = f.slotCount;
 	r.container = f.container;
 	r.character = f.character;
+	std::memcpy( r.kinds, f.kinds, sizeof( r.kinds ) );
+	r.kindsInUse = f.kindsInUse;
+	r.kindCount = f.kindCount;
 	return r;
 }
 
@@ -193,6 +200,9 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.slotIndex = r.slotIndex;
 	f.slotCount = r.slotCount;
 	f.container = r.container;
+	std::memcpy( f.kinds, r.kinds, sizeof( f.kinds ) );
+	f.kindsInUse = r.kindsInUse;
+	f.kindCount = uint8_t( std::min<uint32_t>( r.kindCount, 16u ) );
 	return f;
 }
 

@@ -5,128 +5,107 @@ namespace cb::gd
 
 // --- Sockets and held items ------------------------------------------------------------------------
 
-namespace
-{
-
-Transform3D HandSocketFrame()
-{
-	return CbItem::HandSocketFrame();
-}
-
-void CollectSocketNodes( Node* node, std::vector<CbSocket*>& out )
-{
-	if ( auto* socket = Object::cast_to<CbSocket>( node ) )
-	{
-		out.push_back( socket );
-	}
-	for ( int i = 0; i < node->get_child_count(); ++i )
-	{
-		CollectSocketNodes( node->get_child( i ), out );
-	}
-}
-
-} // namespace
-
-void CinderboxClient::CollectSockets( uint64_t visual, Node3D* node )
-{
-	std::vector<SocketPlace>& places = m_sockets[visual];
-	places.clear();
-	m_socketMoves.clear();
-	std::vector<CbSocket*> found;
-	CollectSocketNodes( node, found );
-	for ( CbSocket* socket : found )
-	{
-		// What sits in a socket in the editor is a preview.
-		for ( int i = socket->get_child_count() - 1; i >= 0; --i )
-		{
-			Node* preview = socket->get_child( i );
-			socket->remove_child( preview );
-			preview->queue_free();
-		}
-		SocketPlace place;
-		place.node = socket->get_instance_id();
-		place.name = socket->get_name();
-		place.bone = socket->get_bone();
-		place.local = socket->get_transform();
-		if ( auto* attachment = Object::cast_to<BoneAttachment3D>( socket->get_parent() ) )
-		{
-			if ( place.bone.is_empty() )
-			{
-				place.bone = attachment->get_bone_name();
-			}
-		}
-		else
-		{
-			place.local = Transform3D(); // not under a bone: at the bone itself
-		}
-		places.push_back( place );
-		// In the game every socket is a child of the entity itself, placed from the pose every frame:
-		// "^^/RightHand/Item" is the same path on every rig.
-		if ( socket->get_parent() != node )
-		{
-			m_socketMoves.emplace_back( String( node->get_path_to( socket ) ), String( socket->get_name() ) );
-			socket->get_parent()->remove_child( socket );
-			node->add_child( socket );
-		}
-	}
-	// Every character has hands to hold things in, and a head to hang things on.
-	for ( const char* hand : { "RightHand", "LeftHand", "Head" } )
-	{
-		bool have = false;
-		for ( const SocketPlace& place : places )
-		{
-			have |= place.name == hand;
-		}
-		if ( have )
-		{
-			continue;
-		}
-		auto* socket = memnew( CbSocket );
-		socket->set_name( hand );
-		socket->set_bone( hand );
-		node->add_child( socket );
-		SocketPlace place;
-		place.node = socket->get_instance_id();
-		place.name = hand;
-		place.bone = hand;
-		bool isHand = String( hand ) != "Head";
-		place.local = isHand ? HandSocketFrame() : Transform3D();
-		place.itemFrame = isHand;
-		places.push_back( place );
-	}
-}
-
-void CinderboxClient::PlaceSockets( uint64_t visual, Node3D* node )
+void CinderboxClient::PlaceSockets( uint64_t visual )
 {
 	auto it = m_sockets.find( visual );
-	CinderboxSkeleton* skeleton = FindSkeleton( node );
-	if ( it == m_sockets.end() || skeleton == nullptr )
+	DrawnBody* body = BodyOf( visual );
+	if ( it == m_sockets.end() || body == nullptr )
 	{
 		return;
 	}
-	// From the pose itself, so what a socket holds is where the server's pose has the bone. The
-	// viewer's own hands in first person are where the view draws them (the view's pose), and
-	// where the body's pose has them is kept for the shadow of what they hold.
-	bool view = m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() );
+	if ( auto effects = m_effects.find( visual ); effects != m_effects.end() )
+	{
+		const Transform3D skeleton = body->Look().SkeletonInRoot();
+		for ( const EffectPlace& effect : effects->second )
+		{
+			if ( auto* node = Object::cast_to<Node3D>( ObjectDB::get_instance( effect.node ) ) )
+			{
+				node->set_transform( effect.bone >= 0 ? skeleton * body->BoneGlobal( effect.bone ) * effect.local : effect.local );
+			}
+		}
+	}
+	// From the pose itself, so what a socket holds is where the server's pose has the bone; in the
+	// entity's frame (the sockets are its children: they move with it). The viewer's own hands in
+	// first person are where the view draws them (the view's pose), and where the body's pose has
+	// them is kept for the shadow of what they hold.
+	const bool view = m_firstPersonVisual == visual;
+	const Transform3D pose = body->Look().PoseInRoot();
 	for ( const SocketPlace& place : it->second )
 	{
 		auto* socket = Object::cast_to<Node3D>( ObjectDB::get_instance( place.node ) );
 		Transform3D joint;
-		if ( socket == nullptr || skeleton->JointTransform( place.bone, joint, place.itemFrame ) == false )
+		if ( socket == nullptr || body->JointTransform( place.bone, joint, place.itemFrame ) == false )
 		{
 			continue;
 		}
-		Transform3D body = skeleton->get_global_transform() * joint * place.local;
-		bool hand = place.name == String( "RightHand" ) || place.name == String( "LeftHand" );
-		if ( view && hand && skeleton->JointTransform( place.bone, joint, place.itemFrame, true ) )
+		const bool hand = place.name == String( "RightHand" ) || place.name == String( "LeftHand" );
+		if ( view && hand )
 		{
-			m_trueSockets[socket->get_instance_id()] = body;
-			socket->set_global_transform( skeleton->get_global_transform() * joint * place.local );
+			m_trueSockets[socket->get_instance_id()] = body->PoseGlobal() * joint * place.local;
+			if ( body->JointTransform( place.bone, joint, place.itemFrame, true ) )
+			{
+				socket->set_transform( pose * joint * place.local );
+			}
 			continue;
 		}
 		m_trueSockets.erase( socket->get_instance_id() );
-		socket->set_global_transform( body );
+		socket->set_transform( pose * joint * place.local );
 	}
+}
+
+std::shared_ptr<const ItemLook> CinderboxClient::PlainItemLook( const present::Visual& v )
+{
+	if ( v.itemKind >= m_frame.schema.itemKinds.size() )
+	{
+		return nullptr;
+	}
+	const std::string& kind = m_frame.schema.itemKinds[v.itemKind];
+	if ( auto found = m_plainItemLooks.find( kind ); found != m_plainItemLooks.end() )
+	{
+		return found->second;
+	}
+	std::shared_ptr<const ItemLook> look;
+	Ref<PackedScene> prefab = Prefab( v );
+	if ( Node* instance = prefab.is_valid() ? cue::Instantiate( prefab ) : nullptr )
+	{
+		std::shared_ptr<ItemLook> made = ItemLook::FromScene( instance );
+		memdelete( instance );
+		if ( made != nullptr && made->Plain() && made->Parts().empty() == false )
+		{
+			look = std::move( made );
+		}
+	}
+	m_plainItemLooks[kind] = look;
+	return look;
+}
+
+bool CinderboxClient::DrawsWithoutNode( const present::Visual& v )
+{
+	// In another player's socket (not the viewer's own: its view model and predictions are nodes'),
+	// and its scene only looks.
+	return v.kind == present::VisualKind::Item && v.holder != 0 && v.holder != m_frame.frame.localNetId &&
+		   SocketNode( v.holder, v.socket ) != nullptr && PlainItemLook( v ) != nullptr;
+}
+
+void CinderboxClient::UpdateDrawnItem( uint64_t visual, const present::Visual& v, DrawnItem& item )
+{
+	Node3D* socket = DrawsWithoutNode( v ) ? SocketNode( v.holder, v.socket ) : nullptr;
+	flecs::entity holder = socket != nullptr ? m_mirror->VisualOf( v.holder ) : flecs::entity();
+	const DrawnBody* body = holder.is_valid() ? BodyOf( holder.id() ) : nullptr;
+	if ( body == nullptr )
+	{
+		// Out of sight now, or a node's to draw (its holder's own, lying in the world): the next
+		// frame makes that.
+		m_drawnItems.erase( visual );
+		return;
+	}
+	// Where its socket is on the body (the socket's place, as the pose put it), and the scene in
+	// it as a node of it would be (SceneInSocket).
+	const Transform3D inSocket = v.socket <= kSocketLeftHand ? item.Look().InCarriedFrame() : Transform3D();
+	item.Place( body->Global() * socket->get_transform() * inSocket );
+	const bool dead = holder.get<present::Visual>().dead;
+	item.SetVisible( dead == false );
+	item.SetShadows( m_eyeKnown == false || m_eye.distance_squared_to( body->Global().origin ) < kShadowDistance * kShadowDistance );
 }
 
 Node3D* CinderboxClient::SocketNode( uint32_t holderNetId, uint8_t socket ) const
@@ -301,14 +280,45 @@ void CinderboxClient::FullItem( Node3D* node, const present::Visual& v )
 
 void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node )
 {
-	// Nobody has it: only its look, body and own reactions. Somebody does: all of it.
+	// Nobody has it: only its look, body and own reactions. Somebody does: all of it; but what is
+	// the viewer's alone (its predictions) and the simulation's (its motions) only in the viewer's
+	// own hands (M260: every other player's bat predicted the viewer's swing).
+	static const StringName kForOthers( "cb_for_others" );
+	const bool others = v.holder != 0 && v.holder != m_frame.frame.localNetId;
 	if ( v.holder == 0 )
 	{
 		LeanItem( node );
+		node->remove_meta( kForOthers );
+	}
+	else if ( others == false && node->has_meta( kForOthers ) )
+	{
+		// It came to the viewer from another: made again, with what is the viewer's.
+		ItemShadow( node, nullptr );
+		node->set_name( "Removed" );
+		node->queue_free();
+		m_nodes.erase( visual );
+		m_stateHashes.erase( visual );
+		m_itemHolders.erase( visual );
+		ItemsChanged( v.holder );
+		return;
 	}
 	else
 	{
 		FullItem( node, v );
+		if ( others && node->has_meta( kForOthers ) == false )
+		{
+			node->set_meta( kForOthers, true );
+			TypedArray<Node> found = node->find_children( "*", "CbPrediction", true, false );
+			found.append_array( node->find_children( "*", "CbMotionPart", true, false ) );
+			for ( int64_t i = 0; i < found.size(); ++i )
+			{
+				if ( Node* n = Object::cast_to<Node>( found[i] ); n != nullptr && n->is_queued_for_deletion() == false )
+				{
+					n->get_parent()->remove_child( n );
+					n->queue_free();
+				}
+			}
+		}
 	}
 	// Floating in the viewer's own first-person view (CbItem.view_camera): out of its socket's
 	// frame while it does, and back in it the moment it does not (dropped, put away, another view).
@@ -370,6 +380,21 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	drawnWith = v.holder;
 	// In its holder's socket (the holder's node may have been rebuilt since).
 	Node3D* socket = SocketNode( v.holder, v.socket );
+	if ( ( socket == nullptr && ItemOutOfSight( v ) ) || ( socket != nullptr && DrawsWithoutNode( v ) ) )
+	{
+		// Another's, put away out of sight: no node until it is in sight again (M260).
+		if ( String( node->get_name() ) == String( "Item" ) )
+		{
+			ItemsChanged( v.holder );
+		}
+		ItemShadow( node, nullptr );
+		node->set_name( "Removed" );
+		node->queue_free();
+		m_nodes.erase( visual );
+		m_stateHashes.erase( visual );
+		m_itemHolders.erase( visual );
+		return;
+	}
 	if ( socket == nullptr )
 	{
 		// Stowed out of sight (or this character has no such socket): the hand's "Item" is free for
