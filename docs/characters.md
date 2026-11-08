@@ -209,25 +209,43 @@ The placeholder rig is drawn as one box per bone, with the bone names of Godot's
 is the profile Godot retargets imported characters onto, so a character imported the normal way
 is driven with no mapping of our own.
 
-### Godot animation on players: cosmetic only
+### How the game draws a character: its look
 
 **One rule:** the ozz pose, computed from the simulation's state, is the only thing that places a
 player's body. It is the pose the server poses hitboxes with, so a body drawn any other way would
-be shot where it is not. Godot animation may add to a player what the pose leaves alone: faces,
-fingers, props, materials, effects.
+be shot where it is not.
 
-This is enforced, not just advised. A `CinderboxSkeleton` driving a `Skeleton3D` gives it a
-`CbPoseModifier` as its first skeleton modifier, which applies the ozz pose again after any
-`AnimationPlayer` or `AnimationTree` has run. Modifiers after it (look-at, spring bones) run on top of
-the pose; the character bake warns about them and about an `AnimationTree`, naming the bones that
-have hitboxes.
+The game does not put a character's scene in its world (M260). It reads the scene once, as its
+**look**, and draws every body of that character with it through the RenderingServer: one skeleton
+and one instance per mesh, the bones set from the pose. There is no node per bone, mesh or socket
+attachment, and nothing of the scene runs. So a crowd of a few hundred costs little more than its
+meshes.
 
-What a character's animations do besides moving bones (particles, sounds, lights) stays in the
-animations and plays in step with the pose: see
-[An animation's other tracks](#an-animations-other-tracks).
+| In the scene | In the game |
+|---|---|
+| a mesh skinned to the skeleton the `CinderboxSkeleton` drives | drawn, posed by the ozz pose |
+| a mesh under a `BoneAttachment3D` (a helmet, a horn) | drawn, riding on that bone |
+| any other mesh | drawn, where it is in the scene |
+| a hidden mesh | not drawn |
+| materials (surface overrides, the override, the overlay), layers, cast shadow, LOD bias | as set |
+| particles, lights, an `AudioStreamPlayer3D` | nodes of the entity, at their bone, for the animations' [other tracks](#an-animations-other-tracks) |
+| `CbSocket`s | sockets (the hands and the head are made when the scene has none) |
+| `CbHitbox`es, the `AnimationTree`, the first-person `Camera3D` | baked (the simulation's), not drawn |
+| a script, any other node (a `Sprite3D`, a `Label3D`), a skeleton modifier (look-at, spring bones), Godot animation on the skeleton | **not in the game** |
+
+The character bake says what is not in the game (`not drawn in the game: Badge (Sprite3D)`), and
+`CbCharacter.describe_look()` says what the game takes: its meshes, effects, sockets and tracks.
+The editor's scene and its preview stay as they are: there the `CinderboxSkeleton`'s modifier
+still applies the pose after any `AnimationPlayer` or `AnimationTree`.
+
+- **Far off**: posed less often (M259), and no shadow beyond 40 m from the camera.
+- **First person**: your own body is drawn the same way, casts its shadow and is not drawn for you;
+  you see copies of it, your legs (below the waist) and your arms (over the world).
 
 ```sh
-# check that the ozz pose wins over Godot animation on a driven skeleton
+# what the game takes from a character's scene (a scene made in code, and the mannequin)
+godot --headless --path godot --script res://addons/cinderbox_maps/check_look.gd
+# the ozz pose wins over Godot animation on a driven skeleton (in the editor)
 godot --headless --path godot --script res://addons/cinderbox_maps/check_pose_wins.gd
 ```
 
@@ -376,7 +394,9 @@ bone tracks next to any other track. One rule says where each track goes:
 | Tracks | Become | Played by |
 |---|---|---|
 | position / rotation / scale of the `Skeleton3D`'s bones | ozz clips (the bake) | the pose (drawn by clients, hit-tested by the server) |
-| everything else: value (`emitting`, `visible`, `light_energy`, material colours), method, audio, animation | nothing: they stay in the animation | each client, in step with the pose |
+| on particles, a light, an `AudioStreamPlayer3D` in the scene (value, method, audio) | nothing: they stay in the animation | each client, in step with the pose, on the entity's copy of that node |
+| on what a socket holds (`RightHand/Item/AnimationPlayer`: the item's own animation) | the same | the same, through the socket |
+| on anything else (a mesh's `visible`, a material's colour) | **not played** (the bake says so) | |
 
 So a flame on the swing is two keys on the swing animation (`Flame:emitting` on at 0.1 s, off at
 0.34 s), and a whoosh is an audio key, all in Godot's animation editor. There is no second file
@@ -406,8 +426,9 @@ layer), at the clip and time the pose is playing.
 - Animation packs are bones only: their other tracks are not played.
 
 A swing can have a fire trail and a whoosh made this way. Put the nodes the tracks reach
-(particles, lights, an `AudioStreamPlayer3D`) in the character scene, and list the sounds in the
-item's export preset.
+(particles, lights, an `AudioStreamPlayer3D`) in the character scene, under the bone they ride on
+(a `BoneAttachment3D`), and list the sounds in the item's export preset. Only a character that has
+them pays for them: each of its bodies gets its own copies.
 
 ```sh
 godot --headless --path godot --script res://addons/cinderbox_maps/check_track_player.gd

@@ -1,7 +1,7 @@
 extends RefCounted
-## Pictures of the same moments of a view file from the same places (--shots=DIR with --view=FILE),
+## Pictures of the same moments of a view file from the same places (--look-shots=DIR with --view=FILE),
 ## to compare how the world is drawn before and after a change to the drawing (M260): at each of
-## --shots-at=SECONDS,... (default 6,10,14) the playback is sought there and paused, and from each
+## --look-shots-at=SECONDS,... (default 6,10,14) the playback is sought there and paused, and from each
 ## place the frame is saved as DIR/<seconds>_<place>.png. Then the game quits.
 ##
 ## The places, from where the players are at that moment: the crowd from above ("crowd"), the player
@@ -22,8 +22,8 @@ var _have_camera := false
 
 func _init(owner: Node, args: Dictionary) -> void:
 	game = owner
-	dir = String(args["shots"])
-	for part in String(args.get("shots-at", "6,10,14")).split(",", false):
+	dir = String(args["look-shots"])
+	for part in String(args.get("look-shots-at", "6,10,14")).split(",", false):
 		moments.append(float(part))
 	DirAccess.make_dir_recursive_absolute(dir)
 

@@ -45,7 +45,7 @@ extends Node3D
 ##                            --replay=FILE --view=FILE
 ##                            --host-local[=MODS] --bots=N   start a server here, join it, stop it on leaving (host.gd)
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS --measure-from=SECONDS
-##                            --shots=DIR [--shots-at=S,S,...]   with --view: set moments from set places (look_shots.gd)
+##                            --look-shots=DIR [--look-shots-at=S,S,...]   with --view: set moments from set places (look_shots.gd)
 ##                            --mods=DIR --workshop=DIR --config=FILE
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
 ## Autoplay also says how long its frames took and where that went, from --measure-from seconds in (3).
@@ -96,7 +96,7 @@ var auto: Autoplay # the unattended player
 var presentation: Presentation # reactions, items and their HUDs, screen effects
 var view_camera: ViewCamera # the camera and the view model
 var keys: Keys # the game's keys, the server's actions, the slots' keys, the help line
-var shots: LookShots # --shots: pictures of a view file's moments from set places (look_shots.gd)
+var shots: LookShots # --look-shots: pictures of a view file's moments from set places (look_shots.gd)
 
 ## A screen of a mod's (an inventory) has the mouse: the cursor is free and the game does not use it.
 var _ui_cursor := false
@@ -125,7 +125,7 @@ func _ready() -> void:
 	view_camera = ViewCamera.new(self, camera)
 	RenderingServer.frame_pre_draw.connect(view_camera.update)
 	view_camera.make_view_model()
-	if args.has("shots"):
+	if args.has("look-shots"):
 		shots = LookShots.new(self, args)
 		RenderingServer.frame_pre_draw.connect(shots.place_camera)
 	if ClassDB.class_exists("CinderboxPeer"):

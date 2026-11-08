@@ -913,7 +913,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, uint8_t character, uint64
 	}
 	skeleton->SetFirstPerson( true );
 	m_viewAimKnown = false;
-	// The body draws no arms of its own: the view's are a copy (CinderboxSkeleton::SetViewPose),
+	// The body draws no arms of its own: the view's are a copy (DrawnBody::SetViewPose),
 	// drawn as what is held says: which hands, with what field of view, and bent onto it when it
 	// floats in the view (CbItem.view_camera) and not as the pose has them.
 	bool floats = false;
@@ -1260,7 +1260,7 @@ void CinderboxClient::place_view_items( const Transform3D& camera, double delta 
 
 int64_t CinderboxClient::get_view_layer() const
 {
-	return int64_t( CinderboxSkeleton::kViewLayer );
+	return int64_t( DrawnBody::kViewLayer );
 }
 
 Array CinderboxClient::get_drawn_clips( int64_t net_id ) const
@@ -1400,7 +1400,7 @@ void CinderboxClient::ViewLayers( Node* node, bool on )
 			// A light stays in the world's picture too: a muzzle flash lights the room, and the
 			// arms that hold it.
 			bool light = Object::cast_to<Light3D>( node ) != nullptr;
-			visual->set_layer_mask( light ? visual->get_layer_mask() | CinderboxSkeleton::kViewLayer : CinderboxSkeleton::kViewLayer );
+			visual->set_layer_mask( light ? visual->get_layer_mask() | DrawnBody::kViewLayer : DrawnBody::kViewLayer );
 			if ( geometry != nullptr )
 			{
 				geometry->set_meta( kCast, int64_t( geometry->get_cast_shadows_setting() ) );

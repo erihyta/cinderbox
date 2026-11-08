@@ -304,37 +304,6 @@ void CinderboxClient::PushStates()
 	director->set_local( m_frame.frame.localNetId != 0 ? get_entity_node( int64_t( m_frame.frame.localNetId ) ) : nullptr );
 }
 
-void CinderboxClient::RetargetTracks( ViewCharacter& character, Node* entity, Node* root )
-{
-	if ( character.tracks.is_null() || m_socketMoves.empty() || character.retargeted )
-	{
-		return;
-	}
-	character.retargeted = true;
-	// Track paths are from `root`; the moves are from the entity.
-	String rootFromEntity = String( entity->get_path_to( root ) );
-	String entityFromRoot = String( root->get_path_to( entity ) );
-	TypedArray<StringName> names = character.tracks->get_animation_list();
-	for ( int64_t i = 0; i < names.size(); ++i )
-	{
-		Ref<Animation> animation = character.tracks->get_animation( names[i] );
-		for ( int32_t t = 0; animation.is_valid() && t < animation->get_track_count(); ++t )
-		{
-			String path = String( animation->track_get_path( t ) );
-			String full = rootFromEntity == "." ? path : rootFromEntity + "/" + path;
-			for ( const auto& [from, to] : m_socketMoves )
-			{
-				if ( full == from || full.begins_with( from + String( "/" ) ) || full.begins_with( from + String( ":" ) ) )
-				{
-					String moved = to + full.substr( from.length() );
-					animation->track_set_path( t, NodePath( entityFromRoot == "." ? moved : entityFromRoot + "/" + moved ) );
-					break;
-				}
-			}
-		}
-	}
-}
-
 std::shared_ptr<const CharacterLook> CinderboxClient::LookOf( const present::Visual& v )
 {
 	const bool ragdoll = v.kind == present::VisualKind::Ragdoll;

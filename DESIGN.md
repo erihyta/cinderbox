@@ -491,7 +491,7 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 loads mods; `workshop.gd` is where items are.
 
 - **Threads**: a source simulates on its own thread and publishes frames; the main thread takes the newest and extrapolates the interpolation alpha. Input is latched until the source consumed it.
-- **Nodes**: each visual is a prefab instance (checked by the scene guard); players are their character's scene, posed by a `CinderboxSkeleton`.
+- **Nodes**: each visual is a prefab instance (checked by the scene guard); a player or a ragdoll is an entity node with its sockets, its body drawn by its character's look through the RenderingServer, posed by the ozz pose (`look.h`, M260); another player's item that only looks is its meshes, and one put away out of sight is neither sent nor drawn.
 - **Camera**: third person, collides with the map; Godot yaw = simulation yaw − π.
 - **The menu**: join by address, settings, an in-game menu; joining another server restarts the process so mounted packs are clean.
 - **Jolt** is enabled for client-only effects; simulation entities never get Godot physics bodies.
@@ -569,7 +569,8 @@ src/present/      engine-independent presentation, what the Godot extensions dra
   pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
 src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a view source's frames as prefabs,
-                  signals, items; the adapter that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
+                  signals, items; the adapter that drives the World director), the look (look.*: every body and another's
+                  plain item drawn through the RenderingServer), CinderboxSkeleton (the editor's), map and entity authoring nodes,
                   CbItem, HUD labels (cinderbox_hud.*), CbMotion (cinderbox_motion.*). No simulation, no networking
   object_source.*   a source that is a Godot object handing over packets (the peer, or a script)
   peer/             the peer GDExtension (cinderbox_peer): CinderboxPeer, the sources that simulate

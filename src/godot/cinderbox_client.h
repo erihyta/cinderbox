@@ -6,8 +6,10 @@
 // file it plays itself, or an object from elsewhere that hands frames over as bytes (the peer
 // extension's CinderboxPeer: a live connection, a recording; or a script). This library holds no
 // simulation and no networking. It mirrors the frames and turns them into Godot nodes, one
-// instance of a prefab scene per simulation entity, moved every frame, with ozz poses applied to
-// players. Everything visual is data the game or mods provide:
+// instance of a prefab scene per simulation entity, moved every frame; but a player or a ragdoll is
+// an entity node with its sockets, its body drawn by its character's look through the
+// RenderingServer with the ozz pose (look.h, M260), and another player's item that only looks is its
+// meshes alone. Everything visual is data the game or mods provide:
 //   <prefab_dir>/static_box.tscn   level geometry        (unit box, scaled to size)
 //   <prefab_dir>/prop_box.tscn      box props             (unit box)
 //   <prefab_dir>/prop_sphere.tscn   sphere props          (unit-diameter sphere)
@@ -324,12 +326,6 @@ private:
 		godot::String folder; // res://characters/<name>/ ("": the built-in prefab)
 		bool loaded = false;  // false: drawn as the server's own
 		std::shared_ptr<const anim::AnimSet> set; // its baked skeleton and clips (null: not loaded)
-		// What its animations do besides moving bones, copied out of its AnimationPlayer when the
-		// first one is drawn (null: nothing, or not looked yet); its tracks pointed at the moved
-		// sockets once.
-		godot::Ref<godot::AnimationLibrary> tracks;
-		bool tracksBuilt = false;
-		bool retargeted = false;
 	};
 	std::vector<ViewCharacter> m_characters;
 	// The character a body is drawn as (null: none known yet, the built-in prefab).
@@ -433,12 +429,6 @@ private:
 	// director, whose predictions show what the server will answer.
 	void AnnouncePresses( ActionBits pressed );
 	godot::String EntityName( const present::Visual& v ) const;
-	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on
-	// every rig); the animation tracks that reached an item through the socket's authored place are
-	// pointed at the new one, once per character.
-	std::vector<std::pair<godot::String, godot::String>> m_socketMoves; // from the entity: old path, new
-	void RetargetTracks( ViewCharacter& character, godot::Node* entity, godot::Node* root );
-
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
 	std::map<std::string, godot::String> m_itemLooks;
