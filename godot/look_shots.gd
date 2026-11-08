@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## The places, from where the players are at that moment: the crowd from above ("crowd"), the player
 ## nearest its middle from the front and from its right ("front", "side", 2.4 m off at chest height),
-## and the crowd from 30 m ("far": the far characters' look, their shadows).
+## and the crowd from 40 m off and above ("far": the far characters' look, their shadows).
 
 var game: Node
 var dir := ""
@@ -67,7 +67,7 @@ func _plan_places() -> void:
 	_places.append(["crowd", _looking(middle + Vector3(0, 9, 12), middle + Vector3(0, 1, 0))])
 	_places.append(["front", _looking(at + facing * 2.4 + Vector3(0, 1.3, 0), at + Vector3(0, 1.0, 0))])
 	_places.append(["side", _looking(at + right * 2.4 + Vector3(0, 1.3, 0), at + Vector3(0, 1.0, 0))])
-	_places.append(["far", _looking(middle + Vector3(0, 3, 30), middle + Vector3(0, 1, 0))])
+	_places.append(["far", _looking(middle + Vector3(0, 24, 30), middle + Vector3(0, 1, 0))])
 
 
 func step() -> void:

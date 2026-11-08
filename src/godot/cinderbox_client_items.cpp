@@ -283,6 +283,21 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	drawnWith = v.holder;
 	// In its holder's socket (the holder's node may have been rebuilt since).
 	Node3D* socket = SocketNode( v.holder, v.socket );
+	if ( socket == nullptr && ItemOutOfSight( v ) )
+	{
+		// Another's, put away out of sight: no node until it is in sight again (M260).
+		if ( String( node->get_name() ) == String( "Item" ) )
+		{
+			ItemsChanged( v.holder );
+		}
+		ItemShadow( node, nullptr );
+		node->set_name( "Removed" );
+		node->queue_free();
+		m_nodes.erase( visual );
+		m_stateHashes.erase( visual );
+		m_itemHolders.erase( visual );
+		return;
+	}
 	if ( socket == nullptr )
 	{
 		// Stowed out of sight (or this character has no such socket): the hand's "Item" is free for

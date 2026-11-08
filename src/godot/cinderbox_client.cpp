@@ -754,7 +754,8 @@ void CinderboxClient::HandleEvents()
 					// draws it, as for anything else.
 					break;
 				}
-				Node3D* node = CreateNode( e.visual, v );
+				// (Another player's item out of sight has no node: one is made when it comes into sight.)
+				Node3D* node = ItemOutOfSight( v ) ? nullptr : CreateNode( e.visual, v );
 				emit_signal( "visual_spawned", int64_t( e.visual ), int64_t( e.netId ), String( KindName( e.kind ) ), node, position,
 							 e.withEffect, TemplateName( v.templateIndex ) );
 				break;
@@ -1416,9 +1417,34 @@ void CinderboxClient::ViewLayers( Node* node, bool on )
 	}
 }
 
+bool CinderboxClient::ItemOutOfSight( const present::Visual& v ) const
+{
+	// Put away with no place on the body (or on a body not drawn yet): nothing of it is seen, and
+	// nothing of it plays (an item put away is silent). The viewer's own keep theirs: their
+	// predictions (a grenade's own key) are the viewer's.
+	return v.kind == present::VisualKind::Item && v.holder != 0 && v.holder != m_frame.frame.localNetId &&
+		   SocketNode( v.holder, v.socket ) == nullptr;
+}
+
 void CinderboxClient::UpdateNodes()
 {
 	m_viewItems.clear();
+	{
+		// M260: what comes into sight gets its node (at 255 players, eight of every nine items were
+		// nodes nobody saw).
+		std::vector<std::pair<uint64_t, present::Visual>> appearing;
+		m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+								const present::RagdollAnim* ) {
+			if ( v.kind == present::VisualKind::Item && m_nodes.count( id ) == 0 && ItemOutOfSight( v ) == false )
+			{
+				appearing.emplace_back( id, v );
+			}
+		} );
+		for ( const auto& [id, v] : appearing )
+		{
+			CreateNode( id, v );
+		}
+	}
 	{
 		// A body that became another character is drawn by that one's scene from now on.
 		std::vector<uint32_t> changed;

@@ -547,6 +547,8 @@ private:
 	std::map<uint64_t, std::vector<SocketPlace>> m_sockets;
 	void PlaceSockets( uint64_t visual );
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
+	// Another player's item put away out of sight: it has no node (M260).
+	bool ItemOutOfSight( const present::Visual& v ) const;
 	void UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node );
 	// A copy lying in the world is its look, its body and its own reactions: what is about a holder
 	// (a reaction whose subject is "^^", a prediction, the motion nodes) is taken out while nobody
