@@ -67,6 +67,11 @@ struct FrameEntity
 	b3Vec3 linkEnd = {};
 	// Players: the motions that are on, a bit each (the first 64 of the server's): "motion.<name>".
 	uint64_t motionsOn = 0;
+	// Players: what it carries, by item kind, and which are in use (a bit each): all of it, also
+	// what another has put away out of sight, which is not sent (M260: Simulation::KindsOf).
+	uint16_t kinds[16] = {};
+	uint16_t kindsInUse = 0;
+	uint8_t kindCount = 0;
 	// Players and ragdolls: which character's body it is (ModSchema::characters): its skeleton, its
 	// state machine, its scene. A ragdoll's: its player's.
 	uint8_t character = 0;

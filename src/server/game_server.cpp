@@ -1210,6 +1210,7 @@ void GameServer::RunTick( double now )
 		{
 			// Where everything is (by NetId, as the state has them): what a client is near.
 			kept.placed.resize( kept.layout.entities.size() );
+			kept.hidden.assign( kept.layout.entities.size(), 0 );
 			for ( size_t i = 0; i < kept.layout.entities.size(); ++i )
 			{
 				const uint32_t netId = kept.layout.entities[i].netId;
@@ -1218,6 +1219,9 @@ void GameServer::RunTick( double now )
 				const uint32_t holder = held != nullptr ? held->holder : 0;
 				const Transform* at = m_sim->EntityTransform( holder != 0 ? holder : netId );
 				kept.placed[i] = { at != nullptr ? at->position : b3Vec3{}, holder };
+				// (A character's: a container's are seen by whoever opens it.)
+				const flecs::entity by = holder != 0 ? m_sim->FindEntity( holder ) : flecs::entity();
+				kept.hidden[i] = held != nullptr && held->stowed != 0 && held->socket == kNoSocket && by.is_valid() && by.has<Character>() ? 1 : 0;
 			}
 			kept.head.resize( kept.layout.entities.size() );
 			for ( size_t i = 0; i < kept.layout.entities.size(); ++i )
@@ -1902,6 +1906,7 @@ void GameServer::KeepPuppets( KeptLayout& kept )
 	std::vector<Puppet> made( n );
 	std::vector<uint8_t> isPuppet( n, 0 );
 	const size_t slicesOf = m_stateWorkers.Threads() > 0 ? size_t( m_stateWorkers.Threads() ) * 4 : 1;
+	m_sim->IndexItems(); // (who holds what, made here: the threads below read it, M260)
 	m_stateWorkers.Run( slicesOf, [&]( size_t slice, int ) {
 		for ( size_t i = n * slice / slicesOf; i < n * ( slice + 1 ) / slicesOf; ++i )
 		{
@@ -2222,6 +2227,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		return plan.ownId != 0 && ( now.layout.entities[i].netId == plan.ownId || now.placed[i].holder == plan.ownId );
 	};
 	auto puppetOf = [&]( size_t i, bool mine ) { return mine == false && i < now.puppetGroup.size() && now.puppetGroup[i] != 0; };
+	auto hiddenFrom = [&]( size_t i ) { return i < now.hidden.size() && now.hidden[i] != 0 && mineOf( i ) == false; };
 	// The walk: each entity's record of what the client has, and the gone ones named (until a state
 	// naming them is acknowledged: StateAcknowledged). Each group as owed as its most owed: its own
 	// character and what it holds before anything, then what it was never sent, then the rest by
@@ -2245,6 +2251,17 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		Client::Known* had = k < c.known.size() && c.known[k].netId == netId ? &c.known[k++] : nullptr;
 		plan.knownAt[i] = had;
 		const bool mine = mineOf( i );
+		if ( hiddenFrom( i ) )
+		{
+			// Another's item put away out of sight: not this client's (its holder's puppet says
+			// what it carries); one it has goes.
+			if ( had != nullptr )
+			{
+				gone( *had );
+			}
+			plan.knownAt[i] = nullptr;
+			continue;
+		}
 		const bool puppet = puppetOf( i, mine );
 		const bool otherKind = had != nullptr && had->removing == false && had->acked != 0 && had->ackedPuppet != puppet;
 		const uint32_t sentAt = had != nullptr && otherKind == false ? had->sentAt : 0;
@@ -2330,6 +2347,10 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		for ( uint32_t m = now.memberAt[g]; m < now.memberAt[g + 1]; ++m )
 		{
 			const uint32_t i = now.members[m];
+			if ( hiddenFrom( i ) )
+			{
+				continue;
+			}
 			stands( i );
 			plan.groupSize[g] += plan.entries[i].same ? 0 : 1;
 			plan.groupBytes[g] += plan.entries[i].same ? 0 : plan.entries[i].bytes;
@@ -2388,7 +2409,13 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	{
 		if ( plan.groupChosen[g] != 0 )
 		{
-			plan.sending.insert( plan.sending.end(), now.members.begin() + now.memberAt[g], now.members.begin() + now.memberAt[g + 1] );
+			for ( uint32_t m = now.memberAt[g]; m < now.memberAt[g + 1]; ++m )
+			{
+				if ( hiddenFrom( now.members[m] ) == false )
+				{
+					plan.sending.push_back( now.members[m] );
+				}
+			}
 		}
 		else if ( const uint32_t h = now.heads[g]; isHead( h ) && plan.knownAt[h] != nullptr && plan.knownAt[h]->removing == false )
 		{

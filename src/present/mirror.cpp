@@ -287,6 +287,9 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		visual.linkHolds = f.linkHolds;
 		visual.linkMissed = f.linkMissed;
 		visual.motionsOn = f.motionsOn;
+		std::copy( std::begin( f.kinds ), std::end( f.kinds ), visual.kinds );
+		visual.kindsInUse = f.kindsInUse;
+		visual.kindCount = f.kindCount;
 		visual.linkMotion = f.linkMotion;
 		visual.linkEnd = f.linkEnd;
 		visual.character = f.character;

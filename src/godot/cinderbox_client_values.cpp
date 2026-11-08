@@ -134,12 +134,17 @@ void CinderboxClient::RefreshHeldKinds()
 				m_handItems.emplace( v.holder, v.netId );
 			}
 		}
-		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+		if ( v.kind == present::VisualKind::Item && v.holder != 0 && v.inUse )
 		{
-			m_carriedKinds[v.holder].push_back( v.itemKind );
-			if ( v.inUse )
+			m_usingKinds[v.holder].push_back( v.itemKind );
+		}
+		// What a player carries, as it says (M260: what another has put away out of sight is not
+		// sent as items).
+		if ( v.kind == present::VisualKind::Player )
+		{
+			for ( size_t k = 0; k < v.kindCount && k < 16; ++k )
 			{
-				m_usingKinds[v.holder].push_back( v.itemKind );
+				m_carriedKinds[v.netId].push_back( v.kinds[k] );
 			}
 		}
 		if ( v.kind == present::VisualKind::Player && v.motionsOn != 0 )

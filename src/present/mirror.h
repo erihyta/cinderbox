@@ -66,6 +66,10 @@ struct Visual
 	bool linkHolds = false;
 	bool linkMissed = false;
 	uint64_t motionsOn = 0; // the player's motions that are on, a bit each
+	// Players: what it carries, by item kind, and which are in use (FrameEntity's).
+	uint16_t kinds[16] = {};
+	uint16_t kindsInUse = 0;
+	uint8_t kindCount = 0;
 	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
 	// Players and ragdolls: which character's body (AnimLibrary::characters).

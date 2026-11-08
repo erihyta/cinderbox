@@ -180,7 +180,8 @@ enum : uint32_t
 	PuppetMotions = 256,
 	PuppetStances = 512,
 	PuppetLayersChanged = 1024,
-	PuppetAll = 2047,
+	PuppetKindsChanged = 2048, // what it carries (M260)
+	PuppetAll = 4095,
 };
 
 // A tick before `tick` as how far back it is (0: none, the tick 0; one not before it: 1 back).
@@ -392,6 +393,10 @@ void EncodePuppet( const Puppet& now, const Puppet* base, uint32_t tick, std::ve
 		layerMask |= now.layers[l] == was.layers[l] ? 0 : uint32_t( 1 ) << l;
 	}
 	changed |= layerMask != 0 || now.layerCount != was.layerCount ? PuppetLayersChanged : 0;
+	changed |= now.kindCount != was.kindCount || now.kindsInUse != was.kindsInUse ||
+					   std::memcmp( now.kinds, was.kinds, sizeof( now.kinds ) ) != 0
+				   ? PuppetKindsChanged
+				   : 0;
 	PutVarint( out, changed );
 	if ( changed & PuppetPlace )
 	{
@@ -462,6 +467,16 @@ void EncodePuppet( const Puppet& now, const Puppet* base, uint32_t tick, std::ve
 				PutVarint( out, Back( tick, L.start ) );
 			}
 		}
+	}
+	if ( changed & PuppetKindsChanged )
+	{
+		const size_t count = std::min<size_t>( now.kindCount, kPuppetKinds );
+		out.push_back( uint8_t( count ) );
+		for ( size_t k = 0; k < count; ++k )
+		{
+			PutVarint( out, now.kinds[k] );
+		}
+		PutVarint( out, now.kindsInUse );
 	}
 }
 
@@ -558,6 +573,20 @@ bool DecodePuppet( ByteReader& r, const Puppet* base, uint32_t tick, Puppet& out
 		{
 			out.layers[l] = PuppetLayer{};
 		}
+	}
+	if ( changed & PuppetKindsChanged )
+	{
+		const uint8_t n = r.Read<uint8_t>();
+		if ( r.Ok() == false || n > kPuppetKinds )
+		{
+			return false;
+		}
+		for ( size_t k = 0; k < kPuppetKinds; ++k )
+		{
+			out.kinds[k] = k < n ? uint16_t( ReadVarint( r ) ) : uint16_t( 0 );
+		}
+		out.kindCount = n;
+		out.kindsInUse = uint16_t( ReadVarint( r ) );
 	}
 	return r.Ok();
 }

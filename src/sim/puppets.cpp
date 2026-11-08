@@ -62,6 +62,31 @@ bool Simulation::IsPuppet( flecs::entity e ) const
 	return e.is_valid() && e.has<Character>() && e.has<DrivenProp>() == false && e.has<IdleBody>() == false && e.has<Transform>();
 }
 
+void Simulation::KindsOf( uint32_t netId, uint16_t* kinds, uint8_t& count, uint16_t& inUse ) const
+{
+	count = 0;
+	inUse = 0;
+	const flecs::entity e = netId != 0 ? FindEntity( netId ) : flecs::entity();
+	if ( const PuppetState* ps = e.is_valid() ? e.try_get<PuppetState>() : nullptr )
+	{
+		// (A client's stand-in of another's: as its puppet says.)
+		count = std::min<uint8_t>( ps->now.kindCount, uint8_t( kPuppetKinds ) );
+		std::copy( ps->now.kinds, ps->now.kinds + count, kinds );
+		inUse = ps->now.kindsInUse;
+		return;
+	}
+	for ( const EntityRef& item : ItemsOf( netId ) )
+	{
+		const HeldItem* h = flecs::entity( m_world, item.entity ).try_get<HeldItem>();
+		if ( h == nullptr || h->holder != netId || count >= kPuppetKinds )
+		{
+			continue;
+		}
+		inUse = uint16_t( inUse | ( h->stowed == 0 ? 1u << count : 0u ) );
+		kinds[count++] = h->kind;
+	}
+}
+
 bool Simulation::PuppetOf( uint32_t netId, const PlayerInput* input, Puppet& out ) const
 {
 	const flecs::entity e = FindEntity( netId );
@@ -97,6 +122,8 @@ bool Simulation::PuppetOf( uint32_t netId, const PlayerInput* input, Puppet& out
 	out.airSince = c.grounded ? 0 : ( last > c.airTicks ? last - c.airTicks : 0 );
 	out.stepCount = c.stepCount;
 	out.motionsOn = EntityMotionsOn( netId );
+	// What it carries (M260): its items put away out of sight are not sent to the others.
+	KindsOf( netId, out.kinds, out.kindCount, out.kindsInUse );
 
 	// Where each layer of its state machine is. (Not while it is dead or down: nothing runs it then,
 	// here or there, and its layers' clocks stand, so when they began would change every tick.)
@@ -332,23 +359,16 @@ void Simulation::ApplyPuppets( const std::vector<PuppetEntry>& puppets, uint32_t
 				}
 				anim.stances[l] = p.stances[l];
 			}
-			// What it holds, carries and uses, for its state machine.
-			uint16_t held[16], carried[32];
+			// What it holds, carries and uses, for its state machine: as its puppet says (M260: its
+			// items put away out of sight are not here).
+			uint16_t held[kPuppetKinds], carried[kPuppetKinds];
 			uint32_t heldCount = 0, carriedCount = 0;
-			for ( const EntityRef& item : ItemsOf( entry.netId ) )
+			for ( size_t k = 0; k < p.kindCount && k < kPuppetKinds; ++k )
 			{
-				const HeldItem* h = flecs::entity( m_world, item.entity ).try_get<HeldItem>();
-				if ( h == nullptr )
+				carried[carriedCount++] = p.kinds[k];
+				if ( ( p.kindsInUse >> k ) & 1 )
 				{
-					continue;
-				}
-				if ( carriedCount < 32 )
-				{
-					carried[carriedCount++] = h->kind;
-				}
-				if ( h->stowed == 0 && heldCount < 16 )
-				{
-					held[heldCount++] = h->kind;
+					held[heldCount++] = p.kinds[k];
 				}
 			}
 			const Blackboard board = GetBoard( e );

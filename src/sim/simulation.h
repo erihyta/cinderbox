@@ -336,6 +336,14 @@ public:
 	// draws as one (a slot's or a mod's, not a driven prop or a body nobody drives), and the puppet
 	// of one in the world as it is (`input` the slot's last, for its view; null: an NPC's own).
 	bool IsPuppet( flecs::entity e ) const;
+	// What a character carries, by kind, and which of them are in use (a bit each): of its items, or
+	// as its puppet says on a client (M260). At most kPuppetKinds.
+	void KindsOf( uint32_t netId, uint16_t* kinds, uint8_t& count, uint16_t& inUse ) const;
+	// Its index of who holds what, made now if it is stale: then threads may read it (KindsOf).
+	void IndexItems() const
+	{
+		ItemsOf( 0 );
+	}
 	bool PuppetOf( uint32_t netId, const PlayerInput* input, Puppet& out ) const;
 	// Where a puppet says its character is, and facing.
 	static Transform PuppetPlace( const Puppet& p );
