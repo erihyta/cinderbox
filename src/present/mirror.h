@@ -103,6 +103,10 @@ struct PlayerAnim
 	uint8_t character = 0; // whose skeleton the evaluator poses (made again when the body's changes)
 	// Another player's clip first seen late, drawn from its start (anim_catch_up.h).
 	AnimCatchUp catchUp;
+	// M259: posed now and then by how far and whether it is in view (EvaluatePlayerPose): the time
+	// since it was last posed, and a count of its poses (a drawer applies a pose it has not yet).
+	float sinceSeconds = 0.0f;
+	uint32_t posed = 0;
 };
 
 // A ragdoll's parts at the last two ticks, and the pose built from them.
@@ -150,6 +154,28 @@ struct HandGrips
 {
 	std::vector<ItemShape> shapes;
 	std::unordered_map<uint32_t, anim::HandGrip> byHolder;
+};
+
+// Where the viewer's camera is (Mirror::SetView, M259): a character is posed every frame near it,
+// every 2nd, 4th or 8th further off, and not at all out of its view unless it is near enough that
+// its shadow may be in it. Not known: everyone, every frame.
+struct PoseView
+{
+	bool known = false;
+	b3Vec3 eye = {};
+	b3Vec3 forward = { 0.0f, 0.0f, -1.0f };
+	float cosHalf = -1.0f; // (of the cone round the view, with a margin)
+	float distanceScale = 1.0f; // how big things look against the usual field of view (zoomed in: they are nearer)
+	uint64_t frame = 0;
+};
+
+// What posing took (EvaluatePlayerPose) since it was last taken (Mirror::TakePoseStats): a tool's
+// figures (M259).
+struct PoseStats
+{
+	uint64_t ns = 0;
+	uint32_t evaluated = 0;
+	uint32_t kept = 0; // (not evaluated that frame: its pose stays as it was)
 };
 
 struct FrameTiming
@@ -235,6 +261,26 @@ public:
 	const std::vector<Event>& Events() const
 	{
 		return m_events;
+	}
+	// The viewer's camera for this frame's poses (PoseView, M259): `cosHalf` of the cone round what it
+	// sees. Not called: every character is posed every frame.
+	void SetView( b3Vec3 eye, b3Vec3 forward, float cosHalf, float distanceScale = 1.0f )
+	{
+		PoseView view = m_world.get<PoseView>();
+		view.known = true;
+		view.eye = eye;
+		view.forward = forward;
+		view.cosHalf = cosHalf;
+		view.distanceScale = distanceScale;
+		view.frame += 1;
+		m_world.set<PoseView>( view );
+	}
+	// What posing took since the last time this was asked (M259).
+	PoseStats TakePoseStats()
+	{
+		PoseStats taken = m_world.get<PoseStats>();
+		m_world.set<PoseStats>( {} );
+		return taken;
 	}
 
 	// fn( uint64_t visual, const Visual&, const RenderPose&, const PlayerAnim*, const RagdollAnim* )

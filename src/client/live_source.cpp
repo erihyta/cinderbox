@@ -168,6 +168,19 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 	f.stats.push_back( { "welcomes", int64_t( s.welcomes ) } );
 	f.stats.push_back( { "connect_failures", int64_t( s.connectFailures ) } );
 	f.stats.push_back( { "client_work_ms", s.simMsLastFrame } );
+	// M259: the simulation's thread, in all: the hybrid's physics, the others placed (and their
+	// animation run), the own one predicted; and this source's own work (the frames it fills).
+	if ( const HybridSession* hybrid = client.Hybrid() )
+	{
+		const HybridSession::Stats& h = hybrid->GetStats();
+		f.stats.push_back( { "hybrid_physics_ms", double( h.physicsNs ) / 1e6 } );
+		f.stats.push_back( { "hybrid_apply_ms", double( h.applyNs ) / 1e6 } );
+		f.stats.push_back( { "hybrid_predict_ms", double( h.predictNs ) / 1e6 } );
+		f.stats.push_back( { "hybrid_states", int64_t( h.states ) } );
+		f.stats.push_back( { "hybrid_physics_ticks", int64_t( h.physicsSteps ) } );
+	}
+	f.stats.push_back( { "source_fill_ms", m_fillMs } );
+	f.stats.push_back( { "source_fills", int64_t( m_fills ) } );
 	f.stats.push_back( { "kbit_down_total", double( s.bytesReceived ) * 8.0 / 1000.0 } );
 	f.stats.push_back( { "fingerprint", FingerprintText( fingerprint ) } );
 	f.stats.push_back( { "fp_environment_ok", FpEnvironmentOk() } );
@@ -216,8 +229,11 @@ void LiveSource::Run()
 					   client.State() != lastState || client.GetStats().connectFailures != lastFailures;
 		if ( changed )
 		{
+			const auto fillFrom = std::chrono::steady_clock::now();
 			Fill( client, fingerprint );
 			Publish( rolledBack );
+			m_fillMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - fillFrom ).count();
+			m_fills += 1;
 			published = true;
 			lastTick = tick;
 			lastReset = client.ResetGeneration();

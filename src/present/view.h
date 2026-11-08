@@ -113,7 +113,8 @@ class ViewSource
 public:
 	virtual ~ViewSource() = default;
 
-	// Copies the newest frame into `out` if it is newer than `out.serial`.
+	// Gives `out` the newest frame if it is newer than `out.serial` (a threaded source swaps it in: what
+	// `out` held is the source's again, M259).
 	virtual bool Take( ViewFrame& out ) = 0;
 
 	// Whether the viewer's input drives the local player (a live connection), and that input.

@@ -4881,6 +4881,67 @@ void TestViewerCharacters()
 // the visual it had for the number and wrote a ragdoll's pose into a prop's visual, which has no
 // room for one (a null component in a release build). A number that names something else now gets
 // a visual of its own: the old one is removed (its node freed) and the new one made.
+// Poses by how far and whether in view (M259, EvaluatePlayerPose): a player in front of the camera
+// posed every frame within 15 m, every 2nd within 30, 4th within 60, 8th beyond; out of view,
+// every 4th within 15 m (its shadow may be in view), else never once it has a pose. Without a view
+// (Mirror::SetView never called), everyone every frame.
+void TestPoseLevelOfDetail()
+{
+	std::shared_ptr<const anim::AnimSet> rig = anim::AnimSet::CreateProcedural();
+	struct Placed
+	{
+		uint32_t netId;
+		float z;
+		uint32_t every; // 0: never after its first
+	};
+	const std::vector<Placed> players = { { 11, 5.0f, 1 },	{ 12, 20.0f, 2 },	{ 13, 45.0f, 4 },
+										  { 14, 100.0f, 8 }, { 15, -5.0f, 4 }, { 16, -50.0f, 0 } };
+	auto run = [&]( bool view, uint32_t frames ) {
+		present::Mirror mirror( rig );
+		present::PresentationFrame frame;
+		std::map<uint32_t, uint32_t> posed;
+		for ( uint32_t f = 0; f < frames; ++f )
+		{
+			frame.tick = f + 1;
+			frame.entities.clear();
+			for ( const Placed& p : players )
+			{
+				present::FrameEntity e;
+				e.netId = p.netId;
+				e.kind = present::VisualKind::Player;
+				e.hasAnim = true;
+				e.transform.position = { 0.0f, 0.0f, p.z };
+				frame.entities.push_back( e );
+			}
+			if ( view )
+			{
+				mirror.SetView( { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, std::cos( 1.0f ) );
+			}
+			mirror.Update( frame, 0.5f, 1.0f / 60.0f );
+		}
+		mirror.ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim* a, const present::RagdollAnim* ) {
+			if ( a != nullptr )
+			{
+				posed[v.netId] = a->posed;
+			}
+		} );
+		return posed;
+	};
+	const uint32_t frames = 64;
+	const std::map<uint32_t, uint32_t> all = run( false, frames );
+	const std::map<uint32_t, uint32_t> byView = run( true, frames );
+	for ( const Placed& p : players )
+	{
+		const uint32_t got = byView.count( p.netId ) ? byView.at( p.netId ) : 0;
+		// (Its first pose, then its turns: one frame in `every`.)
+		const uint32_t want = p.every == 0 ? 1 : 1 + ( frames - 1 ) / p.every;
+		std::printf( "    %u at %.0f m: posed %u times of %u frames (every %u: about %u); without a view %u\n", p.netId, double( p.z ), got, frames,
+					 p.every, want, all.count( p.netId ) ? all.at( p.netId ) : 0 );
+		CHECK( all.count( p.netId ) && all.at( p.netId ) == frames );
+		CHECK( got + 1 >= want && got <= want + 1 );
+	}
+}
+
 void TestMirrorNetIdReused()
 {
 	std::shared_ptr<const anim::AnimSet> rig = anim::AnimSet::CreateProcedural();
@@ -13643,6 +13704,7 @@ int main( int argc, char** argv )
 		{ "characters", TestCharacters },
 		{ "viewer_characters", TestViewerCharacters },
 		{ "mirror_netid_reused", TestMirrorNetIdReused },
+		{ "pose_level_of_detail", TestPoseLevelOfDetail },
 		{ "first_person_camera", TestFirstPersonCamera },
 		{ "any_skeleton", TestAnySkeleton },
 		{ "possession", TestPossession },

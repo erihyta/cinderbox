@@ -64,6 +64,7 @@ private:
 	std::mutex m_frameMutex;
 	present::ViewFrame m_latest;
 	bool m_latestTaken = true;
+	uint64_t m_serial = 0;
 	present::ViewFrame m_building;
 };
 

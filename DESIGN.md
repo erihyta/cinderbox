@@ -330,6 +330,7 @@ source  <──control───   viewer        named commands with a number ("p
 
 - **Two extensions**: `cinderbox` (the viewer: no simulation, no networking, all a mod's project needs) and `cinderbox_peer` (joins servers, plays recordings). Frames cross between them as bytes.
 - **The mirror** (`mirror.*`): a presentation flecs world that interpolates between ticks, fades out rollback corrections, evaluates poses and turns count changes into visual events.
+  - **Poses by distance and view** (M259, `EvaluatePlayerPose`, `Mirror::SetView` from the game's camera): every frame within 15 m, every 2nd within 30, 4th within 60, 8th beyond (by how far it looks: zoomed in, nearer); out of view every 4th within 15 m (its shadow may be in view), else not at all; taken in turns by NetId. The viewer's own every frame. A pose not made again is not put on its skeleton again either (`PlayerAnim::posed`); its catch-up runs over the time since its last.
 - **The codec** (`view_codec.*`, packets "CBV4"): whole frames or deltas against a frame both sides have.
 
 | Precision | Positions | Rotations | Animation | Not sent |

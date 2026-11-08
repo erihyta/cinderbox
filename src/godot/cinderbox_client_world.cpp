@@ -423,6 +423,7 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	}
 
 	m_trackPlayers.erase( visual );
+	m_posesApplied.erase( visual );
 	if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
 	{
 		m_nodeCharacters[visual] = v.character;
