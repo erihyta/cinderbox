@@ -157,6 +157,10 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 	f.stats.push_back( { "confirmed_tick", int64_t( confirmedTick ) } );
 	f.stats.push_back( { "rollback_window", int64_t( rollbackWindow ) } );
 	f.stats.push_back( { "rtt_ms", int64_t( s.rttMs ) } );
+	// The uplink (M261): of the input packets, how many in a thousand the server counts lost, and
+	// in how many packets each input goes.
+	f.stats.push_back( { "input_loss_permille", int64_t( s.lossPerMille ) } );
+	f.stats.push_back( { "input_repeats", int64_t( s.inputRepeats ) } );
 	f.stats.push_back( { "clock_error", s.tickError } );
 	f.stats.push_back( { "rate_scale", s.rateScale } );
 	f.stats.push_back( { "rollbacks", int64_t( rollback.rollbacks ) } );

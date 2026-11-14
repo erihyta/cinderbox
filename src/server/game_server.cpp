@@ -911,6 +911,42 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 {
 	uint32_t current = m_sim->Tick();
+	// Its packets that did not come (M261): the gap in their numbers. (An older one after a newer is
+	// dropped on the way, in order; a copy has the same number.)
+	if ( client.fake == false )
+	{
+		const uint8_t gap = uint8_t( msg.sequence - client.inputSequence );
+		if ( client.inputSeen == false || gap == 0 || gap > 128 )
+		{
+			client.inputPacketsCame += client.inputSeen && gap == 0 ? 0u : 1u;
+		}
+		else
+		{
+			client.inputPacketsCame += 1;
+			client.inputPacketsLost += gap - 1u;
+		}
+		if ( client.inputSeen == false || ( gap != 0 && gap <= 128 ) )
+		{
+			client.inputSequence = msg.sequence;
+		}
+		client.inputSeen = true;
+		if ( now - client.inputLossToldAt >= 2.0 )
+		{
+			// Told every two seconds, smoothed over the last few counts.
+			const uint32_t all = client.inputPacketsCame + client.inputPacketsLost;
+			if ( all > 0 )
+			{
+				const double lost = 1000.0 * double( client.inputPacketsLost ) / double( all );
+				client.inputLoss = client.inputLossToldAt == 0.0 ? lost : client.inputLoss * 0.5 + lost * 0.5;
+			}
+			client.inputPacketsCame = client.inputPacketsLost = 0;
+			client.inputLossToldAt = now;
+			MsgInputLoss told;
+			told.perMille = uint16_t( std::clamp( std::lround( client.inputLoss ), 0l, 1000l ) );
+			Encode( told, m_buffer );
+			m_transport.Send( client.peer, ChannelReliable, m_buffer, false );
+		}
+	}
 	if ( m_options.netModel == NetModel::Hybrid )
 	{
 		// The newest state it has, if it is one still kept (packets come out of order: only forward).

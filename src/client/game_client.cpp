@@ -74,7 +74,7 @@ void GameClient::Log( const char* fmt, ... ) const
 bool GameClient::Start( const ClientOptions& options, double now )
 {
 	m_options = options;
-	m_inputHistory.assign( std::max<uint32_t>( 64, options.inputRedundancy * 2 ), SentInput{} );
+	m_inputHistory.assign( 256, SentInput{} ); // (more than a packet carries: kMaxInputsPerPacket)
 	m_knownInputs.assign( kKnownInputHistory, KnownInputs{} );
 	m_knownPushers.assign( kKnownInputHistory, KnownPushers{} );
 	m_options.maxRollbackTicks = std::max( m_options.maxRollbackTicks, m_options.minRollbackTicks );
@@ -213,6 +213,15 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 						HandleState( r, now );
 					}
 					break;
+				case MsgType::InputLoss:
+				{
+					MsgInputLoss msg;
+					if ( Decode( r, msg ) )
+					{
+						m_inputLoss = msg.perMille;
+					}
+					break;
+				}
 				case MsgType::Checksum:
 				{
 					MsgChecksum msg;
@@ -761,6 +770,8 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	double rtt = double( ps.roundTripMs ) / 1000.0;
 	double jitter = double( ps.roundTripVarianceMs ) / 1000.0;
 	m_stats.rttMs = ps.roundTripMs;
+	// (The server's count of the input packets lost; ENet's of its own reliable ones until it says.)
+	m_stats.lossPerMille = m_inputLoss >= 0 ? uint32_t( m_inputLoss ) : ps.packetLossPerMille;
 
 	double frameDt = m_lastUpdate < 0.0 ? 0.0 : std::clamp( now - m_lastUpdate, 0.0, 0.25 );
 	m_stats.playingSeconds += frameDt;
@@ -936,9 +947,26 @@ void GameClient::SendInputs()
 
 	MsgInput msg;
 	msg.newestTick = m_newestInputTick;
+	msg.sequence = m_inputSequence++;
 	msg.ackTick = AckTick();
 	msg.stateAck = m_stateAck;
-	uint32_t count = std::min( m_options.inputRedundancy, m_newestInputTick + 1 );
+	// Each input in so many packets (M261): as many ticks as that many packets go for (the most
+	// ticks a packet went for lately: a frame rate below the tick rate sends several a packet).
+	const uint32_t repeats =
+		m_options.inputRepeats != 0 ? m_options.inputRepeats : net::InputRepeats( m_stats.lossPerMille, m_options.mostInputRepeats );
+	m_stats.inputRepeats = repeats;
+	uint32_t ticksPerPacket = 1;
+	for ( uint32_t k = 1; k < std::min<uint32_t>( m_sends, 8u ); ++k )
+	{
+		const uint32_t newer = m_sentThrough[( m_sends - k ) % 8], older = m_sentThrough[( m_sends - k - 1 ) % 8];
+		ticksPerPacket = std::max( ticksPerPacket, newer > older ? newer - older : 1u );
+	}
+	if ( m_sends > 0 )
+	{
+		const uint32_t last = m_sentThrough[( m_sends - 1 ) % 8];
+		ticksPerPacket = std::max( ticksPerPacket, m_newestInputTick > last ? m_newestInputTick - last : 1u );
+	}
+	uint32_t count = std::min( { repeats * ticksPerPacket, net::kMaxInputsPerPacket, m_newestInputTick + 1 } );
 	uint32_t first = m_newestInputTick + 1 - count;
 	for ( uint32_t t = first; t <= m_newestInputTick; ++t )
 	{
@@ -958,6 +986,9 @@ void GameClient::SendInputs()
 
 	Encode( msg, m_buffer );
 	m_transport.Send( m_transport.ServerPeer(), ChannelInput, m_buffer, false );
+	m_sentThrough[m_sends % 8] = m_newestInputTick;
+	m_sends += 1;
+	m_stats.inputPackets += 1;
 }
 
 void GameClient::VerifyChecksums()

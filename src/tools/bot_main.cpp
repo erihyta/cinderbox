@@ -2,7 +2,10 @@
 //
 //   cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T (for lite bots)] [--duration SEC]
 //          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic] [--shoot]
-//          [--reconcile-every TICKS] [--spin] [--physics-threads N]
+//          [--reconcile-every TICKS] [--spin] [--physics-threads N] [--input-repeats N]
+//
+// --input-repeats N: each input goes in N packets whatever the loss (ClientOptions::inputRepeats;
+// by default by the measured loss, M261: 12 is what clients did before).
 //
 // --physics-threads N: the full bots' physics steps share N threads besides their own.
 //
@@ -192,6 +195,10 @@ struct Summary
 	int rttCount = 0;
 	uint64_t bytesReceived = 0;
 	uint64_t bytesSent = 0;
+	uint64_t inputPackets = 0;
+	uint64_t repeatsSum = 0;
+	uint32_t repeatsMax = 0;
+	uint64_t lossSum = 0;
 
 	void Add( const Summary& o )
 	{
@@ -241,6 +248,10 @@ struct Summary
 		rttCount += o.rttCount;
 		bytesReceived += o.bytesReceived;
 		bytesSent += o.bytesSent;
+		inputPackets += o.inputPackets;
+		repeatsSum += o.repeatsSum;
+		repeatsMax = std::max( repeatsMax, o.repeatsMax );
+		lossSum += o.lossSum;
 	}
 };
 
@@ -327,6 +338,10 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 				}
 				s.bytesReceived += cs.bytesReceived;
 				s.bytesSent += cs.bytesSent;
+				s.inputPackets += cs.inputPackets;
+				s.repeatsSum += cs.inputRepeats;
+				s.repeatsMax = std::max( s.repeatsMax, cs.inputRepeats );
+				s.lossSum += cs.lossPerMille;
 				if ( b.full )
 				{
 					s.fullBots += 1;
@@ -475,6 +490,8 @@ bool Parse( int argc, char** argv, Options& o )
 		}
 		else if ( arg == "--report" )
 			o.reportSeconds = std::atof( v.c_str() );
+		else if ( arg == "--input-repeats" )
+			o.client.inputRepeats = uint32_t( std::atoi( v.c_str() ) );
 		else
 			return false;
 	}
@@ -569,10 +586,14 @@ int main( int argc, char** argv )
 		double stalledPercent = playedDelta > 0.0 ? 100.0 * ( s.stalledSeconds - previous.stalledSeconds ) / playedDelta : 0.0;
 		double downKbps = o.count ? double( s.bytesReceived - previous.bytesReceived ) * 8.0 / 1000.0 / dt / o.count : 0.0;
 		double upKbps = o.count ? double( s.bytesSent - previous.bytesSent ) * 8.0 / 1000.0 / dt / o.count : 0.0;
+		// (ENet's bytes; each input packet is a datagram, and UDP and IPv4 add 28 bytes to it.)
+		double packetsPerSec = o.count ? double( s.inputPackets - previous.inputPackets ) / dt / o.count : 0.0;
 		std::printf( "[%6.1fs] playing %d/%d (connecting %d, reconnecting %d, rejected %d) | rtt avg %u max %u ms | "
-					 "per bot down %.0f up %.0f kbit/s\n",
+					 "per bot down %.0f up %.0f kbit/s (%.0f with UDP/IP; %.0f input packets a second, each input in %.1f of them, %u at most; %.1f%% of them lost)\n",
 					 now, s.playing, o.count, s.connecting, s.reconnecting, s.rejected, s.rttCount ? s.rttSum / s.rttCount : 0,
-					 s.rttMax, downKbps, upKbps );
+					 s.rttMax, downKbps, upKbps, upKbps + packetsPerSec * 28.0 * 8.0 / 1000.0, packetsPerSec,
+					 o.count ? double( s.repeatsSum ) / double( o.count ) : 0.0, s.repeatsMax,
+					 o.count ? double( s.lossSum ) / double( o.count ) / 10.0 : 0.0 );
 		if ( s.fullBots > 0 )
 		{
 			std::printf( "          full bots: client work %.2f ms/frame avg, %.2f max | rollbacks %.1f/s, resimulated %.1f "

@@ -652,10 +652,11 @@ func _update_hud() -> void:
 	var label := hud.get_node_or_null("%Stats") as Label
 	if label:
 		label.visible = show_debug and (_joined or auto.seconds > 0.0)
-		label.text = "%d FPS   %s\ntick %d   confirmed %d   window %d\nrtt %d ms   rollbacks %d (last %d)   stalled %.1f s\nchecksums ok %d   desyncs %d\nentities %d   animation: %s\nmods: %s" % [
+		label.text = "%d FPS   %s\ntick %d   confirmed %d   window %d\nrtt %d ms   rollbacks %d (last %d)   stalled %.1f s   inputs lost %.1f%% (each in %d)\nchecksums ok %d   desyncs %d\nentities %d   animation: %s\nmods: %s" % [
 			Engine.get_frames_per_second(), stats.get("state", ""),
 			stats.get("tick", 0), stats.get("confirmed_tick", 0), stats.get("rollback_window", 0),
 			stats.get("rtt_ms", 0), stats.get("rollbacks", 0), stats.get("last_rollback_depth", 0), stats.get("stalled_seconds", 0.0),
+			stats.get("input_loss_permille", 0) / 10.0, stats.get("input_repeats", 0),
 			stats.get("checksums_verified", 0), stats.get("desyncs", 0),
 			stats.get("entities", 0), stats.get("animation", ""), ", ".join(client.get_mod_names())]
 		# Your motions: what is on (its step, what it waits for, what its cast holds), and why the

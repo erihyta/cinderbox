@@ -2988,11 +2988,13 @@ void TestProtocol()
 	{
 		MsgInput sent;
 		sent.newestTick = 90;
+		sent.sequence = 201;
 		sent.ackTick = 80;
 		sent.stateAck = 78;
 		for ( int i = 0; i < 6; ++i )
 		{
 			PlayerInput in;
+			in.seenBack = 7; // (M261: the same in every one, so only the first says it)
 			in.moveForward = int8_t( 20 * i );
 			in.cameraYaw = uint16_t( 1000 * i );
 			in.cameraPitch = int16_t( -300 * i );
@@ -3008,11 +3010,36 @@ void TestProtocol()
 		CHECK( ReadType( r ) == MsgType::Input );
 		MsgInput got;
 		CHECK( Decode( r, got ) && r.AtEnd() );
-		CHECK( got.inputs == sent.inputs && got.newestTick == 90 && got.ackTick == 80 && got.stateAck == 78 );
+		CHECK( got.inputs == sent.inputs && got.newestTick == 90 && got.sequence == 201 && got.ackTick == 80 && got.stateAck == 78 );
 		std::printf( "    six inputs, their actions from none to all 64: %zu bytes\n", bytes.size() );
-		// 13 of header, 13 an input, and 0 + 1 + 2 + 6 + 8 + 1 bytes of actions; 2 of slot keys in the
-		// first (the later ones say only what changed, and the slot keys did not).
-		CHECK( bytes.size() == 1 + 13 + 6 * 13 + 18 + 2 );
+		// 8 of header (the newest tick, the sequence, the acknowledgements a byte each behind it, the
+		// count), 13 an input, and 0 + 1 + 2 + 6 + 8 + 1 bytes of actions; 2 of slot keys and 1 of how
+		// far back the player saw in the first (the later ones say only what changed).
+		CHECK( bytes.size() == 1 + 8 + 6 * 13 + 18 + 2 + 1 );
+		// No state yet, and an acknowledgement past the newest input (a client just welcomed).
+		MsgInput none;
+		none.newestTick = 5;
+		none.ackTick = 9;
+		none.stateAck = 0;
+		none.inputs.resize( 1 );
+		bytes.clear();
+		Encode( none, bytes );
+		ByteReader r2( bytes.data(), bytes.size() );
+		MsgInput back;
+		CHECK( ReadType( r2 ) == MsgType::Input && Decode( r2, back ) && back.ackTick == 9 && back.stateAck == 0 && back.newestTick == 5 );
+		// The server's count of a client's input packets lost, and the repeats it sizes.
+		MsgInputLoss loss;
+		loss.perMille = 120;
+		bytes.clear();
+		Encode( loss, bytes );
+		ByteReader r3( bytes.data(), bytes.size() );
+		MsgInputLoss lossBack;
+		CHECK( ReadType( r3 ) == MsgType::InputLoss && Decode( r3, lossBack ) && lossBack.perMille == 120 );
+		const uint32_t repeats[] = { InputRepeats( 0, 12 ), InputRepeats( 20, 12 ), InputRepeats( 50, 12 ), InputRepeats( 120, 12 ),
+									 InputRepeats( 300, 12 ), InputRepeats( 900, 12 ) };
+		std::printf( "    each input in so many packets: %u at no loss, %u at 2%%, %u at 5%%, %u at 12%%, %u at 30%%, %u at 90%%\n", repeats[0],
+					 repeats[1], repeats[2], repeats[3], repeats[4], repeats[5] );
+		CHECK( repeats[0] == 4 && repeats[1] == 4 && repeats[2] == 5 && repeats[3] == 7 && repeats[4] == 12 && repeats[5] == 12 );
 	}
 
 	// The hybrid's frames (M248): without the inputs, with physics events of every kind, pushers'
@@ -8052,6 +8079,15 @@ void TestHybridLossy()
 	std::printf( "    steady state: %llu late inputs of %llu\n", (unsigned long long)late, (unsigned long long)expected );
 	CHECK( kTimingChecks == false || late * 50 < expected );
 	CHECK( h.proxy->GetStats().dropped > 0 );
+	// Each input in as many packets as the loss the server counts asks (M261: 3% each way, so 4 or 5).
+	for ( Bot& b : h.bots )
+	{
+		const auto& s = b.client->GetStats();
+		std::printf( "    a bot's input packets: %u in a thousand lost, as the server counts them; each input in %u\n", s.lossPerMille,
+					 s.inputRepeats );
+		CHECK( s.lossPerMille >= 5 && s.lossPerMille <= 80 );
+		CHECK( s.inputRepeats >= 4 && s.inputRepeats <= 5 );
+	}
 	for ( Bot& b : h.bots )
 	{
 		CheckHybridClient( *b.client );

@@ -32,7 +32,12 @@ struct ClientOptions
 	// The prediction window follows the measured latency within [min, max]. Equal values fix it.
 	uint32_t minRollbackTicks = 8;
 	uint32_t maxRollbackTicks = 20;
-	uint32_t inputRedundancy = 12; // each input packet repeats this many recent ticks
+	// How many packets in a row each input goes in (M261): by the loss the connection measures
+	// (net::InputRepeats: 4 with little, more as it grows), at most `mostInputRepeats`; or always
+	// `inputRepeats` when it is not 0. A packet then carries that many packets' worth of ticks (two
+	// ticks a packet at 30 frames a second carry 8 ticks).
+	uint32_t inputRepeats = 0;
+	uint32_t mostInputRepeats = 12;
 	uint32_t leadMarginTicks = 2;  // extra lead over the server beyond the measured latency
 	// A misprediction is fixed at once (1), or every this many ticks: less re-simulation, and what
 	// other players do is seen that much later (RollbackSession::SetReconcileEvery).
@@ -83,6 +88,11 @@ public:
 		double simMsMax = 0.0;
 		uint64_t bytesSent = 0;
 		uint64_t bytesReceived = 0;
+		// The uplink (M261): how many packets each input goes in now, the loss it is sized by, and
+		// the input packets sent.
+		uint32_t inputRepeats = 0;
+		uint32_t lossPerMille = 0;
+		uint64_t inputPackets = 0;
 		uint32_t rollbackWindow = 0;
 		uint64_t batchesReceived = 0;
 		uint64_t batchesIgnored = 0; // stale, or older than the frames we still know
@@ -341,6 +351,12 @@ private:
 	std::vector<SentInput> m_inputHistory;
 	uint32_t m_newestInputTick = 0;
 	bool m_haveInput = false;
+	// The newest tick each of the last packets carried: how many ticks a packet goes for (M261).
+	uint32_t m_sentThrough[8] = {};
+	uint32_t m_sends = 0;
+	uint8_t m_inputSequence = 0;
+	// The server's count of this client's input packets lost (MsgInputLoss); -1 until it says.
+	int32_t m_inputLoss = -1;
 
 	std::vector<net::MsgChecksum> m_pendingChecksums;
 	uint64_t m_resetGeneration = 0;

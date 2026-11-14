@@ -271,6 +271,13 @@ private:
 		// starts, so that a frame is in three packets however many ticks one packet brought.
 		uint32_t sentBefore[2] = {};
 		double roundTrip = 0.1;		// seconds from sending a frame to hearing it acknowledged
+		// Its input packets (M261): the last one's sequence, those that came and those that did
+		// not since the last count, the loss (in a thousand, smoothed) and when it was told it.
+		bool inputSeen = false;
+		uint8_t inputSequence = 0;
+		uint32_t inputPacketsCame = 0, inputPacketsLost = 0;
+		double inputLoss = 0.0;
+		double inputLossToldAt = 0.0;
 		double frameSentAt[256] = {}; // by tick % 256: when it last went out in full
 		PlayerInput lastInput{};
 		// The hybrid: the newest characters' state the client has (its base for the next one), and

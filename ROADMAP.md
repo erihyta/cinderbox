@@ -521,6 +521,32 @@ fake players, which keeps up beside it to about 100):
   states; Godot's own drawing of a few hundred skinned characters. Pooling item scenes, and the far
   characters as a GPU crowd, if a measured target needs them.
 
+**Measured after M261** (the uplink, live: 32 `cb_bot` players, 2 of them full clients, through
+`cb_netsim` at 75 ms and 1% loss each way; what each sends, from `cb_bot`'s report, and what the
+server takes, from its status line's new `in`):
+
+| | Before (M260: 12 repeats) | After (by the loss) |
+|---|---|---|
+| Up, per player | 33 kbit/s (46 with UDP/IP) | 20 kbit/s (34 with UDP/IP) |
+| Into the server, 32 players | 977 kbit/s | 645 kbit/s |
+| Into the server, 1023 players (each the same) | ~47 Mbit/s | ~35 Mbit/s |
+| Late inputs | 0.02% | 0.02% |
+
+| Loss each way (`cb_netsim --loss`) | 1% | 5% | 12% |
+|---|---|---|---|
+| Counted by the server | 1% | 5% | 11 to 12% |
+| Each input in | 4 packets | 5 | 7 to 8 |
+| Late inputs (12 repeats at the same loss) | 0.00% | 0.1% | 0.3 to 0.5% (0.3 to 3.5%) |
+
+- **ENet's loss figure** counts its own reliable packets: at 12% each way it said 0, and the
+  repeats stayed at 4. The server counts the input packets that do not come (a sequence byte in
+  each) and tells the client every two seconds.
+- **Late inputs at heavy loss** are the same with 12 repeats: they come from elsewhere (the clock
+  following lost frames), not from fewer repeats.
+- **What is left**: a packet's headers (UDP and IPv4 28 bytes, ENet 12, of about 71) at 60 packets
+  a second. An input packet every other tick would take a player's uplink to about 20 kbit/s and
+  delay inputs by 8 ms on average: a choice, not taken.
+
 **The milestones**:
 
 | Milestone | What |
@@ -535,7 +561,7 @@ fake players, which keeps up beside it to about 100):
 | **M258** (done) | **The server's processor at 1000**: profiled (each mod, the characters' parts, a state's keeping and planning by part); a state's updates made on the state threads while the next tick runs, sent with its frames once made; planning by group, in place; puppets, views and hashes on the state threads; a compressor per thread; the characters' movers and animation on threads (`Simulation::SetParallelFor`, each reads the world as the tick found it: the same on any number, `character_threads`); held kinds by holder; the expire mod's list. **Found**: mods heard 32 of a tick's events (a crowd's hits hurt no one); a far puppet slid across the map after a teleport. 255 fighting players at 60 Hz, just (22 ms to 15 to 17.5); 1023 at 55 ms (178). **Not done**: the interest grid (it helps where players are spread out, not in the bench's crowd), the motions' pass on threads, the mods' other per-player loops (the table above) |
 | **M259** (done) | **The game in front of a crowd**: measured (`tools\crowd_client.ps1`: a fight of N fake players recorded and played by the game, or joined live; the unattended game says its frames and where they went, `--measure-from`); poses by distance and view (every frame within 15 m to every 8th beyond, out of view only when near, in turns; a pose not made again not put on the skeleton again); the HUD's labels and lists not worked while hidden, a holder's items found once a frame, a live source's frame swapped to the game. 255 visible at 17 frames a second, 1023 at 1: what is left is the drawing, a scene and nodes for every character and what it holds (M260). Test: `pose_level_of_detail` |
 | **M260** (done) | **One look for every character**: a character's look made from its scene once (`look.h`: `CharacterLook`; the bake and `CbCharacter.describe_look` say what is not drawn), every body drawn by it through RenderingServer (`DrawnBody`: a skeleton and an instance per mesh, bones from the ozz pose when posed), the entity an empty node with its sockets; the own one's first person too (its legs and arms as copies, its body casting its shadow); shadows within 40 m; a character's particles, lights and sounds nodes at their bones, its tracks played on them and on its sockets' items. Another player's item put away out of sight is not sent (its holder's puppet names what it carries, by kind: protocol 91) and has no node; one in sight that only looks is its meshes (`ItemLook`), one that reacts keeps its scene without the viewer's predictions. Checked by the same moments drawn before and after (`--look-shots`), then a playtest. 255 recorded: 17 frames a second to 47; 1023: 1 to 5; 96 live: 53 to 139. Tests: `check_look.gd`, `net_hybrid_puppets` (what is put away is not sent), the codec's puppets with kinds |
-| M261 | **The uplink**: inputs repeated by measured loss (4, not 12) |
+| **M261** (done) | **The uplink**: each input in as many packets as the loss asks (`net::InputRepeats`: 4 at little loss, 5 at 5%, 7 at 12%, 12 past 30%; it was 12 at any loss), counted in packets (a frame rate below the tick rate carries more ticks a packet), the loss the server's count of the client's input packets (a sequence byte in each; `MsgInputLoss` every two seconds: ENet's own figure missed it). The packet's acknowledgements as varints behind its newest tick. **Fixed**: a packet's first input went without how far back the player saw the others, read as 0 (lag compensation off for a tick its last copy reached the server as the first). Per player 46 kbit/s up to 34 (with UDP/IP); into the server at 1023, about 47 Mbit/s to 35. Protocol 92 |
 
 **Targets** (1000 players in one area): another character ≤ 10 B moving, ≤ 2 B still; ≤ 0.5
 Mbit/s to each player; ≤ 500 Mbit/s out of the server; the server's work ≤ 16.7 ms a tick; ≤ 6 ms
