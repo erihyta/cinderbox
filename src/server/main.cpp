@@ -721,6 +721,7 @@ int main( int argc, char** argv )
 	double nextStatus = 5.0;
 	double lastStatus = 0.0;
 	uint64_t lastBytesSent = 0;
+	uint64_t lastBytesReceived = 0;
 	uint64_t lastLate = 0;
 	uint64_t lastInputTicks = 0;
 	// --exit-when-empty: how long nobody may be connected before it stops (0: it never does).
@@ -800,14 +801,15 @@ int main( int argc, char** argv )
 			const auto& s = server.GetStats();
 			double avg = s.ticks ? s.tickMsTotal / double( s.ticks ) : 0.0;
 			double upKbps = double( s.bytesSent - lastBytesSent ) * 8.0 / 1000.0 / ( now - lastStatus );
+			double inKbps = double( s.bytesReceived - lastBytesReceived ) * 8.0 / 1000.0 / ( now - lastStatus );
 			uint64_t expected = s.inputTicks - lastInputTicks;
 			double latePercent = expected ? 100.0 * double( s.lateInputs - lastLate ) / double( expected ) : 0.0;
 			const double per = s.ticks ? 1.0 / double( s.ticks ) : 0.0;
 			std::printf( "[server %6u] %d connected, %zu entities, %zu KB physics | tick %.2f ms avg %.2f max (mods %.2f, step %.2f, "
-						 "state %.2f; sending %.2f) | late inputs %.2f%% | snapshots %llu | out %.0f kbit/s",
+						 "state %.2f; sending %.2f) | late inputs %.2f%% | snapshots %llu | out %.0f kbit/s | in %.0f kbit/s",
 						 server.Tick(), server.ConnectedClients(), server.Sim().Entities().size(),
 						 server.Sim().PhysicsBytesInUse() / 1024, avg, s.tickMsMax, s.modsMs * per, s.stepMs * per, s.saveMs * per,
-						 s.sendMs * per, latePercent, (unsigned long long)s.snapshotsSent, upKbps );
+						 s.sendMs * per, latePercent, (unsigned long long)s.snapshotsSent, upKbps, inKbps );
 			if ( server.Bench().fakes > 0 )
 			{
 				// (What the fake players would have been sent, on the wire, estimated.)
@@ -829,6 +831,7 @@ int main( int argc, char** argv )
 			}
 			server.ResetTickTiming();
 			lastBytesSent = s.bytesSent;
+			lastBytesReceived = s.bytesReceived;
 			lastLate = s.lateInputs;
 			lastInputTicks = s.inputTicks;
 			lastStatus = now;

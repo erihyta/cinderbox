@@ -11,7 +11,6 @@ namespace
 
 constexpr uint32_t kMaxBlobBytes = 64u * 1024u * 1024u;
 constexpr size_t kMaxReasonLength = 256;
-constexpr uint8_t kMaxInputsPerPacket = 32;
 
 // Per-player field mask inside a frame.
 enum InputField : uint16_t
@@ -202,7 +201,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::State ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::InputLoss ) )
 	{
 		return std::nullopt;
 	}
@@ -745,6 +744,7 @@ void WriteInput( ByteWriter& w, const PlayerInput& in )
 	w.Write( in.intentB );
 	w.Write( in.intentSeq );
 	w.Write( in.slotKeys );
+	w.Write( in.seenBack ); // (M261: a packet's first input went without it, and read 0)
 	int bytes = ActionByteCount( in.actions );
 	w.Write( uint8_t( bytes ) );
 	w.WriteBytes( reinterpret_cast<const uint8_t*>( &in.actions ), size_t( bytes ) );
@@ -764,6 +764,7 @@ bool ReadInput( ByteReader& r, PlayerInput& in )
 	in.intentB = r.Read<uint8_t>();
 	in.intentSeq = r.Read<uint8_t>();
 	in.slotKeys = r.Read<uint16_t>();
+	in.seenBack = r.Read<uint8_t>();
 	uint8_t bytes = r.Read<uint8_t>();
 	const uint8_t* taken = r.Ok() && bytes <= sizeof( ActionBits ) ? r.Take( bytes ) : nullptr;
 	if ( taken == nullptr )
@@ -775,14 +776,53 @@ bool ReadInput( ByteReader& r, PlayerInput& in )
 }
 } // namespace
 
+// (Below, with the frames'.)
+uint32_t ZigZag32( int32_t v );
+int32_t UnZigZag32( uint32_t v );
+void WriteVarint( ByteWriter& w, uint32_t v );
+bool ReadVarint( ByteReader& r, uint32_t& v );
+
+void Encode( const MsgInputLoss& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::InputLoss );
+	ByteWriter w( out );
+	w.Write( m.perMille );
+}
+
+bool Decode( ByteReader& r, MsgInputLoss& m )
+{
+	m.perMille = r.Read<uint16_t>();
+	return r.Ok() && m.perMille <= 1000;
+}
+
+uint32_t InputRepeats( uint32_t lossPerMille, uint32_t most )
+{
+	most = std::max( most, kLeastInputRepeats );
+	if ( lossPerMille == 0 )
+	{
+		return kLeastInputRepeats;
+	}
+	if ( lossPerMille >= 1000 )
+	{
+		return most;
+	}
+	// So many in a row are lost once in a million packets, each lost on its own.
+	const double p = double( lossPerMille ) / 1000.0;
+	const double n = std::ceil( std::log( 1e-6 ) / std::log( p ) );
+	return std::clamp( uint32_t( n ), kLeastInputRepeats, most );
+}
+
 void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 {
 	Begin( out, MsgType::Input );
 	ByteWriter w( out );
 	size_t n = std::min<size_t>( m.inputs.size(), kMaxInputsPerPacket );
 	w.Write( m.newestTick );
-	w.Write( m.ackTick );
-	w.Write( m.stateAck );
+	w.Write( m.sequence );
+	// (M261: the acknowledgements as how far behind the newest tick they are, a byte or two each,
+	// not four; 0 for no state.)
+	WriteVarint( w, ZigZag32( int32_t( m.newestTick - m.ackTick ) ) );
+	WriteVarint( w, m.stateAck == 0 ? 0u : ZigZag32( int32_t( m.newestTick - m.stateAck ) ) + 1u );
 	w.Write( uint8_t( n ) );
 	// The oldest in full, each later one as what changed since the tick before it: a packet repeats
 	// a dozen ticks so that a lost one costs nothing, and most of them are alike.
@@ -802,8 +842,14 @@ void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 bool Decode( ByteReader& r, MsgInput& m )
 {
 	m.newestTick = r.Read<uint32_t>();
-	m.ackTick = r.Read<uint32_t>();
-	m.stateAck = r.Read<uint32_t>();
+	m.sequence = r.Read<uint8_t>();
+	uint32_t ackBehind = 0, stateBehind = 0;
+	if ( ReadVarint( r, ackBehind ) == false || ReadVarint( r, stateBehind ) == false )
+	{
+		return false;
+	}
+	m.ackTick = m.newestTick - uint32_t( UnZigZag32( ackBehind ) );
+	m.stateAck = stateBehind == 0 ? 0u : m.newestTick - uint32_t( UnZigZag32( stateBehind - 1u ) );
 	uint8_t n = r.Read<uint8_t>();
 	if ( r.Ok() == false || n > kMaxInputsPerPacket || n > m.newestTick + 1 )
 	{
