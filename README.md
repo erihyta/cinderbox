@@ -34,7 +34,7 @@ Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, t
 | [mods_src/README.md](mods_src/README.md) | client mods: the files the game looks up |
 | [DESIGN.md](DESIGN.md) | how it works, by subsystem; the source layout; known limits |
 | [docs/scaling.md](docs/scaling.md) | how many players a server holds, what limits it, and every measurement behind it |
-| [docs/hytale-comparison.md](docs/hytale-comparison.md) | Cinderbox against Hytale's mods and plugins: proposals, not decisions |
+| [docs/hytale-comparison.md](docs/hytale-comparison.md) | Cinderbox against Hytale's mods and plugins: seven proposals, placed on the roadmap |
 | [ROADMAP.md](ROADMAP.md) | the road to 1.0: what comes next, in order, and why |
 
 

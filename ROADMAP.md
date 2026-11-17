@@ -7,7 +7,7 @@ The road to 1.0: what comes next, in order, and why.
 | [DESIGN.md](DESIGN.md) | how it works today |
 | [docs/HISTORY.md](docs/HISTORY.md) | every milestone done, M1 to M261.6 |
 | [docs/scaling.md](docs/scaling.md) | how many players a server holds, and every measurement behind it |
-| [docs/hytale-comparison.md](docs/hytale-comparison.md) | what Cinderbox could take from Hytale's mods and plugins (proposals) |
+| [docs/hytale-comparison.md](docs/hytale-comparison.md) | what Cinderbox could take from Hytale's mods and plugins: [what was taken](#from-the-hytale-comparison) |
 
 **Rewritten after M261** (2026-11-17, M261.6). Every statement here about what exists was read in
 the code at M261.5's merge (`d3387be`); what is planned says so. The roadmap before it grew from
@@ -32,8 +32,8 @@ review found and still holds is kept below, in the step it belongs to.
 
 ## What 1.0 means
 
-**Proposed (2026-11-17), for the owner to confirm.** 1.0 is the first version people outside the
-project use: players find a server and play a game made with Cinderbox, and modders make and
+**Decided (2026-11-17).** 1.0 is the first version people outside the project use: players find a
+server and play a game made with Cinderbox, wearing avatars of their own, and modders make and
 publish mods, rules included, without building the engine.
 
 **1.0 is done when:**
@@ -44,10 +44,11 @@ publish mods, rules included, without building the engine.
 | A mod's look and rules are made, tested and published with the prebuilt SDK, and run on any server without a build | [9](#9-cinderbox-studio), [10](#10-server-rules-in-luau) |
 | The formats modders depend on are settled: the sheet, an item, the rules' API. After 1.0 a change to one is versioned and said | [6](#6-sheets-improved), [10](#10-server-rules-in-luau), [before launch](#before-launch) |
 | Joining a stranger's server is safe | [before launch](#before-launch), closed |
-| Players find servers without typing an address | [parked](#parked) today |
+| Players find servers without typing an address | [parked](#parked) today: how, decided later |
+| A player wears an avatar of their own | [11](#11-avatars) |
 | The manual says what the code does, in the words modders use | [before launch](#before-launch) |
 
-**Each step, in 1.0 or not (proposed):**
+**Each step, in 1.0 or not:**
 
 | Step | In 1.0 | Why |
 |---|---|---|
@@ -58,7 +59,7 @@ publish mods, rules included, without building the engine.
 | 8 Body parts with priorities | as far as the slice needs | the same |
 | 9 Cinderbox Studio | yes | modding without a compiler |
 | 10 Server rules in Luau | yes | rules without a compiler; a mod's crash stops the mod, not the server |
-| 11 Avatars | to decide | a player's identity; not needed to play |
+| 11 Avatars | yes (decided 2026-11-17) | a player's identity; the owner brings a few models when the step starts |
 | 12 Godot's own, used | the parts the slice and launch need (translations, themes) | the rest is polish |
 | [A thousand in one crowd](#a-thousand-in-one-crowd) | no | 255 in one fight hold 60 Hz today |
 
@@ -78,19 +79,19 @@ publish mods, rules included, without building the engine.
 
 | # | Step | State |
 |---|---|---|
-| 0 | [Decisions](#0-decisions) | four taken after the review, four since; six open |
+| 0 | [Decisions](#0-decisions) | twelve taken (four after the review, eight since); three open |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean (M235 to M242). **By hand: to do** |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243); the motion nodes' deletion goes with step 6 |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261): 255 in one fight at 60 Hz |
-| 4 | [The slice](#4-the-slice) | **next** |
+| 4 | [The slice](#4-the-slice) | **next**: an arena brawler (decided 2026-11-17) |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | next, beside the slice |
 | 6 | [Sheets improved](#6-sheets-improved) | after 5 |
 | 7 | [Timing from the clip](#7-timing-from-the-clip) | when the slice asks |
 | 8 | [Body parts with priorities](#8-body-parts-with-priorities) | when the slice asks |
 | 9 | [Cinderbox Studio](#9-cinderbox-studio) | after the slice has a game to mod |
 | 10 | [Server rules in Luau](#10-server-rules-in-luau) | after the slice has a game to mod |
-| 11 | [Avatars](#11-avatars) | not started; in 1.0 or not, to decide |
+| 11 | [Avatars](#11-avatars) | not started; in 1.0 (decided 2026-11-17) |
 | 12 | [Godot's own, used](#12-godots-own-used) | one row done (M259) |
 | | [Before launch](#before-launch) | open |
 
@@ -115,16 +116,17 @@ publish mods, rules included, without building the engine.
 | **Stay on Godot** (2026-11-08) | the expensive parts are the engine's own C++; Godot is the renderer, the UI and the modders' free editor. Looked at again only if a measured target fails with the time in Godot's renderer and a GPU crowd cannot fix it | [routes not taken](#routes-not-taken) |
 | **Every item drawn as data** (2026-11-14) | an item's look made once per kind; its reactions run from the compiled sheet; no node per item | [step 6](#6-sheets-improved) |
 | **Pushers stay exact** (2026-11-06) | a pusher's place every tick, not every other tick filled in: that would change how they push | [docs/scaling.md](docs/scaling.md#the-plan-for-many-players-step-3b-2026-11-03) |
+| **1.0's scope** (2026-11-17) | as proposed, with avatars in it | [What 1.0 means](#what-10-means) |
+| **The slice's game** (2026-11-17) | an arena brawler | [step 4](#4-the-slice) |
+| **Avatars in 1.0** (2026-11-17) | yes; the owner brings a few models when the step starts | [step 11](#11-avatars) |
+| **The Hytale comparison's proposals** (2026-11-17) | 1 and 7 before launch; 5 in step 6, 3 with it; 2, 4 and 6 postponed and kept open | [From the Hytale comparison](#from-the-hytale-comparison) |
 
 **Open:**
 
 | Decision | Options | Leaning | Decides |
 |---|---|---|---|
-| **1.0's scope** | [the table above](#what-10-means) | as proposed | 1.0 |
-| **The slice's game, and the players a server is made for** | an arena brawler like a Roblox fighting game; a big sandbox | the brawler | [step 4](#4-the-slice) |
-| **How players find servers** | Steam; a website's "play" link that starts the game; the game's own list; a desktop shortcut | none yet; needed for 1.0 | [parked](#parked) |
-| **Avatars in 1.0** | in; after | none yet | [step 11](#11-avatars) |
-| **The proposals from the Hytale comparison** | each taken, placed or dropped | [below](#proposed-from-the-hytale-comparison) | before launch, steps 6 and 9 |
+| **How players find servers** | Steam; a website's "play" link that starts the game; the game's own list; a desktop shortcut | decided later (the owner, 2026-11-17); needed for 1.0 | [parked](#parked) |
+| **The players an arena is made for** | a few (a duel, 2v2) to tens | decided with the slice's map | [step 4](#4-the-slice) |
 | **Cosmetic physics** | Jolt with a static copy of the level; no Jolt at all | decided later | [step 12](#12-godots-own-used) |
 
 `.cbsheet` and `.res`: a sheet made a Godot resource is not a `.res`. `.res` and `.tres` are
@@ -203,9 +205,9 @@ server's and the game's processor time. All of it, with every measurement, is in
 
 ### 4. The slice
 
-One game made with the engine and played by people. Leaning ([step 0](#0-decisions)): **an arena
-brawler**: one map, one mode (rounds and a score), the brawl kit and the bat, a ten-minute session
-that is fun.
+One game made with the engine and played by people. **Decided (2026-11-17): an arena brawler**,
+like a Roblox fighting game: one map, one mode (rounds and a score), the brawl kit and the bat, a
+ten-minute session that is fun. How many players an arena is made for is decided with its map.
 
 | | Today |
 |---|---|
@@ -274,6 +276,9 @@ written and checked, and, since its format is settled at 1.0, it changes here.
 | **Where each block runs, said**: the simulated blocks and the viewer's in marked sections (or files of their own), one indenting rule (it counts) | four languages in one file: `motion` and `use` (simulated, indenting counts), `on` and `while` (the viewer's reactions, indenting for the eye), `predict` (the viewer's guesses), `show`, `text` and `bind` (HUD) |
 | **Names in the sheet**: `field brawl.combo int`, `event brawl.jab.hit`; the server reads them from the pack | the editor waits for a server build |
 | **Parameters**: `param damage 8`, shown in the item's inspector, read by the server's rules | numbers written twice (the bat) |
+| **One sheet for many items** (from the Hytale comparison, proposal 5): a sheet shared across items, each item with its own parameters or replacing named parts of it | `fist.rules` writes the same `find` block four times |
+| **Words for how skills meet** (proposal 5): `blocked by` (which motions block or interrupt which), a combo with a window, a charge (how long it is held decides what it does), tap against hold, a cooldown shared by name | the fist guards two motions with `not motion.brawl.fist.Finisher`; brawl's combo window is a field a `while` motion counts down |
+| **Text and rows from the server** (proposal 3, with the HUD lines; its shape decided when the step starts): rows a mod publishes that a `CbList` lists, text fields sent the way names and private fields are (outside the simulation's hash); the layout stays the look's | fields are numbers; the shop's offers are written twice (`hud_shop.tscn`, `kOffers` in `shop.cpp`) |
 | **A motion's state readable**: its cooldown left, its charges, whether it is on, in conditions and HUD lines | brawl rebuilds its cooldowns and combo window: five fields declared in C++, five `while` motions counting them down or resetting them, while a motion's own `cooldown` goes unused |
 | **Rates said**: `change x -= 1 per second` | `change x -= 1` is once in a step and per second in a `while` |
 | **One rule for expressions**: one word bare, anything longer in brackets | an expression ends at "the next option word" (`impulse (distance < frag.radius) * ... along away` works because `along` is one) |
@@ -393,7 +398,8 @@ ours). The extension makes it the mod tool:
 
 ### 11. Avatars
 
-The body and its appearance kept apart:
+**In 1.0 (decided 2026-11-17).** The owner brings a few models when the step starts: they are what
+it is built and tested on. The body and its appearance kept apart:
 
 | | The body: one for everyone | The avatar: one per player |
 |---|---|---|
@@ -431,25 +437,58 @@ The body and its appearance kept apart:
 | **Cosmetic physics** (decided later) | nothing of the simulation is in Jolt: every Cinderbox authoring node is a plain `Node3D`, collision is Box3D's, and a look's `Area3D`s are made quiet. So a cosmetic shell casing would fall through the floor: Jolt gets a static copy of the level when the map loads, from the same shapes; or Jolt goes |
 | `PhysicalBone3D` | ragdolls for any skeleton ([later](#ragdolls-for-any-skeleton)) |
 
-## Proposed from the Hytale comparison
+## From the Hytale comparison
 
-**Not decided.** [docs/hytale-comparison.md](docs/hytale-comparison.md) (2026-11-11, checked against
-the code at M261) found Cinderbox built on Hytale's model (rules on the server, one client no mod
-changes, prediction from data) and proposes seven things. Each needs the owner's call; the column
-"Would go" is where it fits if taken.
+[docs/hytale-comparison.md](docs/hytale-comparison.md) (2026-11-11, checked against the code at
+M261) found Cinderbox built on Hytale's model (rules on the server, one client no mod changes,
+prediction from data) and proposed seven things. **Decided by the owner (2026-11-17):**
 
-| # | Proposal | Would go | For 1.0 |
-|---|---|---|---|
-| 1 | **A server may refuse players' own packs**: a player's packs load after a server's items and may replace any file of a look, a character's scene included (see-through walls with no cheat program); nothing lets a server say no. Counter-Strike's `sv_pure`: none, listed hashes, or any, in the server's info | [before launch](#before-launch) | yes |
-| 2 | **The camera as data**: the views are four constants of the game's (`ViewMode`) and a look's cameras are taken out; a server's rig (distance, top-down, side view, a cursor) baked from its look into the schema, since the server starts a shot's line of sight from the view | a step after the slice; replaces the leftover "cameras a mod places" | to decide |
-| 3 | **Text and rows from the server**: fields are numbers; a mod can say lines on a channel (`ctx.Say`) but not text in a label's format or rows of its own (the shop's offers are written twice: in `hud_shop.tscn` and in `shop.cpp`) | step 6 (HUD lines) | to decide |
-| 4 | **Sheets on things in the world**: doors, buttons, jump pads, trigger regions as sheets on map templates; a motion's owner is a player or a kind of item today | after step 6 | to decide |
-| 5 | **One sheet for many items, and words for how skills meet**: a sheet shared across items with per-item parameters; `blocked by`, a combo window and a charge as words (`fist.rules` writes the same `find` four times) | [step 6](#6-sheets-improved) | with step 6 |
-| 6 | **A game as one file**: map, items by hash, options, the network model, the pack policy; what a play link or a host opens | with [how players find servers](#parked) | yes, if finding servers is |
-| 7 | **What an item was made for** (the engine and Godot versions, the names it reads; baked motions and graphs carry a version, an item does not); **rules from a store** only after the Luau sandbox; **shaders** in packs decided (the validator checks for scripts only) | [before launch](#before-launch) | yes |
+| # | Proposal | Decided |
+|---|---|---|
+| 1 | **A server may refuse players' own packs**: a player's packs load after a server's items and may replace any file of a look, a character's scene included (see-through walls with no cheat program); nothing lets a server say no | **taken**: [before launch](#before-launch) |
+| 2 | **The camera as data**: a server's camera rig (distance, top-down, side view, a cursor) instead of the game's four views | **postponed**, [kept open](#postponed-kept-open) |
+| 3 | **Text and rows from the server**: text in a label's format and rows of a mod's own, the layout still the look's | **taken with [step 6](#6-sheets-improved)**, its shape decided there |
+| 4 | **Sheets on things in the world**: doors, buttons, jump pads, trigger regions as sheets on map templates | **postponed**, [kept open](#postponed-kept-open) |
+| 5 | **One sheet for many items, and words for how skills meet** | **taken**: [step 6](#6-sheets-improved) |
+| 6 | **A game as one file**: the map, items by hash, options, the network model, the pack policy | **postponed** with how players find servers, [kept open](#postponed-kept-open) |
+| 7 | **What an item was made for; rules from a store only after the Luau sandbox; shaders in packs decided** | **taken**: [before launch](#before-launch) |
 
-**Not to take** (the comparison's reasons): a UI the server pushes change by change, assets sent on
+**Not taken** (the comparison's reasons): a UI the server pushes change by change, assets sent on
 join, Hytale's sync of predicted chains, a fixed set of keys.
+
+### Postponed, kept open
+
+Each postponed proposal, when it comes back, and what work before then must not close off. A change
+that would go against one of these says so in its milestone.
+
+**2. The camera as data.** Comes back after the slice, or when a mod first needs a view the game
+does not have (top-down, a side view, a kill cam); the leftover "cameras a mod places" goes with it.
+
+| Keep | Why |
+|---|---|
+| The views in one place: `ViewMode` (`src/sim/types.h`) and `godot/view_camera.gd`. A new view goes there, never as a camera a look carries (a look's cameras stay removed: `RemoveCameras`) | a rig from the server then replaces one place |
+| Where a line of sight starts in one function (`Context::ViewPosition`), its numbers in named constants (`kShoulderOffset`, `kViewPivotHeight`, `kEyeAhead`, `kEyeUp`) | a rig's numbers, baked into the schema, feed it instead: the server must know where a player's aim starts |
+| `PlayerInput::view` a number, not flags | a server's own rigs are numbered after the four |
+
+**4. Sheets on things in the world.** Comes back after step 6, or when the slice's arena wants a
+door, a jump pad or a trigger region.
+
+| Keep | Why |
+|---|---|
+| Step 6's sheet a resource on a node that says which blocks it allows (`CbItem.sheet`, `CbMotionSet.sheet`, ...) | a map template becomes one more such node, not a new mechanism |
+| Step 6's compiled sheet run per entity, not per player slot | a door, a button or a region is an entity, and has no slot |
+| A motion's triggers an enum that grows (`Motion::When`: Press, While, Event, Edge) | entering a region, being used, being hit are more triggers |
+| "Use what you look at" one intent (`SlotIntent::Open`, a container's today) | it grows to anything in the world a sheet says can be used |
+
+**6. A game as one file.** Comes back with how players find servers: what a play link, a host and
+Test locally would open.
+
+| Keep | Why |
+|---|---|
+| Every setting of a game a named option (`--mod-option NAME=VALUE`, read by `ctx.Option`), not a constant in a mod | a game file is then a list of them |
+| A server's policy on players' packs (proposal 1) a setting like the others | the file carries it |
+| Workshop items named by their hash | the file lists them, and any copy of it gets the same game |
+| Test locally and the game's host start `cb_server` from options | they open the file later instead |
 
 ## Before launch
 
@@ -457,10 +496,11 @@ join, Hytale's sync of predicted chains, a fixed set of keys.
 |---|---|---|
 | **The pack loaders fuzzed, files limited in size** | workshop items are Godot files on every player's machine; the guard and the validator check what is in them, not Godot's parsers | not started |
 | **Cheating, decided** | inputs model: every client holds the whole world. Hybrid: every character is sent, far ones about every 12th state, so a client knows where everyone is; what is not sent is others' unshared fields, their items put away and their inputs. Wallhacks are trivial in both; fog of war for characters is possible in the hybrid (what is not sent cannot be seen), not built | open |
-| **A server's policy on players' packs** | proposal 1 | proposed |
-| **What an item was made for; shaders in packs** | proposal 7 | proposed |
+| **A server's policy on players' packs** (proposal 1) | a player's packs may replace any file of a look; the server says none, listed hashes, or any (Counter-Strike's `sv_pure`) in its info (`MsgInfo`), and the game loads only what it allows | decided 2026-11-17; to do |
+| **What an item was made for** (proposal 7) | baked motions and graphs carry a format version, an item does not: it says nothing of the engine and Godot versions it was made for or the names it reads | decided 2026-11-17; to do |
+| **Shaders in packs** (proposal 7) | the validator refuses scripts only; a pack's shaders run on every player's GPU. Refused, or allowed in a checked subset: decided with the loaders' fuzzing | decided 2026-11-17; to do |
 | **A mod's crash** | takes the server down: mods are compiled into its process | [step 10](#10-server-rules-in-luau) |
-| **Rules from a store** | only once the Luau sandbox holds | [step 10](#10-server-rules-in-luau) |
+| **Rules from a store** (proposal 7) | only once the Luau sandbox holds | [step 10](#10-server-rules-in-luau) |
 | **How players find servers** | join by address only | [parked](#parked); needed for 1.0 |
 | **Compatibility, promised** | what 1.0 keeps (the sheet, an item, the rules' API); a protocol of another version is refused at join today, as it should be; a format's change after 1.0 is versioned and said | to write |
 | **The manual audited** | M261.5 fixed 19 stale lines (DESIGN, README, `docs/looks.md`, `mods_src/README.md`) and M261.6 this roadmap, each read against the code; `docs/characters.md`, `items.md`, `motions.md`, `maps.md`, `testing.md`, `playtest.md`, `server-mods.md` and `sdk/README.md` have not been read whole against it | to do |
@@ -542,7 +582,7 @@ Decided to wait; each says what it waits for.
 
 | What | Waits for |
 |---|---|
-| How players find servers | a decision: Steam, a website's "play" link that starts the game, the game's own list, a desktop shortcut. Today: join by address, Test locally, a server's mods listed before joining. **Needed for 1.0** |
+| How players find servers | a decision, taken later (the owner, 2026-11-17): Steam, a website's "play" link that starts the game, the game's own list, a desktop shortcut. Today: join by address, Test locally, a server's mods listed before joining. **Needed for 1.0**; [a game as one file](#postponed-kept-open) comes back with it |
 | Steam Workshop as the store | the decision above; the store is a folder today |
 | Ships | Box3D growing what they lack (buoyancy) rather than more patches to it (five in `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (vehicles), a buoyancy component with a wave function the water's look shares |
 | **The player's body, for motions** | a mod that wants it; each a word of the sheet language ([its planned list](docs/rules-language.md#planned)), in the simulation, so a motion using it is predicted. In the order they would likely be wanted: |
@@ -567,7 +607,7 @@ Not scheduled. A row moves up into the road when the slice wants it.
 | Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player |
 | Animation | a slow-motion finisher (a state's speed is in, M230); the dash's and the hook's poses are placeholders |
 | Feet on the ground | foot IK in the shared pose, beside the aim chain: each foot's ground found by a ray in the simulation, the hips lowered to the lower foot, two-bone IK per leg, so the legs' hitboxes are where the feet are drawn |
-| The client | keys the server says: a server maps keys to what they do, an item's own key included, sent once at join; a player may still rebind (per server). Cameras a mod places (a round's end, a kill cam): see proposal 2 |
+| The client | keys the server says: a server maps keys to what they do, an item's own key included, sent once at join; a player may still rebind (per server). Cameras a mod places (a round's end, a kill cam): with [the camera as data](#postponed-kept-open) |
 | Games | teams and spectators (mods, once private fields and the board cover them); lists on one entity (array fields, or a `CbList` over a field family) |
 | Finding the way | one mesh per character size; a mesh mended when a wall breaks; off-mesh links (a jump, a ladder) |
 | NPCs | NPCs of a character of their own; a brain in a sheet (predicted exactly, at a rollback cost) |
