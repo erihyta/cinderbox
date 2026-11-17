@@ -11,13 +11,13 @@ the look does not matter.
 
 ```
 inputs ──> server: simulation + mods ──> authoritative frames (inputs + mod commands) ──> every simulation
-                                                                                              │
+           (the hybrid: commands + physics events in the frames, the characters as states)    │
 looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <── a source (live, replay, file)
 ```
 
 | Principle | What it means here |
 |---|---|
-| One deterministic simulation | server and simulating clients run the same C++ and exchange inputs and commands, never state |
+| One deterministic simulation | the server and every client run the same C++. The physics world is never sent as state: a client steps it from everyone's inputs and the commands (the inputs model) or from the server's commands and physics events (the hybrid, the default). In the hybrid the characters' states are sent ([Netcode](#netcode)) |
 | Mechanisms in the engine, rules in mods | the engine moves bodies, holds items, runs state machines; what a pistol or a round is lives in a server mod |
 | Clients present, they do not decide | a client never runs a rule; it draws what mods publish, with looks made of data |
 | Authored in Godot, baked for the simulation | maps, characters, state machines and item bodies are Godot scenes; a bake turns them into small files the server reads |
@@ -302,13 +302,13 @@ The inputs model:
 
 | Channel | Carries |
 |---|---|
-| 0, reliable | `Hello` (protocol version, build fingerprint, name, token), `Welcome` (config, slot, map, schema, a portable snapshot), `Reject`, checksums, names, resync requests |
-| 1, unreliable | client: the last 12 ticks of input and the tick it has frames up to. Server: every tick, all frames from that tick on, delta-chained; a lost batch costs nothing because the next repeats it |
+| 0, reliable | `Hello` (protocol version, build fingerprint, name, token), `Welcome` (config, slot, map, schema, a portable snapshot), `Reject`, checksums, names, private fields, typed text, resync requests |
+| 1, unreliable | client: its newest inputs, each in as many packets as the server's count of its lost packets asks (4 at least; 12 always before M261), the tick it has frames up to, and in the hybrid the state it keeps as a base. Server, the inputs model: every tick, all frames from that tick on, delta-chained; a lost batch costs nothing because the next repeats it. The hybrid: its frames with the characters' states (above) |
 
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 69, replay version 47 (`src/net/protocol.h`, `replay.cpp`): each says in its comment what every version changed.
+- Protocol 92, replay version 61 at M261 (`kProtocolVersion` in `src/net/protocol.h`, `kVersion` in `src/net/replay.h`): each says in its comment what every version changed. The code is the place to read the numbers.
 
 ## The viewer protocol
 
@@ -331,7 +331,7 @@ source  <──control───   viewer        named commands with a number ("p
 - **Two extensions**: `cinderbox` (the viewer: no simulation, no networking, all a mod's project needs) and `cinderbox_peer` (joins servers, plays recordings). Frames cross between them as bytes.
 - **The mirror** (`mirror.*`): a presentation flecs world that interpolates between ticks, fades out rollback corrections, evaluates poses and turns count changes into visual events.
   - **Poses by distance and view** (M259, `EvaluatePlayerPose`, `Mirror::SetView` from the game's camera): every frame within 15 m, every 2nd within 30, 4th within 60, 8th beyond (by how far it looks: zoomed in, nearer); out of view every 4th within 15 m (its shadow may be in view), else not at all; taken in turns by NetId. The viewer's own every frame. A pose not made again is not put on its skeleton again either (`PlayerAnim::posed`); its catch-up runs over the time since its last.
-- **The codec** (`view_codec.*`, packets "CBV4"): whole frames or deltas against a frame both sides have.
+- **The codec** (`view_codec.*`, packets "CBV7"): whole frames or deltas against a frame both sides have.
 
 | Precision | Positions | Rotations | Animation | Not sent |
 |---|---|---|---|---|
@@ -339,7 +339,7 @@ source  <──control───   viewer        named commands with a number ("p
 | compact | 1/512 m grid, small deltas | 32 bits (smallest three) | floats on a 1/1024 grid | velocity, inputs, a held item's transform |
 
 - A **stride** sends fewer frames than ticks; lists and event rings are sent as what changed. 32 players went from 6.8 to 0.43 Mbit/s.
-- **Every client simulates.** Streaming clients (M54: a client that was sent frames instead of inputs, about ten times the download, with fog of war decided by mods) were removed in M68. What is left of them is the compact codec and the stride, which view files use.
+- **Every client simulates**: none is sent frames to draw. In the inputs model it simulates the whole world; in the hybrid, the physics world and its own character, and the other characters are the server's ([Netcode](#netcode)). Streaming clients (M54: a client that was sent frames instead of inputs, about ten times the download, with fog of war decided by mods) were removed in M68. What is left of them is the compact codec and the stride, which view files use.
 
 ## Server mods
 
@@ -597,17 +597,17 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, test_mod.ps1, export_c
 | Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
 | State machines | what bakes is a subset of Godot's tree ([characters.md](docs/characters.md#state-machines)): no `travel()`, Sync switching or transitions to End at the top; a OneShot's autorestart and fade curves are not baked; a grouped machine is baked as a nested one; other blend nodes are refused |
 | Characters | a slot drives a body, and may possess another: a character's or a loose prop (M220, M221), walked by the capsule controller (a prop's bounds hold its move back), or driven by a mod (an NPC, M222: it selects and uses items as a player does (M228), the `waves` mod's come in waves (M229); the combat mod hurts and kills them, at full health from the start (M224, M225); a mod's Destroy leaves any body someone drives: it stops driving it first); every body is one of the server's characters, in the simulation, the server's hit tests (M216) and the client's drawing (M217); first person only for a character with a first-person camera in its scene, shots from its eyes (M218); the third-person camera is the same for every body; another skeleton than a humanoid plays (M219) without a ragdoll, packs that do not fit it, or arms in first person; no character without a skeleton yet; the scene ships its animations' bone tracks next to the ozz clips |
-| Players with latency | every client simulates the whole world and resimulates its rollback window when a remote input was not what it guessed (it rarely is: a mouse turns every tick). With 64 players and a 200 ms round trip that is about 16 steps a tick at 0.8 ms each: 87% of one core on this machine at full speed, with nothing to spare for a slower one (M139's measurements). `reconcile_every` 2 halves it. The step itself is the cost; snapshots are 5% since M139. Of a step at 64 players, physics and the characters are about 0.4 ms each. The physics follows what is awake, not the players: 0.02 ms with 2 players and no props, 0.3 to 0.4 ms with the 300 props the test's bots keep in the air (M140). The network is not the limit |
-| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). The controller is kinematic: its mass decides what contacts, forces and ropes exchange, but a player is not knocked over. Pushes from several players on one player in a tick add up, in slot order. A probe's line starts at the same point in every view (not at the eye in first person). One probe per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives |
-| Mods | compiled into the server (no hot-loading); a mod is switched off by a `disabled` file in its folder (compiled in, run only when `--mods` names it), a part of one by a server option its conditions read; events between mods are a tick late; a board has 32 names per scope; a look published again is taken while the server runs only when it changes nothing the simulation reads (bodies, properties, packs, motions need a restart), a player without the new item keeps the old look, and files the new look dropped stay loaded in a running game |
-| Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
+| Players with latency | the inputs model only (the hybrid's costs are under [Netcode](#netcode)): every client simulates the whole world and resimulates its rollback window when a remote input was not what it guessed (it rarely is: a mouse turns every tick). With 64 players and a 200 ms round trip that is about 16 steps a tick at 0.8 ms each: 87% of one core on this machine at full speed, with nothing to spare for a slower one (M139's measurements). `reconcile_every` 2 halves it. The step itself is the cost; snapshots are 5% since M139. Of a step at 64 players, physics and the characters are about 0.4 ms each. The physics follows what is awake, not the players: 0.02 ms with 2 players and no props, 0.3 to 0.4 ms with the 300 props the test's bots keep in the air (M140). The network is not the limit |
+| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). The controller is kinematic: its mass decides what contacts, forces and ropes exchange, but a player is not knocked over. Pushes from several players on one player in a tick add up, in slot order. A probe's line starts at the same point in every view (not at the eye in first person). One probe per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives (the hybrid: with its character's update and events; its motions are not run here). In the hybrid what your own motion does to a body or to another player is not applied by your game: it comes with the server's events (a throw is drawn at once) |
+| Mods | compiled into the server (no hot-loading); a mod is switched off by a `disabled` file in its folder (compiled in, run only when `--mods` names it), a part of one by a server option its conditions read; events between mods are a tick late; a board has as many names per scope as the mods declare (a field's number is 16 bits), each one state on every entity that has any; a look published again is taken while the server runs only when it changes nothing the simulation reads (bodies, properties, packs, motions need a restart), a player without the new item keeps the old look, and files the new look dropped stay loaded in a running game |
+| Private fields | per player, not per entity; not in recordings or view files (they read 0 there). A mod cannot hide an entity from a client, so there is no fog of war: in the inputs model each client simulates the whole world; in the hybrid each has the physics world whole and is sent the characters by priority (a far one later, not never), without the others' unshared fields and their items put away out of sight |
 | Combat | no teams, no spectators |
 | Aiming | no marker when the shot is blocked by something the camera sees past (cover in third person); the first-person camera does not lower when crouching (it follows the mover, and crouching is an animation); the bat's strike is rays in the look direction from the chest, not the bat's path through the pose; bots always use the camera behind |
 | First-person body | the world is the third-person one and first person only shows copies: the body is set to cast its shadow without being drawn, a legs copy and an arms copy are made for the eye (three poses of one skeleton for the viewer's own player), and the arms and the held item are drawn by a second camera over the world (the sun's shadow map is drawn once more for it). The legs are slid back when looking down, so the feet are not exactly where the body's are; the view's pose is the upper body standing still; third-person holds are not framed for the eye, so most items need a `view_offset` and `view_rotation`; fingers are the clip's; a held item's shadow is of its meshes at rest; what is stowed on the body is not drawn in first person |
 | Items | two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
 | Menu | no server browser |
-| Large files | `simulation.cpp` is about 6,000 lines (the mover left it in M92; possession, driven props and NPCs came in since); `cinderbox_client.cpp` is in four parts since M117, the largest 1,900 |
+| Large files | `simulation.cpp` is about 7,000 lines (the mover left it in M92; possession, driven props and NPCs came in since); `cinderbox_client.cpp` is in five parts, the largest 2,150; `tests/test_main.cpp` is about 13,800 |
 
 ## Measurements (Clang Release, 32-thread desktop, everything on one machine)
 
