@@ -132,6 +132,45 @@ and counts what each would be sent; `tools\crowd_client.ps1` (M259) puts the gam
 crowd; `cb_bot` through `cb_netsim` measures live players. Each section is as it was measured, on
 this laptop unless it says otherwise.
 
+### M4 and M5: the inputs model, 64 bots
+
+Moved here from DESIGN.md (M261.8). Clang Release, a 32-thread desktop, everything on one machine.
+
+"Client work" is reconcile plus the predicted ticks, per rendered frame, for a full bot. There are two kinds of bot:
+- **Realistic bots** hold directions and sprint, turn the camera smoothly now and then, and jump and spawn props occasionally.
+- **Chaotic bots** (`--chaotic`) change every input field every tick. They are the worst case for mispredictions and bandwidth.
+
+**M5** (unreliable frame batches, automatic window), 64 bots, 4 of them full:
+
+| Link | Bots | Window | Server tick | Client work avg / max | Stalled | Late inputs | Down / up per client | Server out |
+|---|---|---|---|---|---|---|---|---|
+| loopback | realistic | 8 | 0.80 ms | 0.86 / 8.9 ms | 0% | 0% | 42 / 45 kbit/s | 2.6 Mbit/s |
+| 25±5 ms each way, 1% loss (RTT 61 ms) | realistic | 10 | 0.88 ms | 0.93 / 8.8 ms | 0% | 0% | 162 / 45 kbit/s | 10.5 Mbit/s |
+| 45±10 ms, 2% loss (RTT 106 ms) | realistic | 13 | 0.94 ms | 2.48 / 16.4 ms | 0% | 0.01% | 254 / 44 kbit/s | 17 Mbit/s |
+| 45±10 ms, 2% loss (RTT 106 ms) | chaotic | 13 | 1.08 ms | 1.17 / 24.2 ms | 0% | 0% | 1.4 Mbit / 44 kbit/s | 90 Mbit/s |
+| loopback | chaotic | 8 | 0.81 ms | 1.18 / 10.7 ms | 0% | 0% | 196 / 45 kbit/s | 12.5 Mbit/s |
+
+- **Bandwidth**: download grows with round trip, because each batch repeats the frames still in flight (about RTT × rate + 1 of them).
+- **Integration test** (3% loss and 1% duplication each way, RTT about 74 ms): 0% late inputs once settled, with windows of 13–16. Before M5 it was about 80%. (The test steps its four clients on a thread each: one after another they take longer than a tick, since each resimulates its window for every frame, at about 0.6 ms a tick with every mod running.)
+- **Mixed build**: MSVC server, GCC network simulator and bots, and a Clang client over a lossy link. No desyncs, and the GCC build verified the MSVC server's recording.
+
+**M4** (reliable ordered frames, fixed window, chaotic bots), for comparison:
+
+| Link | Window | Server tick | Client work avg / max | Stalled | Late inputs | Down per client |
+|---|---|---|---|---|---|---|
+| loopback, 64 bots | 8 | 0.72 ms | 0.94 / 6.7 ms | 0% | ~0% | 118 kbit/s |
+| RTT 106 ms, 2% loss | 8 | 0.75 ms | 1.98 / 17.1 ms | 7.9% | 4.5% | 115 kbit/s |
+| RTT 106 ms, 2% loss | 16 | 0.78 ms | 1.63 / 15.5 ms | 1.1% | 0.17% | 120 kbit/s |
+
+- **Join**: one portable snapshot per join, about 80–250 KB.
+- **Replay**: `cb_replay verify` re-simulates at 0.15–0.4 ms per tick.
+
+**Findings**:
+- **Window vs latency**: with a fixed 8-tick window at 60 Hz, a round trip above about 75 ms pins the client to the window: every input it sends arrives late, and that player's own actions get corrected constantly. The automatic window fixes this, at the cost of deeper re-simulation when latency is high (client work up to about 16–24 ms in the worst frames at 106 ms with 64 very active players).
+- **Head-of-line blocking** (M4): with reliable ordered frames, one lost frame stalled confirmation until it was retransmitted. The M5 unreliable batches removed it.
+- **Test harness pitfalls**: a full bot sharing a thread with lite bots made their inputs late (each full bot now runs on its own thread); debug builds cannot keep real time with a server and four simulating clients on one thread, so the late-input thresholds are only checked in optimized builds.
+- **Rare reconnect**: an occasional client reconnect (about one per several minutes of 64 bots at 2% loss) was seen with the 1–3 s ENet timeout. The timeout is now 2–6 s; no reconnects occurred in the M5 runs.
+
 ### M250: states by distance, 255 players on a server
 
 Measured on the hybrid (one machine, bots in four processes): the server's tick 0.6 ms at 16

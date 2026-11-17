@@ -14,7 +14,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
 | Authoring | maps, characters, their animation trees, items and motions are made in the Godot editor and baked for the server |
 
-Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, the newest last. [ROADMAP.md](ROADMAP.md) is the road to 1.0, rewritten after M261 (M261.6).
+Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, the newest last. [ROADMAP.md](ROADMAP.md) is the road to 1.0, rewritten after M261 (M261.6, shortened in M261.8).
 
 ## The manual
 
