@@ -286,7 +286,7 @@ ctx.Set( 0, m_ending, second == 0 ? Flawless : lead <= 1 ? SinglePoint : ClearWi
 - **A line is a format**: `"{name:deathmatch.winner} takes it"` works in a choice.
 - **`choice_field` can be an expression**: `combat.health < 25` picks line 1 when it holds, line 0 when not.
 - **`{choice}`** in `text_format` is the picked line, when there is more around it: `"-- {choice} --"`.
-- **Text nobody could write beforehand** (what a player types, a host's message of the day) is not covered: nothing in the game makes such text yet. Player names are the one case, and have their own path.
+- **Text nobody could write beforehand** (what a player types, a host's message of the day) goes through a text channel a mod declares: a `CbTextEntry` to type into, a `CbTextLog` for the lines a mod says on it, the server's own words included ([typed text](server-mods.md#typed-text)). It is lines in a log, not a field: a label's format and a list's row cannot show it. Player names have their own path.
 
 ### Lists
 
@@ -358,7 +358,7 @@ Bag            PanelContainer
 - **An intent is the player's own input**: the move is carried out by every simulation, the player's own at once ([The inventory](items.md#the-inventory)).
 - **The hotbar** is the same slot in a `CbList` across the bottom, its `max_rows` bound to `inventory.columns`: the first row.
 - **The chest**: under the player's slots, a `Chest` part (a `CbList` of the open container's slots, the same cell) shown while `container_open`; the key opens the chest looked at.
-- **What is not there yet**: an intent a mod declares ("buy item 3").
+- **An intent a mod declares** ("buy offer 2") is a `CbClick`'s `mod_intent` (the Clicks row above; the shop's screen is the example). Not there yet: its answer predicted (the screen shows it when the server's state arrives), and numbers wider than a byte (`intent_a`, `intent_b` are 0 to 255).
 
 `CbPromptLabel` is the same in the world: a `Label3D` with a `text_format`, upright above its parent,
 facing the camera, the same size at any distance, hidden while its text is empty; with a
@@ -569,6 +569,9 @@ Client mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add
 - sounds and other shared files in `assets/`;
 - the HUD in `ui/`;
 - map visuals in `maps/` (the scene named after the map the server runs);
+- a character's scene and baked files in `characters/<name>/`: what that player sees of it. The server poses and hit-tests with its own files, and every simulation runs the state machine the server's schema carries.
+
+A player's own packs load after a server's items and replace their files, and nothing lets a server refuse them yet.
 
 Client mods and workshop items cannot contain code, and a scene without code cannot act like code.
 Two checks:
@@ -576,7 +579,7 @@ Two checks:
 | When | What | Checked by |
 |---|---|---|
 | Before a pack loads | only known kinds of files in these folders (and Godot's converted copies of them), redirects that stay inside the pack, no compressed resources, no resource that names a script type or a script file | `boot.gd`; `check_mod_validator.gd` runs it on real packs and hostile ones |
-| Before a scene is used | only listed node classes (meshes, particles, lights, sounds, animation, UI controls, an `Area3D` a sheet's find reads, the `Cb*` nodes: never an `HTTPRequest`, a `Window`, a camera), no script, no signal wired to a method, no node path that leaves the scene, animations that call only listed methods | the scene guard (`src/godot/cue/cue_guard.h`); `check_guard.gd` |
+| Before a scene is used | only listed node classes (meshes, particles, lights, sounds, animation, UI controls, an `Area3D` a sheet's find reads, the `Cb*` nodes: never an `HTTPRequest`, a `Window`, a `Timer`, a viewport; a `Camera3D` is accepted and taken out of the instance, so a look never takes the view), no script, no signal wired to a method, no node path that leaves the scene, animations that call only listed methods | the scene guard (`src/godot/cue/cue_guard.h`); `check_guard.gd` |
 
 A scene the guard refuses is not instantiated (a warning says what it found); the game draws its
 plain stand-in instead. Gameplay stays in the simulation and in the server's mods, so a pack cannot

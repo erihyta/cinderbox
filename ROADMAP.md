@@ -931,7 +931,7 @@ Independent of the path; each is small.
 | What | Note |
 |---|---|
 | The rest of `simulation.cpp` in modules | props, ragdolls, items and animation; the mover went first (M92) |
-| `tests/test_main.cpp` in files by area | about 12,500 lines in one file |
+| `tests/test_main.cpp` in files by area | about 13,800 lines in one file (12,500 at the review) |
 | Replays' extension | `.cbr` is also the comic-book archive (a double-click opens a comic reader): `.cbreplay` |
 | A motion's field and a mod's | both may write one (commands first, then motions); the server could warn when a mod sets every tick a field a motion writes |
 | Slots for what is worn | the dash boots take a slot: selected, they are held like a tool |

@@ -14,10 +14,10 @@ pack is loaded, the game uses the mod's file instead. New files can go in the sa
 ## Rules
 
 The game checks each pack before it loads it, against an allowlist. A pack is refused if:
-- it contains a file outside `prefabs/`, `vfx/`, `ui/`, `maps/`, `assets/` (and, for baked data only,
-  `characters/`, `anim/`, `items/`, `motions/`) or Godot's converted
-  copies (`.godot/exported`, `.godot/imported`), or a kind of file not on the list (scenes,
-  resources, textures, samples, audio, fonts);
+- it contains a file outside `prefabs/`, `vfx/`, `ui/`, `maps/`, `assets/`, `characters/`, `anim/`,
+  `items/`, `motions/` or Godot's converted copies (`.godot/exported`, `.godot/imported`), or a
+  kind of file not on the list: scenes, resources, textures, samples, audio, fonts, rules sheets
+  (`.rules`), and in the last four folders baked data (`.ozz`, `.cfg`);
 - a `.remap` or `.import` points anywhere but the pack's own converted files;
 - a resource is compressed (its contents could not be checked);
 - a resource names a script type (`GDScript`, `Script`, `GDExtension`, ...) or a script file (`.gd`, `.cs`).
@@ -25,7 +25,9 @@ The game checks each pack before it loads it, against an allowlist. A pack is re
 A scene is checked again before the game uses it, and is not used if it has:
 - a node of a class that is not listed (the list is in `src/godot/cue/cue_guard.cpp`: meshes,
   particles, lights, sounds, skeletons, animation, UI controls and the `Cb*` nodes; not an
-  `HTTPRequest`, a `Window`, a `Camera3D`, a `Timer`, a viewport);
+  `HTTPRequest`, a `Window`, a `Timer`, a viewport). A `Camera3D` is accepted and taken out of
+  the instance: a character's eyes and an item's first-person view are baked from it, and a look
+  never takes the player's view;
 - a signal connected to a method (Node dock, Signals);
 - a node path that climbs out of the scene, or starts at the root;
 - an animation whose method track calls anything but `restart`, `play`, `stop`, `show`, `hide` and
@@ -43,19 +45,20 @@ Godot converts scenes and imported assets into its runtime formats when packing.
 
 | Path | Used for | Notes |
 |---|---|---|
-| `prefabs/player.tscn` | each player | The root sits at the feet and faces +Z. It contains a `CinderboxSkeleton`, which poses it from the simulation (bone boxes, or a `Skeleton3D` with humanoid-profile bone names, with `use_slot_color` for the player's colour). |
+| `characters/<name>/character.tscn` | each body of a server's character (the mannequin, a character item) | The character's own scene, with its baked files beside it ([characters.md](../docs/characters.md)). A mod that replaces it changes what its player sees, not the server's hit tests. `ragdoll.tscn` beside it, if there is one, is its ragdoll. |
+| `prefabs/player.tscn` | a player on a server with no character (the built-in rig, `--character none`) | The root sits at the feet and faces +Z. It contains a `CinderboxSkeleton`, which poses it from the simulation (bone boxes, or a `Skeleton3D` with humanoid-profile bone names, with `use_slot_color` for the player's colour). |
 | `prefabs/prop_box.tscn` | box props | Unit cube (1×1×1). The node is scaled to the prop's size. |
 | `prefabs/prop_sphere.tscn` | sphere props | Unit-diameter sphere, scaled like the box. |
 | `prefabs/static_box.tscn` | level geometry | Unit cube, scaled to each wall, ramp, step or platform. |
 | `prefabs/<visual>.tscn` | entities from a map template | A template names the prefab it draws as. Unit-sized like the others: the client scales it to the shape the template authored. |
-| `prefabs/ragdoll.tscn` | ragdolls (optional) | Posed like a player; without it the player prefab is used. It needs a `CinderboxSkeleton` to be posed. |
+| `prefabs/ragdoll.tscn` | the built-in rig's ragdolls (optional) | Posed like a player; without it the player prefab is used. It needs a `CinderboxSkeleton` to be posed. |
 | `vfx/reactions*.tscn` | what plays on which event | A scene of `CbReaction` nodes: scenes, sounds, camera shake and screen flashes, on the game's events and the server mods' (see [Looks](../docs/looks.md)). Every file matching this name is loaded, so ship `vfx/reactions_<yourmod>.tscn` and your effects are added to the game's instead of replacing them. |
-| `vfx/reactions_pistol.tscn`, `ui/hud_pistol.tscn`, `prefabs/pistol.tscn`, `vfx/muzzle_flash.tscn`, `vfx/tracer.tscn`, `vfx/bullet_spark.tscn`, `vfx/hit_puff.tscn` | the pistol's look | These come with the pistol's workshop item; a client mod can override any of them at the same path, because player mods load after items. The tracer is one metre long along -Z; a beam reaction stretches it. |
+| `vfx/reactions_gun.tscn`, `ui/hud_gun.tscn`, `ui/pistol_hud.tscn`, `prefabs/pistol.tscn`, `vfx/muzzle_flash.tscn`, `vfx/tracer.tscn`, `vfx/bullet_spark.tscn`, `vfx/hit_puff.tscn` | the pistol's look | These come with the pistol's workshop item; a client mod can override any of them at the same path, because player mods load after items. The tracer is one metre long along -Z; a beam reaction stretches it. |
 | `assets/...` | sounds and other shared files | A reaction can name any stream your mod ships, for example `res://assets/sfx/<yours>.wav`. |
 | `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects the game's own reactions play. Every `GPUParticles3D` in the scene is restarted; the node is freed after its lifetime. |
 | `vfx/jump.tscn`, `vfx/land.tscn` | a player jumps / lands | Placed at the player's feet. |
-| `ui/hud.tscn` | the game's HUD | Any `Control` tree. Optional nodes with unique names `%Stats`, `%Banner`, `%Help` and `%Name` (a LineEdit) are filled by the game. |
-| `ui/hud_<mod>.tscn` | a mod's HUD | Laid over the game's HUD. Build it from ordinary controls plus `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed` and `CbScoreboard`, which read the server mods' fields and events by name. |
+| `ui/hud.tscn` | the game's HUD | Any `Control` tree. Optional nodes with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. (The player's name is typed in the menu, `ui/menu.tscn`.) |
+| `ui/hud_<mod>.tscn` | a mod's HUD | Laid over the game's HUD. Build it from ordinary controls plus the [HUD nodes](../docs/looks.md#hud-nodes) (`CbFieldLabel`, `CbFieldBinding`, `CbList` for a scoreboard or a kill feed, `CbKey`, `CbClick`), which read the server mods' fields and events by name. |
 | `maps/<name>.tscn` | the level's visuals | The scene the server's map was baked from, named after it. A mod can replace it to re-skin a level. |
 
 Prop prefabs whose root has the metadata `tint_by_net_id = true` get a per-prop color from the game.
