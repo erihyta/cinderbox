@@ -6,7 +6,7 @@ based; the comparison is of the modding model, not of the content.
 
 | Read this as | |
 |---|---|
-| Status | **proposals, not decisions**. Nothing here is on the roadmap until the owner puts it there |
+| Status | written as proposals; **decided by the owner on 2026-11-17**: 1 and 7 before launch, 5 in roadmap step 6 and 3 with it, 2, 4 and 6 postponed and kept open ([ROADMAP.md](../ROADMAP.md#from-the-hytale-comparison)) |
 | The goal it serves | the "presentation client": one client that every server drives with data and that runs no mod's code ([DESIGN.md](../DESIGN.md): "Clients present, they do not decide") |
 | Cinderbox's side | first written from the roadmap and the manual, then checked against the code at commit `cd6f9ce` (M261) on 2026-11-14. Three statements were wrong and are corrected: [Checked against the code](#checked-against-the-code) |
 | Hytale's side | the official strategy post and patch notes, and community docs built on the decompiled server: [How sure this is](#how-sure-this-is) |
@@ -213,6 +213,11 @@ Fixed on 2026-11-15, each after reading the code it describes. "First check" row
 - `src/present/view_codec.h:19`: its comment still says "CBV4" where the constant is "CBV7". Code,
   not docs.
 - `ROADMAP.md`, "Where it stands (M234)" and "What the review found": dated to M234 on purpose.
+- **Since (M261.6)**: the "CBV4" comment is fixed; the roadmap was rewritten after M261 (its M234
+  sections are gone, what they found that still holds kept), its step 3 and 3b measurements moved
+  to [docs/scaling.md](scaling.md), and this document's seven proposals are placed in it as the
+  owner decided ([ROADMAP.md](../ROADMAP.md#from-the-hytale-comparison)), with what keeps the
+  postponed ones open.
 - **Not a full audit.** Only the passages around the lines above were read against the code.
   `docs/characters.md`, `items.md`, `motions.md`, `maps.md`, `testing.md`, `playtest.md`,
   `server-mods.md` and `sdk/README.md` were not.

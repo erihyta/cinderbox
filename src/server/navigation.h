@@ -1,6 +1,6 @@
 #pragma once
 
-// Finding the way (ROADMAP.md, step 9): a navigation mesh of what does not move, built on the
+// Finding the way (M227): a navigation mesh of what does not move, built on the
 // server when the game starts (Recast), and paths along it (Detour), for a mod's brains. Server
 // only: nothing here is part of the simulation, so it need not be deterministic; what a mod does
 // with a path (the input it drives a body with) is what every simulation runs.

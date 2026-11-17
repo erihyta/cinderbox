@@ -1,13 +1,15 @@
 #pragma once
 
-// The state network model's message (ROADMAP step 3): one of the server's states
-// (Simulation::SaveState), whole or as a change against a state the client said it has.
+// The server's states on the wire (M245, for the state model; the hybrid's since M248: ROADMAP
+// step 3): one of the server's states (Simulation::SaveState), whole or as a change against a
+// state the client said it has.
 //
 // The change lines the two states up entity by entity (by NetId; the state's layout gives every
 // entity its size, so no component needs knowing): an entity whose record is the base's costs its
 // NetId and a byte; one of the same size goes as its bytes XOR the base's, which are mostly zeros;
 // anything else whole. A body's description goes only when its hash is not the base's. Then the
-// whole is deflated. Decoding gives back the server's state byte for byte.
+// whole is deflated, or goes as it is when it is sparse already (an update: the size's top bit).
+// Decoding gives back the server's state byte for byte.
 //
 // Layout: u8 MsgType::State, u32 tick, u32 base tick (UINT32_MAX: none), u32 size before
 // deflating, the deflated payload. Decoding never trusts the bytes: sizes are bounded, and a state
