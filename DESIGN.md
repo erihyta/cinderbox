@@ -1,9 +1,13 @@
 # Cinderbox — Design
 
-How Cinderbox works today, by subsystem. [README.md](README.md) and [docs/](docs/) are the manual (how to build,
-play and make things); [ROADMAP.md](ROADMAP.md) is what comes next;
-[docs/HISTORY.md](docs/HISTORY.md) is every milestone so far; [docs/scaling.md](docs/scaling.md) is how
-many players a server holds, with every measurement.
+How Cinderbox works today, by subsystem, and the rules that must always hold.
+
+| Read with | For |
+|---|---|
+| [README.md](README.md), [docs/](docs/) | the manual: building, playing, making things |
+| [ROADMAP.md](ROADMAP.md) | what comes next |
+| [docs/HISTORY.md](docs/HISTORY.md) | how each part came to be, milestone by milestone |
+| [docs/scaling.md](docs/scaling.md) | every measurement: players, bandwidth, processor time |
 
 ## The shape of it
 
@@ -18,34 +22,34 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 
 | Principle | What it means here |
 |---|---|
-| One deterministic simulation | the server and every client run the same C++. The physics world is never sent as state: a client steps it from everyone's inputs and the commands (the inputs model) or from the server's commands and physics events (the hybrid, the default). In the hybrid the characters' states are sent ([Netcode](#netcode)) |
-| Mechanisms in the engine, rules in mods | the engine moves bodies, holds items, runs state machines; what a pistol or a round is lives in a server mod |
-| Clients present, they do not decide | a client never runs a rule; it draws what mods publish, with looks made of data |
-| Authored in Godot, baked for the simulation | maps, characters, state machines and item bodies are Godot scenes; a bake turns them into small files the server reads |
-| A viewer and its sources | the Godot viewer draws frames and does not know where they come from |
-| Mods travel like workshop items | servers name items by SHA-256; the game connection never carries mod files |
+| One deterministic simulation | The server and every client run the same C++. The physics world is never sent as state: a client steps it from everyone's inputs and the mods' commands (the inputs model), or from the server's commands and physics events (the hybrid, the default). In the hybrid the characters are sent as state ([Netcode](#netcode)) |
+| Mechanisms in the engine, rules in mods | The engine moves bodies, holds items and runs state machines; what a pistol or a round is lives in a server mod |
+| Clients present, they do not decide | A client never runs a rule; it draws what mods publish, with looks made of data |
+| Authored in Godot, baked for the simulation | Maps, characters, state machines and item bodies are Godot scenes; a bake turns them into small files the server reads |
+| A viewer and its sources | The Godot viewer draws frames and does not know where they come from |
+| Mods travel like workshop items | Servers name items by SHA-256; the game connection never carries mod files |
 
 ## Stack
 
 | Concern | Choice |
 |---|---|
-| Language / build | C++20, CMake + Ninja, Clang primary (MSVC and GCC also supported) |
-| Dependencies | CMake FetchContent, pinned to exact commits, built inside each build directory (never shared between compilers) |
+| Language, build | C++20, CMake + Ninja; Clang first, MSVC and GCC supported |
+| Dependencies | FetchContent, pinned to exact commits, built inside each build directory (never shared between compilers): `cmake/Dependencies.cmake` |
 | ECS | flecs 4.x |
-| Physics | Box3D (erincatto/box3d), its step on several threads (see below), cross-platform determinism mode, five local patches (`cmake/patches/`) |
-| Animation | ozz-animation 0.17.0, scalar (non-SIMD) build; clips and skeletons baked from Godot scenes |
-| Networking | ENet (UDP), dedicated headless server |
-| Finding the way | Recast & Detour 1.6.0, on the server only (a navigation mesh built when the game starts; not part of the simulation) |
-| Client | Godot 4.7 through GDExtensions (godot-cpp 4.5 API): a viewer and a peer |
-| Game rules | C++ server mods compiled into `cb_server` (`server_mods/`), talking to the world only through commands |
-| Looks | Godot scenes and resource packs with no scripts (reactions, predictions, HUD nodes) |
-| Build directory | `%LOCALAPPDATA%/cinderbox-build/<project folder>/<preset>` (outside OneDrive, one per checkout) |
+| Physics | Box3D (erincatto/box3d) in its cross-platform determinism mode, stepped on several threads, five local patches (`cmake/patches/`) |
+| Animation | ozz-animation 0.17.0, scalar (non-SIMD) build; skeletons and clips baked from Godot scenes |
+| Networking | ENet (UDP); a dedicated headless server |
+| Pathfinding | Recast & Detour 1.6.0, server only (a navigation mesh built at start; not part of the simulation) |
+| Client | Godot 4.7 through two GDExtensions (godot-cpp 4.5 API): a viewer and a peer |
+| Game rules | C++ server mods compiled into `cb_server` (`server_mods/`); they change the world only through commands |
+| Looks | Godot scenes and resource packs with no scripts |
+| Build output | `%LOCALAPPDATA%/cinderbox-build/<project folder>/<preset>`: outside OneDrive, one per checkout |
 
 | Library | Holds | Links |
 |---|---|---|
 | `cb_expr` | the expression language: text to a small stack program, and its evaluator | nothing |
 | `cb_sim_data` | components, events, the map format, the mod schema, the state machine compiler: what the data means | `cb_expr`; nothing that steps a world |
-| `cb_sim` | the simulation and rollback | `cb_sim_data`, flecs, Box3D |
+| `cb_sim` | the simulation and the client sessions (rollback, hybrid) | `cb_sim_data`, flecs, Box3D |
 | `cb_anim` | skeletons, clips, the pose, hitboxes, retargeting | `cb_sim_data`, ozz |
 | `cb_present`, `cb_capture` | the viewer protocol, the mirror, the frame codec; a simulation's state as a frame | `cb_anim` |
 | `cb_net`, `cb_client_core` | protocol and transport; the live and replay sources | ENet |
@@ -53,272 +57,228 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 
 ## Determinism
 
-- The simulation is bit-exact across Windows x64, Linux x64 and macOS/ARM64, and across MSVC, Clang and GCC.
-- IEEE floats only: no fast-math, `-ffp-contract=off`, `/fp:precise`, no x87.
-- No libm trig in the simulation. `sin`, `cos` and `atan2` come from Box3D's cross-platform implementations (`detmath.h`). `sqrt` and basic arithmetic are correctly rounded by IEEE.
-- No unordered iteration, pointer-keyed ordering, wall-clock time or `rand()`. Randomness is a seeded PRNG in the state.
-- Inputs are integers: movement axes as int8, camera yaw and pitch as 16-bit angles, button and action bits.
-- Entities are kept in a NetId-sorted list and players are processed in slot order. Flecs iteration order is never used.
-- A per-tick state hash (FNV-1a over the canonical ECS image, with physics mirrored into it) backs the tests and runtime desync detection.
-- Godot may change the FPU state of its threads: a source's simulation thread resets MXCSR before anything else and computes the build fingerprint there, so a wrong environment is rejected by the server instead of desyncing.
+**Rules that must always hold:**
 
-Box3D is patched when it is fetched (`cmake/patches/`, listed in `cmake/Dependencies.cmake`), each
+- Bit-exact across Windows x64, Linux x64 and macOS ARM64, and across MSVC, Clang and GCC.
+- IEEE floats only: no fast-math, `-ffp-contract=off`, `/fp:precise`, no x87.
+- No libm trig in the simulation: `sin`, `cos` and `atan2` are Box3D's cross-platform versions
+  (`detmath.h`). `sqrt` and basic arithmetic are correctly rounded by IEEE.
+- No unordered iteration, pointer-keyed ordering, wall-clock time or `rand()`. Randomness is a
+  seeded PRNG kept in the state.
+- Inputs are integers: movement axes as int8, camera yaw and pitch as 16-bit angles, button and
+  action bits.
+- Entities are processed in a NetId-sorted list and players in slot order; flecs iteration order
+  is never used.
+- A per-tick state hash (FNV-1a over the canonical ECS image, physics mirrored into components)
+  backs the tests and runtime desync detection.
+- Godot may change a thread's FPU state: a source's simulation thread resets MXCSR first and
+  computes the build fingerprint there, so a wrong environment is refused by the server instead of
+  desyncing.
+
+**Box3D patches**, applied at fetch (`cmake/patches/`, listed in `cmake/Dependencies.cmake`), each
 found by the cross-platform checks or the snapshot comparisons:
 
 | Patch | Problem |
 |---|---|
-| `box3d-snapshot-padding.patch` | the snapshot writer copied struct padding and a heap address: joining clients received scraps of server memory, and no two saves were identical |
-| `box3d-neon-minmax.patch` | ARM64 clamped to a zero of the other sign than x64 (`vmaxq`/`vminq` against SSE's `maxps`/`minps`) |
-| `box3d-snapshot-sections.patch` | a snapshot notes where each of its sections begins, so a test can say which part of two snapshots differs (`cbx_SnapSections`) |
-| `box3d-snapshot-free-contacts.patch` | a free contact slot kept a mesh contact's freed triangle cache address in a snapshot (CI's macOS build, M247) |
-| `box3d-mesh-cache-zero.patch` | a mesh contact's new triangle cache was zeroed only in its union's first member; the rest held stack bytes (CI's Linux Clang, M250) |
+| `box3d-snapshot-padding.patch` | the snapshot writer copied struct padding and a heap address: joining clients got scraps of server memory, and no two saves were identical |
+| `box3d-neon-minmax.patch` | ARM64 clamped to the other signed zero than x64 (`vmaxq`/`vminq` against SSE's `maxps`/`minps`) |
+| `box3d-snapshot-sections.patch` | a snapshot records where each section starts, so a test can say which part of two snapshots differs (`cbx_SnapSections`) |
+| `box3d-snapshot-free-contacts.patch` | a free contact slot kept a freed mesh contact's triangle-cache address (CI's macOS build, M247) |
+| `box3d-mesh-cache-zero.patch` | a new mesh contact's triangle cache was zeroed only in its union's first member; the rest held stack bytes (CI's Linux Clang, M250) |
 
-One more hole was ours: ozz chooses its scalar math with a definition it sets for its own sources only, and its math is mostly inline. Our code that includes its headers (the leg turn, the aim chain, hitboxes, retargeting) compiled the platform's SIMD versions, SSE on x64 and NEON on ARM64, which do not round alike. `ozz_base` now carries the definition to everything that links it. The pose hash found it once it covered the leg turn and the aim (`cb_tests --anim-hash-parts` says which step differs).
+**ozz's scalar math**: ozz picks scalar math with a definition set for its own sources only, and its
+math is mostly inline, so our code that includes its headers (leg turn, aim chain, hitboxes,
+retargeting) compiled SSE on x64 and NEON on ARM64, which round differently. `ozz_base` now passes
+the definition to everything that links it. `cb_tests --anim-hash-parts` says which pose step differs.
 
 ## The simulation
 
-`src/sim`. One class steps the world; everything it knows is plain-data components on entities
+`src/sim`. One class, `Simulation`, steps the world; all state is plain-data components on entities
 addressed by a stable `NetId`.
 
 | Part | How |
 |---|---|
-| World | static boxes, ramps, steps and platforms from a baked map; dynamic boxes, spheres and capsules |
-| Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps; the ground under it is found by a sphere cast down (0.9 of the capsule's radius, the surface's normal from a short ray where it touches, as Unreal's floor check does), so gaps between planks and a ledge under part of it hold it up. It has a mass (a movement parameter). It reads the physics world and never writes it (M246): what it meets stops it, a loose body pushing it out of itself by its share of the two weights; bodies [pushed by characters](docs/maps.md#who-pushes-what) it walks through (its pusher shoves them) and stands on from above when they weigh enough. Its capsule touches no body in the physics step and never sleeps (asleep, Box3D would reorder the bodies around it). In a file of its own (`mover.*`) |
-| Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). A motion is a trigger with parts: a **probe** (a ray along the look that has to find a point of the world, of a prop or of a player, and holds on to it after its flight: `MotionHold`, a component), and **effects** on a target (the player, what the probe found, or the entity a field names): an impulse once, a force while it is on (an acceleration, newtons, or toward a speed; ramped in; reacting on the other end), a link (a rope whose tension the two share by weight). The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
-| Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, whether the movement input goes along the ground or the camera, whether the character is in the air whatever is under it, and what it weighs: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
-| Controls | WASD relative to the camera, Shift, Space: the engine's. Every other control is an action a mod declares |
-| Facing | freelook (the body turns toward where it walks) or camera-facing (`Facing` command); the legs follow the direction of travel either way (`AnimState::legYaw`, backwards past about 100 degrees) |
-| Props | a lifetime and caps per player and globally, whoever spawned them |
-| Death | a `Kill` command makes a player dead (no input, body disabled, not drawn) until a `Respawn`; it can leave a ragdoll |
-| Ragdolls | eleven Box3D bodies from a fixed standing pose with cone-and-twist and hinge joints; no asset data enters the simulation |
-| Items | entities with a kind, held in a socket, stowed, or lying in the world with a body |
-| Animation | per player, an `AnimState`: how it moves, where it looks, the stances mods set, and where each layer of the character's state machine is |
+| World | static level pieces of any shape (boxes, hulls, triangle meshes, height fields) from a baked map; dynamic bodies of one or several shapes |
+| Player movement (`mover.*`) | a kinematic capsule: move-and-slide with Box3D's mover casts and plane solver, held up by a pogo spring that carries it over steps. The ground is found by a sphere cast down (0.9 of the radius; the normal from a short ray, like Unreal's floor check), so gaps and ledges hold it. It has a mass. It **reads the physics world and never writes it** (M246): solid bodies stop it, a loose body pushes it out by their weight ratio; bodies [pushed by characters](docs/maps.md#who-pushes-what) it walks through (its pusher shoves them) and stands on from above when they are heavy enough. Its capsule touches nothing in the physics step and never sleeps (a sleeping body would reorder Box3D's bodies) |
+| Motions (`motions.*`) | what mods add to movement (a dash, a grapple, a slam): the motion blocks of a sheet ([docs/rules-language.md](docs/rules-language.md)), baked to text, sent in the schema, compiled against it, run for every driver before the mover. Started by a press, a mod event at the player, or held while conditions are true. Steps, finds and casts, probes that fly and hold on (`MotionHold`), and effects (impulses, forces, links, moves, launches). They run on input the client already predicts, so a player's own motions are predicted and rolled back. `MotionState` (per motion: last use, uses, on until) exists only on players, only when the server has motions |
+| Movement parameters (`move_params.*`) | values, not constants: speeds, acceleration, friction, air control, gravity, jump speed, turn rate, fall limit, air friction, move frame (ground or camera), airborne, mass. The server's set is `SimConfig::move` (its options, then its character's values); a mod's `SetMove` gives one player its own (`MoveOverrides`) |
+| Controls | WASD (relative to the camera), Shift and Space are the engine's; every other control is an action a mod declares |
+| Facing | freelook (the body turns toward where it walks) or camera-facing (the `Facing` command); the legs follow the travel direction either way (`AnimState::legYaw`, walking backwards past about 100°) |
+| Props | a lifetime, and caps per player and globally, whoever spawned them |
+| Death | `Kill` makes a player dead (no input, body disabled, not drawn) until `Respawn`; it may leave a ragdoll |
+| Ragdolls | eleven Box3D bodies from a fixed standing pose, cone-twist and hinge joints; no asset data enters the simulation |
+| Items | entities with a kind: held in a socket, stowed, or lying in the world with a body |
+| Animation | per player an `AnimState`: how it moves, where it looks, the stances mods set, and where each layer of its state machine is |
 
 ### A tick
 
 1. Join and leave events.
 2. The frame's **commands** (from server mods), in order.
-3. Every player's **motions** (what mods add to movement, by this tick's input), each on the world as the tick found it; what they do to other players lands after the targets' own. Then every player's mover. Then physics. (Two passes, so a player's slot changes nothing: M212.)
-4. The animation state and the state machine, per player.
+3. Every driver's **motions** (by this tick's input), each against the world as the tick found it;
+   what they do to other players lands after the targets' own. Then every driver's **mover**. Then
+   **physics**. Two passes, so a player's slot changes nothing (M212).
+4. Each player's animation state and state machine.
 5. Events are recorded (impacts, footsteps, mod events, animation markers).
 
 ### State and snapshots
 
 | Kind | What | Used for |
 |---|---|---|
-| Rollback snapshot | the ECS image plus the used part of Box3D's arena and its world struct (`PhysicsArena`, `box3d_shim.c`); raw pointers, same instance only | prediction: one per tick that may still be rolled back |
+| Rollback snapshot | the ECS image, plus the used part of Box3D's arena and its world struct (`PhysicsArena`, `box3d_shim.c`); raw pointers, same instance only | prediction: one per tick that may still be rolled back |
 | Portable snapshot | the canonical ECS image plus Box3D's own world serializer; no pointers | joining, desync recovery; byte-identical across all six CI builds |
 
-- Box3D ids in components are stored with the world slot zeroed; `BodyOf` / `ShapeOf` patch it back.
-- A map is part of the state's meaning (later spawns come from it), so it travels with the welcome and in replay headers.
+- Box3D ids in components are stored with the world slot zeroed; `BodyOf` and `ShapeOf` patch it back.
+- The map is part of the state's meaning (later spawns come from it), so it travels with the
+  welcome and in replay headers.
 
 ### Events
 
-Events are **state**: small rings in `SimGlobals` with counts that only grow, hashed and rolled
-back like everything else. Presentation compares counts, so a renderer that skipped ticks gets one
-event per occurrence and a rollback un-counts what did not happen.
+Events are **state**: small rings in `SimGlobals` whose counts only grow, hashed and rolled back like
+everything else. Presentation compares counts, so a renderer that skipped ticks still gets every
+event once, and a rollback un-counts what did not happen.
 
 | Event | From |
 |---|---|
-| impacts | Box3D contact hit events above 1.5 m/s, sorted by strength then entities before they are recorded (so nothing depends on the engine's internal order) |
-| footsteps | a stride counter on the character: distance walked while grounded |
+| impacts | Box3D contact hit events above 1.5 m/s, sorted by strength, then by entity (no dependence on Box3D's internal order) |
+| footsteps | a stride counter per character: distance walked while grounded |
 | mod events | `Emit` commands, and markers a playing clip passes (the mod event of the marker's name) |
 | jumped, landed | changes of `AnimState::mode`, seen by the mirror |
 
 ### The board
 
-Mods publish values by name. A `Blackboard` (an int per field the mods declared, per entity) and a global board are
-hashed state written by `Set` commands; the **schema** (field names and types, event, action,
-layer, stance and item kind names, the character's state machine, the items players need) goes
-out in the welcome and in replay headers. The schema is not hashed: different mods on the same
-build are fine.
+Mods publish values by name. A `Blackboard` (an int per declared field, per entity) and a global
+board are hashed state written by `Set` commands. The **schema** (field names and types; event,
+action, layer, stance and item kind names; the characters' state machines; the workshop items
+players need) goes out in the welcome and in replay headers. It is not hashed: different mods on
+the same build are fine.
 
 **Private fields** (`BoardScope::Private`) are the exception to "everything is in the simulation":
-a simulating client has the whole state, so what one player must not know about another cannot be
-state. A private value is kept by the server per player slot (`GameServer::m_privates`), never
-becomes a command, and is sent to its owner alone: `MsgPrivateFields` on the reliable channel
-after the welcome and whenever a mod changes one. The viewer reads it by name for its own player and 0 for anyone else. It is not hashed,
-not rolled back, not recorded, and a state machine cannot read it.
+a simulating client has the whole state, so what one player must not know cannot be state. The
+server keeps them per player slot (`GameServer::m_privates`) and sends them to their owner alone
+(`MsgPrivateFields`, reliable, after the welcome and on every change). The viewer reads them for its
+own player, and 0 for anyone else. Not hashed, not rolled back, not recorded; a state machine cannot
+read them.
 
 ## Netcode
 
-Authoritative server, two network models (`src/net`, `src/client`), the server's choice for
-everyone (`cb_server --net-model hybrid|inputs`; the welcome and the server's info say which;
-ROADMAP step 3). **Inputs**: what follows below; every client simulates the whole world.
-**Hybrid** (M248; `cb_server`'s default since 2026-11-01):
+An authoritative server with two network models, chosen by the server for everyone
+(`cb_server --net-model hybrid|inputs`; the welcome and the server info say which). Side by side, with
+the hybrid's accepted limitations: [docs/scaling.md](docs/scaling.md#the-two-network-models).
 
-- **The physics from the server's events**: the frame batches go without the inputs, with each
-  tick's commands, physics events and pushers' places (below) and now and then the physics
-  checksum (`PhysicsHash`). A client's physics (`HybridSession`) runs a few ticks behind the newest
-  frame (twice the jitter and two ticks, and a packet's interval: M256), each tick stepped once and
-  checked; a mismatch asks for the world again. Nothing is rolled back. It follows the server's
-  clock as the frames' best arrivals have it, a tick a tick, never past the frames it has.
-- **Frames carry the physics only** (M256): the commands a client skips (below) are left out of
-  them, decided in the server's own step (`Simulation::FollowerSkipped`; an item into a container
-  stays, for the NetId it uses up there too), the physics events after one moved to after the last
-  kept; and the players' joins and leaves. They go with the states, one datagram every
-  `stateEvery` ticks, each frame in two of them. A pusher's place is a change against where it
-  would be going on as it went (a varint per axis that moved), the first frame of a packet against
-  the two frames before it (the client keeps the last frames' places; right after its snapshot, it
-  has none: whole). The states' head is whose the slots are and the global board alone: a client's
-  event rings are its own (from the frames and its physics), and they were ~1 KB of every state.
-- **The client's physics reads no character** (`Simulation::FollowerSkips`): of a tick's commands
-  it runs only what the physics world alone decides (a break, an item into the world, a push on a
-  body in it, fields, events); a command about a character (a kill, a possession, an item picked
-  up, anything aimed at a player's slot) is skipped: its physics part comes as events, which are
-  self-contained (an `Idle` or `Enter` event lets go of the controller too; an `Enter` says the
-  prop's owner and end), its character part in the states. The physics world's own rules count
-  only what is in it (the props' caps: a prop someone drives is out of it). The states come when the link lets them, so a command that read them could do
-  what the server's did not (found: a body taken over while the states were late crashed the
-  client). Tests: every character moved before each physics step, states held back a second, and
-  `cb_replay joins` (a client joining a recording every few ticks, with its states late or none).
-- **The characters are the server's**: every second tick its characters' state (the characters'
-  side: every entity not in the physics world; `Simulation::SaveState`, compact) as a change
-  against the newest the client acknowledged (`net/state_codec.h`: entity by entity, XOR, deflated).
-  The others are **stand-ins** placed from the newest state not ahead of the physics, so one
-  standing on debris stands on it here too. A state never touches the physics world.
-- **By priority** (M250, M257; the default, `--every-character` turns it off): each client is
-  sent updates (`net::EncodeUpdates`): its own character and what it holds every state, the others
-  by priority within a byte budget. Each character's priority for each client grows every state by
-  what it matters to that client (`GameServer::Matters`: near, every state within 12 m and less
-  further; twice that in its camera's view; more when it did something, a layer's new state or a
-  jump; more again when it aims at the client) and goes to 0 when it is sent; those at 1 or more
-  go, most owed first, a character with what it holds, until the client's budget for the state is
-  spent (`--client-budget`, 256 kbit/s of states, of bytes sent: what packing leaves is measured)
-  or `stateBudget` entities (512). Each is a change against the record the client last
-  acknowledged; what is left out it keeps; what is gone is named until acknowledged. Changes are
-  sparse (runs of unchanged bytes skipped) and the message deflated; clients whose updates say the
-  same share one message, and the messages are encoded on the state threads. A refresh is not
-  repeated until acknowledged (tried first: at a round trip of a few states it cost as much as it
-  saved). What a client acknowledged having and nothing else was sent of since (by a hash of each
-  record as it is sent) is not sent again (M253): a character standing still, an item in a pocket,
-  cost nothing. **Carried** (M257): one that waited longer than a base is kept (24 states), sent
-  nothing since the client acknowledged one, goes against the record the client has in its newest
-  state (the server keeps each puppet's last 8 records: `m_recordVersions`), not whole.
-- **Made while the next tick runs** (M258): the server reads what the plans need of the
-  simulation (`SendStates`: each client's base, its own character's place, where it looks), then
-  the state threads make every client's plan and message (`MakeStates`) while its own thread goes
-  on with the next tick; they go out once made (`FinishStates`), with that state's frames (held for
-  them, one datagram). Until then nothing they read changes: acknowledgements and the events at
-  characters wait (`m_heldAcks`, `m_heldEvents`), and a state to keep, a snapshot, a client coming,
-  going or saying anything but an input wait for them. A plan works by group (a character with what
-  it holds): its walk only finds what the client has of each entity and how owed each group is;
-  what an update would take is worked out for the most owed as their turn comes; what the client
-  has is changed in place. A state's puppets, views and hashes are made on the state threads too.
-- **Events go with their characters** (M257): a mod event at a character or what it holds
-  (`Simulation::StepEvents`: a mod's `Emit`, a motion's, a clip's marker, a slot's use) is not in
-  the frames; it goes with that character's update to the clients it is sent to, once (again when
-  the state that had it is lost), for half a second (`kEventWindow`): a far one may not be heard.
-  A client hears each once (by its serial) when the others stand as that state, into a ring of its
-  own (`HybridSession::HeardEvents`; the presentation reads both rings), not the simulation's: the
-  own character's motions read that newest first. Its own character's are sent only what mods
-  said (it says the rest itself, predicting). An event a mod declares for everyone (a kill feed, a
-  round's end: `Declarations::Event`'s `everyone`), or one at nothing, stays in the frames; so do
-  all a mod says with `--every-character` (whole states carry no events).
-- **Other characters are puppets** (M253, M254; `sim/puppet.h`): the server makes a puppet of each
-  character of a state (`Simulation::PuppetOf`): where it is (1/256 m), its facing, where it looks,
-  a few flags, and where each layer of its state machine is (its state, the one it fades from and
-  through which transition, its source, the tick it began). Every client but the one driving it gets
-  the puppet as a change of a few integers (`net::EncodePuppet`) and its record, and what it holds,
-  without what a puppet's client keeps of its own (`Simulation::PuppetView`: its Transform, Velocity,
-  Character, AnimState, MotionState, movement and a mod's driving as zeros, so they never change),
-  and no input of it. The client puts it where the puppet says (`Simulation::ApplyPuppets`: one sent
-  every state or two exactly there, one sent less often from the one before to the last, an
-  interval late), its speed from its last two, and runs its animation itself: `UpdateAnimState`,
-  and its state machine following the puppet's layers (`UpdateAnimGraph`'s `follow`: their states
-  and when they began are the server's, never its own transitions; clocks, blends and weights run
-  here; one that began earlier than it heard catches up). Dead or down, nothing runs it, as on the
-  server. Its markers are not its own: the server's come as events, with it (M257; until then they
-  came nowhere).
-- **Fields others see** (M255): an entity field is its player's alone unless shared
-  (`BoardField::shared`; a field a state machine reads is shared by itself). A puppet's view has the
-  rest as zeros, and a SetField of a character or what it holds is not in the frames (it is in the
-  states). Names go as changes after the first list.
-- **Lag compensation** (M250, `--lag-compensation MS`, 500 by default): each input says how many
-  ticks back the player saw the others (`PlayerInput::seenBack`: its tick minus the state they
-  stand as). A hybrid game shows the others a round trip and its physics' buffer back (about 20
-  ticks at a 100 ms round trip). Hit tests take the others as that player saw them, the world as
-  it is:
-  - **Mods' casts** (its shot, its swing: `Context::CastRay` leaving a player out): the server
-    keeps the characters' places and poses of the last ticks (`GameServer::RecordPast`) and meets
-    their hitboxes there.
-  - **Motions' finds and probes** (a punch, a hook, a thrown ball), in the simulation: the config
-    says how many ticks (`SimConfig::compensation`, the same limit; 0 in the inputs model). A
-    simulation that moves its characters itself (the server's, a replay's) keeps their capsules as
-    each tick began (`Simulation::RecordPast`); while a player's motions run, a character it saw
-    elsewhere is left out of the world's query and its capsule there tested instead, as Box3D
-    tests one (`CastSeen`). A hold on it is on it where it is now, at the spot hit; a find's
-    distance and "away" are as seen. Kept in snapshots, not in a portable image (no one who loads
-    one moves the characters with it).
-- **Your own character, predicted** (`Simulation::StepCharacters`): ahead of the server, against the
-  physics world as it is (in the past); made the server's again by each state and its inputs since
-  run again. While the physics steps a past tick, it stands where the server had it then. What
-  the client makes on the characters' side itself takes NetIds of its own (from `0x70000000`).
-- **Your own throws drawn at once** (M249, `HybridSession::OwnLaunches`): what your motions launch
-  while predicted is drawn from the press (`Simulation::FlyItem`), never in the physics; the
-  server's copy takes over when it comes, carried forward to your tick while it flies.
-- **Costs** (M248, chaotic bots on one machine): client work 2.7 against 5 to 6.5 ms a frame at 4
-  players, 10 against 41 to 115 at 16; download about twice the inputs model's (every character's
-  state to everyone, until M250 sent them by distance: 33% less at 64 players in a crowd, 43% with
-  players spread 30 to 250 m apart). Your own effect on a body arrives a round trip
-  and the buffer late.
+| | Inputs model | Hybrid (the default since 2026-11-01) |
+|---|---|---|
+| Physics | every client simulates it from everyone's inputs, rolled back | every client steps it once per tick from the server's events, a little in the past; never rolled back |
+| Characters | every client simulates all of them, rolled back | the server's: your own predicted, the others drawn from the server's states |
+| Client session | `RollbackSession` (`sim/rollback.*`) | `HybridSession` (`sim/hybrid_session.*`) |
 
-**The physics world's inputs** (M246, both models; `physics_inputs.cpp`): characters read the
-physics world and never write it themselves, so it is a function of its inputs:
+### The physics world's inputs (both models)
 
-- **Pushers**: a kinematic capsule per character (CatPusher), placed every tick from a list of
-  places on a 1/1024 m grid, which the server makes from its characters near something pushable.
+`physics_inputs.cpp` (M246, M247). Characters read the physics world and never write it, so it is a
+function of its inputs alone:
+
+- **Pushers**: a kinematic capsule per character (`CatPusher`), placed every tick from a list of
+  places on a 1/1024 m grid that the server makes from its characters near something pushable.
   They shove bodies pushed by characters and ragdolls, and touch nothing else.
-- **Physics events** (`PhysicsEvent`): every write to a body that reads a character (a motion's push
-  or break, an item launched or let go of, a kill's ragdoll) is queued and applied at one of two
-  points in the step (after the characters move; after the items' own motions), self-contained.
-  Nothing waits for a later tick (snapshots do not hold the queue). A mod's command whose numbers
-  are all in it stays direct: every simulation has the frame's commands.
-- **Two worlds** (M247): the physics world and the characters' (their capsules, a driven prop),
-  in one arena; a stored body handle says which (`BodyOf`). The mover reads the physics world and
-  meets the other characters in theirs; queries ask both. NetIds from two counters (the characters'
-  from `0x10000000`). Bodies cross by events (TakeOver, Enter, Idle; Remove, Spawn): what a character
-  takes, it copies, and only the event changes the physics world. A character's body never sleeps.
-- **Following another's physics** (`SetFollowsPhysics`): a simulation takes the pushers and events
-  from its frame and drops its own; `PhysicsMade()` is what a step made, `PhysicsHash()` the physics
-  world's hash without the characters. `net_physics_alone`: a recorded session of punching, frags,
-  props and ragdolls, played again with every player standing still and the server's physics
-  inputs, has the server's physics world on every tick.
+- **Physics events** (`PhysicsEvent`): every write to a body that depends on a character (a
+  motion's push or break, an item launched or let go, a kill's ragdoll) is queued and applied at
+  one of two points in the step (after the characters move; after the items' own motions). Each is
+  self-contained, and nothing waits for a later tick (snapshots do not hold the queue). A mod's
+  command that carries all its numbers stays a direct command: every simulation has the frame's
+  commands.
+- **Two Box3D worlds in one arena**: the physics world and the characters' (their capsules, a
+  driven prop). A stored body handle says which (`BodyOf`). The mover reads the physics world and
+  meets other characters in theirs; queries ask both. Bodies cross only by events (`TakeOver`,
+  `Enter`, `Idle`; `Remove`, `Spawn`). A character's body never sleeps.
+- **NetIds from two counters**: the physics world's from 1, the characters' from `0x10000000`. A
+  simulation without characters still names every physics body as the server does.
+- **Following another's physics** (`SetFollowsPhysics`): the simulation takes pushers and events
+  from its frame and drops its own. `PhysicsMade()` is what a step made; `PhysicsHash()` hashes the
+  physics world without the characters. Test: `net_physics_alone` (a recorded session replayed with
+  every player standing still and the server's physics inputs matches the server's physics world
+  on every tick).
 
-The inputs model:
+### The hybrid
 
-- **Client**: sends its inputs each tick and simulates the whole world at once, predicting remote players by repeating their last input. When the server's frame for tick N differs from the prediction, it restores the nearest snapshot at or before N and re-simulates, at most once per rendered frame.
-- **Physics threads** (`src/sim/physics_threads.h`): every world is made with 4 workers (`kPhysicsWorkers`); how many threads run them is each machine's own choice and changes nothing that is simulated.
-  - Default: a quarter of the machine's threads, at most 3 besides the stepping one; none on a small machine. `cb_server --physics-threads N`, `CinderboxPeer.physics_threads`, `--physics-threads=N` for the game. Tests and bots use none unless told.
-  - One pool for the process. A step wakes it when it begins, and its threads look for work for a millisecond after the last task: threads that slept between a step's bursts made the physics twice as slow as none.
-  - A task runs inside its world's arena; the arena locks to allocate. Where things lie in the arena is not the same from run to run, and nothing reads that (a snapshot copies it, the hash is of the ECS, a join image holds no addresses).
-  - Box3D's sameness across worker counts is its author's aim, not a promise: `physics_threads` (unit test) compares every tick's hash for 1, 2, 4 and 8 workers on 1 to 8 threads, with snapshots restored in between.
-  - Cost: 4 workers' own memory is in every snapshot (2.7 MB to 3.5 MB at 64 players). Gain: collisions scale, the solver hardly does at this size; 43% off the physics in a tight loop, 10 to 20% in a game.
-- **Characters' threads** (M258, `Simulation::SetParallelFor`; a server gives its own pool, others none): the movers and the characters' animation (state and state machine) run apart, one driver each. A mover reads the world as the tick found it already (bodies move in the step), so each driver's results are kept (`MovedCharacter`) and written after in slot order: its body's target, its markers, its components. A driven prop's driver moves at its turn on the simulation's thread. The motions' pass stays on one thread (what a motion does to others is applied after all have run). `character_threads` (unit test): the same hash on 1 to 8 threads and with the players taken backwards.
-- **Frames go out in three packets each** (the hybrid's in two, with its states: M256), one packet an update (a frame every tick, several after a hitch), delivered out of order too; a client keeps a batch that begins after what it has until the hole is filled. From the oldest unacknowledged frame again only when that has been out for longer than an answer takes. Packets sent in one update leave in one datagram and are lost together: three packets have to be three updates (M142).
-- **Snapshots are few**: one before each tick predicted for the first time, and one in each re-simulation, where the confirmed frames end (the next misprediction is almost always there). The re-simulated ticks after it take none.
-- **`reconcile_every`** (`CinderboxPeer`, `--reconcile-every=N`, default 1): a misprediction is fixed only every N ticks. The same ticks are re-simulated less often; what other players do is seen up to N ticks later.
-- **Server**: never rolls back. It waits briefly for each input, reuses the last one when late, and broadcasts what it used.
-- **Commands are not predicted**: a mod's effect shows when its frame arrives and rollback folds it in, like a remote player's input.
-- **Window**: chosen from latency, 8 to 20 ticks (`RTT × rate + 2 × jitter × rate + 4`); beyond it the client waits.
-- **Clock**: the client aims to be `rtt/2 + jitter + 2 ticks` ahead. Behind, it runs up to twice as fast (being behind costs input; being ahead only costs latency).
+| Mechanism | How |
+|---|---|
+| **Physics from the server's events** | Frame batches carry no inputs: each tick's commands, physics events and pushers' places, and now and then the physics checksum (`PhysicsHash`). `HybridSession` steps its physics a few ticks behind the newest frame (twice the jitter, plus two ticks, plus a packet interval: M256), each tick once, checked by checksum; a mismatch asks for the world again. Its clock follows the server's as the frames' best arrivals show it, one tick per tick, never past the frames it has |
+| **Frames carry the physics only** (M256) | Commands a client would skip are left out by the server's own step (`Simulation::FollowerSkipped`), except an item into a container (it uses up a physics NetId there too). Frames go with the states, one datagram every `stateEvery` ticks, each frame in two datagrams. Pushers' places are varint changes against where each would be going on. A state's header holds only the slots' owners and the global board: a client's event rings are its own |
+| **The client's physics reads no character** (`Simulation::FollowerSkips`) | Of a tick's commands it runs only what the physics world alone decides (a break, an item into the world, a push on a body, fields, events). A command about a character (a kill, a possession, a pickup, anything aimed at a slot) is skipped: its physics part arrives as self-contained events (`Idle` and `Enter` release the controller too; `Enter` names the prop's owner and end), its character part in the states. The physics world's own rules count only what is in it (prop caps: a driven prop is out). Why: states arrive when the link allows, so a command reading them could diverge (one crashed the client). Tested with characters scrambled before each physics step, states held back, and `cb_replay joins` |
+| **Characters are the server's** | Every second tick, the characters' side (every entity not in the physics world; `Simulation::SaveState`, compact) as a delta against the newest state the client acknowledged (`net/state_codec.h`). Other characters are **stand-ins** placed from the newest state not ahead of the physics, so one standing on debris stands on it here too. **A state never touches the physics world** |
+| **Sent by priority** (M250, M257; `--every-character` turns it off) | `net::EncodeUpdates`. A client's own character and what it holds go every state. Each other character's priority for that client grows every state by how much it matters (`GameServer::Matters`: near, in its camera's view, just did something, aiming at the client) and resets when sent; the most owed go first, each with what it holds, until the client's budget (`--client-budget`, 256 kbit/s of states after packing) or `stateBudget` entities (512). Records are deltas against what the client acknowledged (or, if that is too old, what it has in its newest state: `m_recordVersions`); what is left out the client keeps; what is gone is named until acknowledged; a record the client already has (by hash) is not sent. Identical messages are shared between clients |
+| **Made while the next tick runs** (M258) | `SendStates` reads what the plans need from the simulation; the state threads build every client's plan and message (`MakeStates`) while the main thread runs the next tick; they go out once made (`FinishStates`), with that state's frames, in one datagram. Puppets, views and hashes are made on the state threads too |
+| **Events go with their characters** (M257) | A mod event at a character or what it holds (`Simulation::StepEvents`) goes with that character's update, not in the frames, for half a second (`kEventWindow`): a far one may not be heard. A client hears each once (by serial), in a ring of its own (`HybridSession::HeardEvents`). Its own character is sent only what mods said; it predicts the rest. An event declared for everyone (`Declarations::Event`'s `everyone`: a kill feed, a round's end), or at nothing, stays in the frames |
+| **Other characters are puppets** (M253, M254; `sim/puppet.h`) | A puppet (`Simulation::PuppetOf`) is a few integers: position, facing, look, flags, and each state machine layer's state and start tick. Every client but the driver's gets it as a delta (`net::EncodePuppet`), plus the record and held items without what the client keeps itself (`Simulation::PuppetView`), and no input. `Simulation::ApplyPuppets` places it (interpolated when sent less often) and runs its animation locally, following the puppet's layers (`UpdateAnimGraph`'s `follow`: states and start times are the server's, clocks and blends local). Its markers arrive as the server's events |
+| **Fields others see** (M255) | An entity field belongs to its player alone unless shared (`BoardField::shared`; a field a state machine reads is shared automatically). A puppet's view zeroes the rest, and a `SetField` on a character or what it holds goes in the states, not the frames. Names are sent as changes after the first list |
+| **Lag compensation** (M250; `--lag-compensation MS`, 500 by default) | Each input says how many ticks back the player saw the others (`PlayerInput::seenBack`; about 20 at a 100 ms round trip). Hits meet the others as that player saw them, and the world as it is. **Mods' casts** (`Context::CastRay`): the server tests hitboxes at the characters' past places and poses (`GameServer::RecordPast`). **Motions' finds and probes**, in the simulation (`SimConfig::compensation`; 0 in the inputs model): the past capsules (`Simulation::RecordPast`, kept in snapshots, not portable images) are tested instead of the present ones (`CastSeen`); a hold attaches where the target is now |
+| **Your own character, predicted** (`Simulation::StepCharacters`) | Runs ahead of the server against the physics world as it is (in the past); each state and the inputs since, run again, make it the server's again. While the physics steps a past tick, it stands where the server had it then. Entities a client makes on the characters' side take NetIds from `0x70000000` |
+| **Your own throws drawn at once** (M249, `HybridSession::OwnLaunches`) | What your motions launch while predicted is drawn from the press (`Simulation::FlyItem`), never in the physics; the server's copy takes over when it arrives, carried forward to your tick while it flies |
+
+**Rules that must hold in the hybrid:**
+
+- The client's physics reads no character, and a state never touches the physics world.
+- Physics events are self-contained; nothing waits for a later tick.
+- While the state threads make a state's messages, nothing they read changes: acknowledgements and
+  events at characters are held (`m_heldAcks`, `m_heldEvents`); keeping a state, a snapshot, a client
+  joining or leaving, or any message but an input waits for `FinishStates`.
+
+The constants and the reasons behind each mechanism are in the code's comments and in
+[docs/HISTORY.md](docs/HISTORY.md) (M244 to M261, with the costs measured when it was built); today's
+numbers are in [docs/scaling.md](docs/scaling.md).
+
+### The inputs model
+
+- **Client**: sends its inputs every tick and simulates the whole world, predicting remote players
+  by repeating their last input. When the server's frame for tick N differs from the prediction, it
+  restores the nearest snapshot at or before N and re-simulates, at most once per rendered frame.
+- **Snapshots are few**: one before each tick predicted for the first time, and one during each
+  re-simulation where the confirmed frames end (where the next misprediction almost always is).
+- **`reconcile_every`** (`CinderboxPeer`, `--reconcile-every=N`, default 1): a misprediction is fixed
+  only every N ticks; remote players are seen up to N ticks later.
+- **Server**: never rolls back. It waits briefly for each input, reuses the last one when late, and
+  broadcasts what it used.
+- **Commands are not predicted**: a mod's effect shows when its frame arrives, folded in by rollback
+  like a remote input.
+- **Window**: 8 to 20 ticks, from latency (`RTT × rate + 2 × jitter × rate + 4`); beyond it the
+  client waits.
+- **Clock**: the client aims to be `rtt/2 + jitter + 2 ticks` ahead; when behind it runs up to twice
+  as fast (being behind costs input, being ahead only latency).
 - **Desync**: periodic checksums; a mismatch asks for a new welcome.
 - **Disconnects**: a dropped player stays 10 s with zeroed input and gets its slot back with its token.
+
+### Threads (both models)
+
+| | How |
+|---|---|
+| **Physics** (`src/sim/physics_threads.h`) | Every world has 4 workers (`kPhysicsWorkers`); how many threads run them is each machine's choice and changes nothing simulated (default: a quarter of the machine's threads, at most 3 extra; `--physics-threads`). One pool per process; its threads spin a millisecond after the last task. A task allocates inside its world's arena, under a lock; where things land varies, and nothing reads that. Box3D aims to be the same for any worker count but does not promise it: the `physics_threads` test checks 1 to 8 workers on 1 to 8 threads. Cost: the workers' memory is in every snapshot (2.7 to 3.5 MB at 64 players); gain: 10 to 20% off the physics in a game |
+| **Characters** (M258, `Simulation::SetParallelFor`; a server gives its own pool, others none) | Movers and the characters' animation run apart, one driver each. A mover reads the world as the tick found it, so each driver's results are kept (`MovedCharacter`) and written after, in slot order. A driven prop moves at its turn on the simulation's thread. The motions' pass stays on one thread. The `character_threads` test: the same hash on 1 to 8 threads and with players taken backwards |
+| **State threads** (the hybrid server) | "Made while the next tick runs", above |
+
+### Channels and encoding
 
 | Channel | Carries |
 |---|---|
 | 0, reliable | `Hello` (protocol version, build fingerprint, name, token), `Welcome` (config, slot, map, schema, a portable snapshot), `Reject`, checksums, names, private fields, typed text, resync requests |
-| 1, unreliable | client: its newest inputs, each in as many packets as the server's count of its lost packets asks (4 at least; 12 always before M261), the tick it has frames up to, and in the hybrid the state it keeps as a base. Server, the inputs model: every tick, all frames from that tick on, delta-chained; a lost batch costs nothing because the next repeats it. The hybrid: its frames with the characters' states (above) |
+| 1, unreliable | Client: its newest inputs, each in as many packets as the server's count of its lost packets asks (4 at least; always 12 before M261), the tick it has frames up to, and in the hybrid the state it keeps as a base. Server, inputs model: every tick, all frames from the client's acknowledgement on, delta-chained; a lost batch costs nothing because the next repeats it. Hybrid: frames with the states (above) |
 
-- Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
-- ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
-- **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 92, replay version 61 at M261 (`kProtocolVersion` in `src/net/protocol.h`, `kVersion` in `src/net/replay.h`): each says in its comment what every version changed. The code is the place to read the numbers.
+- Inputs model frames go out in three packets each (the hybrid's in two, with its states), one per
+  update; packets sent in one update share a datagram and are lost together (M142). A client keeps
+  a batch that starts after what it has until the gap is filled. The oldest unacknowledged frame is
+  re-sent only once it has been out longer than an answer takes.
+- Frames encode a mask of the players whose input changed, then only the changed fields; commands
+  carry a field mask.
+- ENet's throttle is off (it dropped unreliable packets after large reliable transfers, stalling
+  clients).
+- **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify`
+  re-simulates headlessly.
+- **Versions**: protocol 92, replay 61 at M261 (`kProtocolVersion` in `src/net/protocol.h`, `kVersion`
+  in `src/net/replay.h`). The server refuses any other protocol version and any other build
+  fingerprint. The code is the place to read the numbers.
 
 ## The viewer protocol
 
-`src/present`. A **viewer** draws frames and never asks where they came from; a **source**
-produces them.
+`src/present`. A **viewer** draws frames and never asks where they come from; a **source** produces
+them.
 
 ```
 source  ──ViewFrame──>  viewer        the world at one tick, who is who, how the source is
@@ -333,18 +293,28 @@ source  <──control───   viewer        named commands with a number ("p
 | view file (`ViewFileSource`) | no: recorded frames played back | viewer extension |
 | any object | whatever it likes: `take( whole ) -> PackedByteArray` | a script |
 
-- **Two extensions**: `cinderbox` (the viewer: no simulation, no networking, all a mod's project needs) and `cinderbox_peer` (joins servers, plays recordings). Frames cross between them as bytes.
-- **The mirror** (`mirror.*`): a presentation flecs world that interpolates between ticks, fades out rollback corrections, evaluates poses and turns count changes into visual events.
-  - **Poses by distance and view** (M259, `EvaluatePlayerPose`, `Mirror::SetView` from the game's camera): every frame within 15 m, every 2nd within 30, 4th within 60, 8th beyond (by how far it looks: zoomed in, nearer); out of view every 4th within 15 m (its shadow may be in view), else not at all; taken in turns by NetId. The viewer's own every frame. A pose not made again is not put on its skeleton again either (`PlayerAnim::posed`); its catch-up runs over the time since its last.
-- **The codec** (`view_codec.*`, packets "CBV7"): whole frames or deltas against a frame both sides have.
+- **Two extensions**: `cinderbox` (the viewer: no simulation, no networking; all a mod's project
+  needs) and `cinderbox_peer` (joins servers, plays recordings). Frames cross between them as bytes.
+- **The mirror** (`mirror.*`): a presentation flecs world that interpolates between ticks, fades out
+  rollback corrections, evaluates poses and turns count changes into visual events.
+- **Poses by distance and view** (M259; `EvaluatePlayerPose`, `Mirror::SetView`): in view, every
+  frame within 15 m, every 2nd within 30, 4th within 60, 8th beyond (distance scaled by zoom); out
+  of view, every 4th within 15 m (its shadow may show), else never; staggered by NetId. The viewer's
+  own every frame. A pose not remade is not reapplied (`PlayerAnim::posed`); its catch-up covers the
+  time since its last.
+- **The codec** (`view_codec.*`, packets `CBV7`): whole frames, or deltas against a frame both sides
+  have. A **stride** sends fewer frames than ticks; lists and event rings are sent as changes. 32
+  players went from 6.8 to 0.43 Mbit/s.
 
 | Precision | Positions | Rotations | Animation | Not sent |
 |---|---|---|---|---|
 | exact | floats that changed | floats | words that changed | nothing |
 | compact | 1/512 m grid, small deltas | 32 bits (smallest three) | floats on a 1/1024 grid | velocity, inputs, a held item's transform |
 
-- A **stride** sends fewer frames than ticks; lists and event rings are sent as what changed. 32 players went from 6.8 to 0.43 Mbit/s.
-- **Every client simulates**: none is sent frames to draw. In the inputs model it simulates the whole world; in the hybrid, the physics world and its own character, and the other characters are the server's ([Netcode](#netcode)). Streaming clients (M54: a client that was sent frames instead of inputs, about ten times the download, with fog of war decided by mods) were removed in M68. What is left of them is the compact codec and the stride, which view files use.
+- **Every client simulates**; none is sent frames to draw. In the inputs model a client simulates the
+  whole world; in the hybrid, the physics world and its own character. (Streaming clients, sent
+  frames instead of inputs, were M54 and removed in M68; the compact codec and the stride remain,
+  used by view files.)
 
 ## Server mods
 
@@ -355,29 +325,37 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
             every simulation (server and clients) applies them, like inputs
 ```
 
-- **Commands, not access**: `Set`, `Emit`, `SpawnProp`, `SpawnTemplate`, `Destroy`, `Push`, `Kill`, `Respawn`, `Freeze`, `Aim`, `Facing`, `SetStance`, `SwapLayer`, `SetMove`, and the item commands. Mods need no determinism of their own: their decisions reach clients as values.
-- **Targets** are NetIds, `SlotTarget( slot )` or `ItemTarget( slot, socket )` (resolved when the command runs).
-- **Mods read the state before the tick**, so a hitscan is resolved against the world the shooter's input was predicted in.
-- **A frame holds 1024 commands** (`kMaxCommandsPerFrame`): what the mods add beyond waits for the next tick, first in it and in order, and the server says so (255 players joining at once ask for about ten start items each).
-- **Hit tests** (`CastRay`) pose each player near the ray from its `AnimState` and test its character's hitboxes; `RayHit::zone` names the zone. Server only: poses never enter the rolled-back simulation.
-- **Mods cooperate by name**, never by call: board fields, item properties, and events (heard a tick later through `RecentEvents`).
+- **Commands, not access**: `Set`, `Emit`, `SpawnProp`, `SpawnTemplate`, `Destroy`, `Push`, `Kill`,
+  `Respawn`, `Freeze`, `Aim`, `Facing`, `SetStance`, `SwapLayer`, `SetMove`, and the item commands.
+  Mods need no determinism of their own: their decisions reach clients as values.
+- **Targets** are NetIds, `SlotTarget( slot )` or `ItemTarget( slot, socket )`, resolved when the
+  command runs.
+- **Mods read the state before the tick**, so a hitscan is resolved against the world the shooter's
+  input was predicted in.
+- **A frame holds 1024 commands** (`kMaxCommandsPerFrame`); more wait for the next tick, first and in
+  order, and the server logs it.
+- **Hit tests** (`CastRay`) pose each player near the ray from its `AnimState` and test its
+  character's hitboxes; `RayHit::zone` names the zone. Server only: poses never enter the
+  rolled-back simulation.
+- **Mods cooperate by name, never by call**: board fields, item properties, and events (heard a tick
+  later through `RecentEvents`).
 - **Options**: `--mod-option NAME=VALUE`, read with `ctx.Option`.
-- **Mod state** lives in one flecs world shared by the mods; it is not rolled back and not sent.
+- **Mod state** lives in one flecs world the mods share; not rolled back, not sent.
 
 | Mod | Owns |
 |---|---|
 | `combat` | health, death, ragdolls, respawning, kills and deaths; hears `combat.damage`, `combat.heal`, `game.round_start`; says `combat.hurt`, `combat.killed`, `combat.respawned` |
 | `gun` | the pistol and the rifle: ammo, reload, hitscan with hit zones; a hit on a player is `combat.damage` (`mark`: the ray a second use marks with) |
 | `melee` | the bat: a swing timed by the character's `melee.strike` marker, damage through `combat.damage` |
-| `inventory` | the rules of what a player carries: how many slots, what a life starts with, what a death drops (the slots are the engine's) |
+| `inventory` | what a player carries: how many slots, what a life starts with, what a death drops (the slots are the engine's) |
 | `pickup` | picking up and dropping items, hold-to-use progress on the board |
 | `deathmatch` | rounds: scores `combat.killed`, freezes for the intermission, emits `game.round_start` |
-| `props`, `expire`, `sneak` | throwing props; items that lie too long; a crouch layer from an animation pack, and its speed |
-| `dash` | the charges of a dash; the dash and a double jump themselves are its motion set, run by every simulation |
+| `props`, `expire`, `sneak` | throwing props; removing items left lying; a crouch layer from an animation pack, and its speed |
+| `dash` | the dash's charges; the dash and the double jump are its motion set |
 | `flight` | a player's first tank; flight, the jetpack, its fuel and the glide are its motion set |
-| `grapple` | three names; the grappling hook is its motion (a probe, a force and a link), its rope a `CbLinkLook` |
+| `grapple` | three names; the hook is its motion (a probe, a force, a link), its rope a `CbLinkLook` |
 | `brawl` | the brawler's kit: a fist and four skills whose sheets are their moves; turns their hits into `combat.damage` (a guard takes a quarter) |
-| `frag`, `grenade` | the fused grenade (a stack of three, its sheet sets it off); the impact grenade (off) |
+| `frag`, `grenade` | the fused grenade (a stack of three, set off by its sheet); the impact grenade (off) |
 | `chat`, `shop`, `chest` | typed text; buying with an intent; containers placed around the spawn |
 | `waves`, `possess`, `cannon` | NPCs in waves on the navigation mesh; taking over the nearest body; a cannon whose balls break walls (all off) |
 | `item`, `secret` | the cues an item's use says, whatever the item; a private field (the example) |
@@ -401,9 +379,12 @@ cb_server announces "gun <sha256>" in the schema; a client without that exact it
 | The scene guard (`cue_guard.*`) | before a scene is instantiated | listed node classes only, no scripts, no signal connections, node paths that stay in the scene, animations and reactions that call only listed methods, advance expressions cleared |
 | Baked files | at pack time | `pack_mod.ps1` bakes item bodies and characters from the scenes that ship, so an item is never stale |
 
-- **Identity is the content hash**: every player on a server sees the same look; an update is a new item.
-- **Load order**: base game, the server's items, then the player's own mods (which keep the last word).
-- **Honest limit**: neither check makes Godot's resource parsers or ozz's archive reader safe against deliberately malformed files.
+- **Identity is the content hash**: every player on a server sees the same look; an update is a new
+  item.
+- **Load order**: base game, the server's items, then the player's own mods (which have the last word).
+- **Honest limit**: neither check makes Godot's resource parsers or ozz's archive reader safe
+  against deliberately malformed files; nor is what a client reads from a server checked that way
+  yet ([ROADMAP.md](ROADMAP.md#before-launch)).
 
 ## Characters and animation
 
@@ -418,39 +399,59 @@ AnimationTree (Godot) ──bake──> graph.cfg + clips (.ozz) ──> the sch
 | Step | Where | What |
 |---|---|---|
 | Author | Godot | a `CbCharacter` scene: the model on a humanoid-profile `Skeleton3D`, an `AnimationPlayer`, an `AnimationTree`, `CbHitbox` shapes, `CbSocket` nodes |
-| Bake | saving the scene, the Bake button, packing the item | skeleton and clips sampled to ozz, `anim.cfg`, `graph.cfg` (states, transitions, layers, blend spaces, markers), `hitboxes.cfg`; writes a file only when its bytes change |
+| Bake | on save, the Bake button, when packing | skeleton and clips sampled to ozz, `anim.cfg`, `graph.cfg` (states, transitions, layers, blend spaces, markers), `hitboxes.cfg`; a file is written only when its bytes change |
 | Ship | the item (or the base game, for the mannequin) | the scene and the baked files |
 | Run | every simulation | `UpdateAnimGraph`, per player, per layer, after movement; conditions are small stack programs over simulation values |
-| Pose | clients and the server's hit tests | `PoseEvaluator`: each layer samples its state's clips and blends them through its mask, then the legs turn, the chest faces forward, the upper body bends with the camera's pitch, the aim chain points |
+| Pose | clients and the server's hit tests | `PoseEvaluator`: each layer samples its state's clips and blends through its mask; then the legs turn, the chest faces forward, the upper body bends with the camera's pitch, the aim chain points |
 
-- **Why the simulation runs it**: which state plays decides the pose, the pose decides the hitboxes, and the server hit-tests those. So the machine runs the same everywhere and rolls back.
-- **The placeholder rig** (`--character none`, tests): a procedural skeleton with six procedural clips and a one-layer machine built in, run like any other.
-- **What a machine reads**: speed and direction, grounded and air time, `jumped`, aiming, stances by name, mod events (as triggers carrying their value), board fields, item kinds held.
-- **Stances** are names: a mod sets one on a layer (`SetStance`), a character's machine reads it in conditions and layer weights. What a stance looks like is the character's.
-- **Layers** are the tree's state machines stacked with `Blend2` nodes; a filter is the layer's bone mask. At most four.
-- **The editor's node list**: the extension's editor plugin adds the Cinderbox nodes to the Create New Node dialog's Favorites (the dialog's own `favorites.Node` file), once per project and node.
-- **Animation packs**: a mod's own layers (a crouch, a carry) baked into its item; `SwapLayer` plays a pack's layer instead of the character's of the same name, with clips retargeted to the character by profile bone names (`FitPack`). Items bring layers through wishes the server resolves per player.
-- **The viewer's own player is led** (`present/anim_lead.*`): for unanswered predictions the viewer runs the machine's upper layers forward from the server's state, with the predicted stance or event put in at the press. The lead grows with the time since the press, stays when the answer arrives (so nothing jumps) and is given back at 15% of real time. An input the state does not have yet gets a tick of its own, as a command does in the simulation, which makes the led clock exactly the server's later one. The base layer is never led.
-- **Looking** is part of the pose: while a character faces the camera (`FaceCamera`), its look chain (spine to head) turns by the camera's pitch, blended in over 0.2 s (`AnimState::look`).
-- **Aiming** is part of the pose: the `Aim` command turns the character's aim chain toward where the player looks, drawn by clients and used by hit tests.
-- **The ozz pose owns the body**: a `CbPoseModifier` re-applies it after any Godot animation; Godot animation only adds what the pose leaves alone.
-- **An animation's other tracks** (particles, sounds, lights) stay in the Godot animation. The client copies them out of the character's `AnimationPlayer` when it is first drawn and a `CbTrackPlayer` plays them at the clip and time the pose is playing: values land exactly, method and audio keys fire once across rollbacks.
-- **Retargeting onto imported characters**: rotations relative to each bone's own rest, rest postures bridged (arms-down to T-pose), hips scaled by height.
+- **Why the simulation runs it**: the playing state decides the pose, the pose decides the hitboxes,
+  and the server hit-tests those. So the machine runs the same everywhere and rolls back.
+- **The ozz pose owns the body**: what the game draws is exactly the pose hit tests use; since M260
+  nothing of a character's scene animates a body in the game. In the editor, a `CbPoseModifier`
+  re-applies the pose after any Godot animation (`CinderboxSkeleton`).
+- **The placeholder rig** (`--character none`, tests): a procedural skeleton with six procedural
+  clips and a built-in one-layer machine, run like any other.
+- **What a machine reads**: speed and direction, grounded and air time, `jumped`, aiming, stances by
+  name, mod events (as triggers carrying their value), board fields, item kinds held.
+- **Stances** are names a mod sets on a layer (`SetStance`); the character's machine reads them in
+  conditions and layer weights. What a stance looks like is the character's business.
+- **Layers** are the tree's state machines stacked with `Blend2` nodes; a filter is the layer's bone
+  mask. At most four.
+- **Animation packs**: a mod's own layers (a crouch, a carry) baked into its item; `SwapLayer` plays a
+  pack's layer instead of the character's layer of the same name, with clips retargeted by profile
+  bone names (`FitPack`). Items bring layers through wishes the server resolves per player.
+- **The viewer's own player is led** (`present/anim_lead.*`): for unanswered predictions the viewer
+  runs the machine's upper layers forward from the server's state, with the predicted stance or
+  event put in at the press. The lead grows with time since the press, holds when the answer
+  arrives (nothing jumps), and is given back at 15% of real time. An input the state does not have
+  yet gets a tick of its own, as a command does in the simulation, so the led clock is exactly the
+  server's later one. The base layer is never led.
+- **Looking and aiming** are part of the pose: while a character faces the camera (`FaceCamera`), its
+  spine-to-head chain turns by the camera's pitch, blended over 0.2 s (`AnimState::look`); the `Aim`
+  command turns its aim chain toward where the player looks. Clients draw it; hit tests use it.
+- **An animation's other tracks** (particles, sounds, lights) stay in the Godot animation: the client
+  copies them out of the character's `AnimationPlayer` when first drawn, and a `CbTrackPlayer` plays
+  them at the clip and time the pose is playing; values land exactly, method and audio keys fire
+  once across rollbacks.
+- **Retargeting** onto imported characters: rotations relative to each bone's rest, rest postures
+  bridged (arms down to T-pose), hips scaled by height.
 - **Ragdolls on screen**: any skeleton hangs off the eleven parts; the last pose blends in over 0.15 s.
+- **The editor's node list**: the extension adds the Cinderbox nodes to the Create New Node dialog's
+  Favorites, once per project and node.
 
 ## Items
 
 | Piece | How |
 |---|---|
-| Kind | declared by a mod (`ItemKind( "melee.bat" )`); a condition name everywhere (true while held) |
-| Held | an entity in a socket of its holder (`SpawnItem`, `HoldItem`); it has its own board and receives events |
-| Sockets | `CbSocket` nodes in the character scene, in the item's frame; the client places them from the pose and parents the item as `Item` |
+| Kind | declared by a mod (`ItemKind( "melee.bat" )`), or by its look (`ItemsOfLook`); a condition name everywhere, true while held |
+| Held | an entity in a socket of its holder (`SpawnItem`, `HoldItem`), with its own board; it receives events |
+| Sockets | `CbSocket` nodes in the character's scene; the client places them from the pose and parents the item as `Item` |
 | Stowed | carried without being held, drawn in a holster socket |
-| In the world | a body baked from its scene's `CbItem` (the shape under it, mass, properties) into `items/<kind>.cfg`; dropped, picked up, expiring |
-| Slots | what a player carries, in numbered places: an item's slot (`HeldItem::slot`), a player's selected one (`Slots`), `SimConfig::slots`. Select, move and drop are intents in `PlayerInput` (kind, two slots, a count), carried out by `Simulation::StepSlots` before anything asks what is held, once per count: predicted and rolled back like movement |
-| Using | the use button (`BtnUse`, the engine's, like jump) uses the selected slot's item; a kind whose `use` says so is used by its slot's key instead, where it is. `StepSlots` records the kind's `<kind>.used` event on that tick where a mod declared it; the item's mod asks `Context::Used` / `Using` on the same tick |
-| Properties | named numbers on a kind (`slot`, `holster`, `use`, `pickup.hold_seconds`): how mods agree about items; the engine reads the first three |
-| Look | the item's own scene, whose root is its `CbItem`: the baked `items/<kind>.cfg` names the scene, and the game reads every one it finds; the scene's own reactions do the rest |
+| In the world | a body baked from the item scene's `CbItem` (the shape under it, mass, properties) into `items/<kind>.cfg`; dropped, picked up, expiring |
+| Slots | numbered places a player carries things in: an item's slot (`HeldItem::slot`), the selected one (`Slots`), `SimConfig::slots`. Select, move and drop are intents in `PlayerInput` (kind, two slots, a count), carried out by `Simulation::StepSlots` before anything asks what is held, once per count: predicted and rolled back like movement |
+| Using | the use button (`BtnUse`) uses the selected slot's item; a kind whose `use` says so is used by its slot's key, wherever it is. `StepSlots` records `<kind>.used` on that tick where a mod declared it; the item's mod asks `Context::Used` / `Using` on the same tick |
+| Properties | named numbers on a kind (`slot`, `holster`, `use`, `pickup.hold_seconds`, ...): how mods agree about items; the engine reads the first three |
+| Look | the item's own scene, rooted at its `CbItem`; the baked `items/<kind>.cfg` names the scene, and the scene's reactions do the rest |
 
 ## Looks
 
@@ -460,45 +461,71 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 |---|---|
 | `CbDirector` | the World node: entities with kind, template and state as metadata; runs the reactions under it. Plain Godot: anything can drive it |
 | `CbReaction` | on a **cue** (a mod event, a game event) or **while** conditions hold: an animation, a property, a listed method, a scene, a sound, a screen shake or flash, placed by the cue or a node |
-| `CbPrediction` | says which cue the server will answer a press with (or a held action, again every `cooldown`: `while_held`); the cue plays at once with the same reactions, and the server's cue then plays only what waited |
-| `CbItem` | the root of an item's scene: kind, name, mass, properties, first-person view; where the hands hold it (two markers it names); with the `CollisionShape3D` under it, baked to `items/<kind>.cfg` for the server (body, grip, properties) and the game (scene, name, view) |
-| `CbLinkLook` | which scene the line of a motion's probe is drawn as: stretched by the viewer from the player's socket to the line's end, which every frame carries (`FrameEntity::linkEnd`) |
-| `CbMotionSet`, `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink` | not looks: authoring nodes for what a mod adds to movement, one family (`CbMotionPart`; the effects share `CbMotionEffect`), baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
+| `CbPrediction` | which cue the server will answer a press with (or a held action, every `cooldown`: `while_held`); the cue plays at once, and the server's cue then plays only what waited |
+| `CbRules` | a sheet (`.rules`) beside the scene: its rules become reactions, predictions and HUD lines when the scene is used; its motion blocks are baked ([docs/rules-language.md](docs/rules-language.md)) |
+| `CbItem` | the root of an item's scene: kind, name, mass, properties, first-person view, where the hands hold it (two markers); with the `CollisionShape3D` under it, baked to `items/<kind>.cfg` |
+| `CbLinkLook` | the scene a motion probe's line is drawn as, stretched from the player's socket to the line's end (`FrameEntity::linkEnd`) |
+| `CbMotionSet` | not a look: a mod's motions, as a sheet's motion blocks, baked to `motions/<set>.cfg` ([docs/motions.md](docs/motions.md)). The motion nodes (`CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`) still bake but no content uses them ([ROADMAP.md](ROADMAP.md#3c-groundwork) deletes them) |
 | `CbFieldLabel`, `CbFieldBinding`, `CbPromptLabel` | HUD from fields, for their subject: the local player, or the entity of the list row they are in |
-| `CbList`, `CbKey` | a row per player, item, slot or event that happened, copied from the row designed as its child, filtered and sorted by expressions (a scoreboard is a scene, not a node); a key of the viewer's own that keeps a `ui.` value at 1 while it is on (whoever reads the value shows something), with the cursor free if it says so |
-| `CbClick` | what a click on a control does: sets `ui.` values (the viewer's own, known to no simulation) and asks an intent of the player's slots. With slots in the frame (`FrameEntity::slotIndex`, `slotCount`), a list of slots and a free cursor, an inventory screen is a scene |
+| `CbList`, `CbKey` | a row per player, item, slot or event, copied from the row designed as its child, filtered and sorted by expressions (a scoreboard is a scene, not a node); a viewer key that holds a `ui.` value at 1 while on, freeing the cursor if it says so |
+| `CbClick` | what a click on a control does: sets `ui.` values (the viewer's own, unknown to any simulation) and sends an intent for the player's slots. With slots in the frame, a list of slots and a free cursor, an inventory screen is a scene |
 
-- **Paths**: `^` (my entity), `^^` (its holder), `$at` / `$other` (who a cue names), `$local`, `$world`, `@field` (the entity a field names). No path leaves the World node.
-- **Conditions and values**: one expression language (`src/expr`): names, comparisons, arithmetic, `and` / `or` / `not`, `?name`. Parsed once into a stack program with the names kept as text; each reader says what a name is.
+- **Paths**: `^` (my entity), `^^` (its holder), `$at` / `$other` (who a cue names), `$local`,
+  `$world`, `@field` (the entity a field names). No path leaves the World node.
+- **One expression language** (`src/expr`): names, comparisons, arithmetic, `and` / `or` / `not`,
+  `?name`. Parsed once into a stack program with the names kept as text; each reader says what a
+  name is:
 
 | Reader | Names | Runs |
 |---|---|---|
-| State machine (`sim/anim_graph`) | resolved at bake against the schema to where the value lives | its own copy of the program, with `expr::Apply` for the arithmetic: no name lookups in the simulation |
+| State machine (`sim/anim_graph`) | resolved at bake against the schema | its own copy of the program, with `expr::Apply` for the arithmetic: no name lookups in the simulation |
 | HUD nodes (`present/fields`) | the board, private fields, item kinds | `expr::Evaluate`, programs cached by text |
 | Reactions, predictions (`godot/cue`) | the subject's state metadata, or another entity's through a path and a colon; `is_local`, `event.*` | `expr::Evaluate` |
 
-- **Values**: `CbReaction.value_expression` sets a property to an expression's value (kept up to date while a While is on), `volume_expression` scales a sound; `CbFieldBinding.field` and `{...}` in a `CbFieldLabel` take expressions. HUD nodes stay their own classes: a HUD scene is not under the World node, so a reaction there has no director.
+- **Values**: `CbReaction.value_expression` sets a property to an expression (kept current while a
+  While holds); `volume_expression` scales a sound; `CbFieldBinding.field` and `{...}` in a
+  `CbFieldLabel` take expressions. HUD scenes are not under the World node, so a reaction there has
+  no director.
 - **World reactions**: every `res://vfx/reactions*.tscn` is loaded once; files add to each other.
-- **Prediction rule**: on a predicted cue a reaction waits for the server when it uses what only the server knows (the cue's point, end, value or other entity) or has `wait_for_server` on. Echoes are matched by name and order within a second.
-- **Predicted state**: a prediction may also say what the server's answer changes for the viewer's own player. `changes` (`gun.ammo -= 1`) are applied to the mirror's copy of the board after each frame's cues were heard, so the server's value and the prediction's are never both counted. A `stance` (or the cue itself, as an event) leads the body: see Characters and animation.
-- **Cue Preview**: an editor panel that plays a scene's reactions on a small stage with stand-in players.
+- **The prediction rule**: on a predicted cue, a reaction waits for the server when it uses what only
+  the server knows (the cue's point, end, value or other entity) or has `wait_for_server` on. Echoes
+  are matched by name and order within a second.
+- **Predicted state**: a prediction may say what the server's answer changes for the viewer's own
+  player. `changes` (`gun.ammo -= 1`) are applied to the mirror's copy of the board after each
+  frame's cues are heard, so the server's value and the prediction's are never both counted. A
+  `stance` (or the cue as an event) leads the body (see Characters and animation).
+- **Cue Preview**: an editor panel that plays a scene's reactions on a small stage with stand-in
+  players.
 
 ## Maps and templates
 
-- A map is a Godot scene with marker nodes (`CbStatic`, `CbProp`, `CbSpawn`, `CbTemplate`, `CbEntity`) **baked** to a `.cbmap`: fixed-point values (1/1024 m, 1/4096 rad), so every platform reads the same floats. Scene-tree order is creation order, and so part of the format.
-- The server sends the map in the welcome; clients draw the scene it was baked from (or the baked boxes when they do not have it).
-- **The component registry** (`reflect.h`) is one description of what an author may attach to an entity, read by the Godot inspector, the baker and the simulation. Values are identified by name hash; unknown ones are dropped and the rest clamped, so a map cannot push the simulation outside the registry.
-- **Templates** live in the map: initial values, never behaviour. A spawnable template is what the spawn action creates; anything a player spawns still expires and counts against the caps.
+- A map is a Godot scene with marker nodes (`CbStatic`, `CbProp`, `CbSpawn`, `CbTemplate`, `CbEntity`)
+  **baked** to a `.cbmap` of fixed-point values (1/1024 m, 1/4096 rad), so every platform reads the
+  same floats. Scene-tree order is creation order, and so part of the format.
+- The server sends the map in the welcome; clients draw the scene it was baked from (or the baked
+  shapes when they do not have it).
+- **The component registry** (`reflect.h`) is the one description of what an author may attach to an
+  entity, read by the Godot inspector, the baker and the simulation. Values are identified by name
+  hash; unknown ones are dropped and the rest clamped, so a map cannot push the simulation outside
+  the registry.
+- **Templates** live in the map: initial values, never behaviour. A spawnable template is what the
+  spawn action creates; anything a player spawns still expires and counts against the caps.
 
 ## The Godot client
 
-`godot/`: the project the viewer runs in. `game.gd` is input, camera, HUD and joining; `boot.tscn`
-loads mods; `workshop.gd` is where items are.
+`godot/`: the project the viewer runs in. `game.gd` is joining, input and the HUD (its parts:
+`presentation.gd`, `view_camera.gd`, `keys.gd`, `autoplay.gd`); `boot.tscn` loads mods; `workshop.gd`
+knows where items are.
 
-- **Threads**: a source simulates on its own thread and publishes frames; the main thread takes the newest and extrapolates the interpolation alpha. Input is latched until the source consumed it.
-- **Nodes**: each visual is a prefab instance (checked by the scene guard); a player or a ragdoll is an entity node with its sockets, its body drawn by its character's look through the RenderingServer, posed by the ozz pose (`look.h`, M260); another player's item that only looks is its meshes, and one put away out of sight is neither sent nor drawn.
+- **Threads**: a source simulates on its own thread and publishes frames; the main thread takes the
+  newest and extrapolates the interpolation alpha. Input is latched until the source consumed it.
+- **Nodes**: each visual is a prefab instance (checked by the scene guard). A player or a ragdoll is
+  an entity node with its sockets, its body drawn by its character's look through the
+  RenderingServer and posed by the ozz pose (`look.h`, M260). Another player's item that only looks
+  is its meshes; one put away out of sight is neither sent nor drawn.
 - **Camera**: third person, collides with the map; Godot yaw = simulation yaw − π.
-- **The menu**: join by address, settings, an in-game menu; joining another server restarts the process so mounted packs are clean.
+- **The menu**: join by address, settings, an in-game menu. Joining another server restarts the
+  process, so mounted packs are clean.
 - **Jolt** is enabled for client-only effects; simulation entities never get Godot physics bodies.
 - **Export**: `tools/export_client.ps1` with the "Windows" preset.
 
@@ -506,10 +533,10 @@ loads mods; `workshop.gd` is where items are.
 
 | Kind | Where | Covers |
 |---|---|---|
-| Unit and scenario tests | `tests/test_main.cpp` (`cb_tests`) | map format, commands, movement parameters, motions, events, state machines, poses, hitboxes, items, the frame codec, snapshots, rollback |
-| Network tests | `tests/net_test.cpp` (`cb_net_tests`) | sessions over loopback and a lossy link, mods end to end (combat, pistol, melee, inventory, pickup, deathmatch, sneak), sources |
-| Headless Godot checks | `godot/addons/cinderbox_maps/check_*.gd` | reactions, predictions, the scene guard, the pack validator, the track player, the pose winning over Godot animation, retargeting, a character's movement, motion bakes, the menu |
-| Tools | `cb_bot`, `cb_netsim`, `cb_replay` | bots (full ones run the real client), a UDP relay that degrades traffic, replay verification and view file summaries |
+| Unit and scenario tests | `tests/test_main.cpp` (`cb_tests`) | map format, commands, movement, motions, events, state machines, poses, hitboxes, items, the frame codec, snapshots, rollback, the hybrid without a network |
+| Network tests | `tests/net_test.cpp` (`cb_net_tests`) | sessions over loopback and a lossy link, both models, mods end to end, sources, the crowd bench |
+| Headless Godot checks | `godot/addons/cinderbox_maps/check_*.gd` (29) | reactions, predictions, the scene guard, the pack validator, the track player, the pose winning over Godot animation, retargeting, movement, motion bakes, the menu |
+| Tools | `cb_bot`, `cb_netsim`, `cb_replay` | bots (full ones run the real client), a UDP relay that degrades traffic, replay verification, view file summaries |
 
 **CI** (`.github/workflows/determinism.yml`), on every push:
 
@@ -519,140 +546,55 @@ loads mods; `workshop.gd` is where items are.
 | linux-gcc, linux-clang | GCC, Clang | x64 |
 | macos-arm64-clang | Apple Clang | ARM64 |
 
-- Each build runs all tests, then compares its per-tick hashes (the reference scenario, then a run with motions) with `tests/reference_hashes.txt` and its pose hash with `tests/reference_anim_hash.txt`.
-- **Cross-load**: the six portable snapshots must be byte-identical, and each OS loads each of them with each of its builds and runs on to the reference's final hash.
-- Not covered: Linux ARM64, the Godot extensions, a Godot client in a session against a server built by another compiler.
+- Each build runs `ctest`, then compares its per-tick hashes (the reference scenario, then a run with
+  motions) with `tests/reference_hashes.txt`, and its pose hash with `tests/reference_anim_hash.txt`.
+- **Cross-load**: the six portable snapshots must be byte-identical, and each OS loads each of them
+  with each of its builds and runs on to the reference's final hash.
+- **Not covered by CI**: Linux ARM64; the Godot extensions and the Godot checks; a Godot client
+  against a server built by another compiler; sanitizers; tests in `cb_tests`' table that
+  `tests/CMakeLists.txt` does not register ([ROADMAP.md](ROADMAP.md#3c-groundwork)). Details:
+  [docs/testing.md](docs/testing.md).
 
 ## Source layout
 
-```
-cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz)
-src/expr/         the one expression language (cb_expr): conditions and values as text, a parser and an evaluator, no dependencies
-src/sim/          deterministic simulation shared by server and client, as two libraries: cb_sim_data
-                  (what the data means: no world is stepped) and cb_sim (the simulation itself)
-  events.h          the rings of recent impacts and mod events (part of the state and of every frame)
-  bytes.h           minimal binary reader and writer
-  world_lifetime.*  the lock around creating flecs and Box3D worlds
-  types.h           inputs, commands, input frames, config
-  mod_schema.*      names of the mods' board fields, events and actions (sent on join)
-  ragdoll.h         the ragdoll's bodies and joints
-  map.*             baked map format (.cbmap): fixed-point collision, templates and spawn data
-  reflect.*         the authorable component registry the editor and the baker both read
-  components.h      snapshotted ECS components (POD, no padding)
-  simulation.*      the engine: level, props, commands, ragdolls, snapshots, hashing
-  mover.*           the character mover: walking, jumping, falling, pushing, by input and parameters
-  move_params.*     the movement parameters: names, defaults, ranges
-  motions.*         what mods add to movement: the baked text, its compiler and the runner
-  rollback.*        client prediction + rollback session
-  physics_arena.*   Box3D allocator arena (makes the physics state copyable)
-  box3d_shim.c      access to Box3D internals (world struct, portable serializer)
-  detmath.h         deterministic trig and the yaw convention
-  fingerprint.*     build fingerprint checked when a client connects
-  anim_controller.* what a state machine reads about how a player moves (speed, legs, aim, the air)
-  anim_graph.*      a character's state machine: its text, the compiler and the runner
-src/anim/         ozz: the placeholder rig and baked characters (anim_set.*), the pose from a state machine (pose.*), joint names (profile.*)
-src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
-src/server/       authoritative GameServer (library), the mod API (mod_api.*), the navigation mesh (navigation.*), the crowd bench (crowd_bench.*) and cb_server
-server_mods/      gameplay mods compiled into cb_server: inventory, props, gun, melee, brawl, pickup, deathmatch, waves, ...
-godot/characters/ characters shipped with the game (mannequin: source glb, bone map, scene, baked files)
-characters/       character items: <name>/client is the item's Godot project, <name>/client_item.cfg its hash
-  <mod>/client/     a mod's look as a Godot project, published as a workshop item
-  <mod>/client_item.cfg  the published item's SHA-256, which servers announce
-src/tools/        cb_netsim, cb_replay, cb_bot
-src/client/       GameClient core (no rendering, also "lite" mode), the view sources, the bot brain
-  live_source.*     a view source that plays on a server (GameClient on its own thread)
-  replay_source.*   a view source that plays a recording (replay_player.* on its own thread)
-src/present/      engine-independent presentation, what the Godot extensions draw from
-  source_thread.*   what sources with a thread share: the thread, the float environment, the newest frame
-  view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)
-  view_codec.*      a ViewFrame as bytes: whole, or a delta against a frame both sides have
-  view_file.*       view files: frames recorded as bytes, and the source that plays them
-  frame.h           PresentationFrame: a copy of what the simulation shows at one tick
-  capture.*         CaptureFrame: a simulation's state as a frame (its own library, cb_capture)
-  mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
-  fields.*          board fields by name: conditions, values and "{field}" text
-  pose_tools.*      ragdoll poses, pose blending
-  scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
-src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a view source's frames as prefabs,
-                  signals, items; the adapter that drives the World director), the look (look.*: every body and another's
-                  plain item drawn through the RenderingServer), CinderboxSkeleton (the editor's), map and entity authoring nodes,
-                  CbItem, HUD labels (cinderbox_hud.*), CbMotion (cinderbox_motion.*). No simulation, no networking
-  object_source.*   a source that is a Godot object handing over packets (the peer, or a script)
-  peer/             the peer GDExtension (cinderbox_peer): CinderboxPeer, the sources that simulate
-  packet_handoff.*  what both hand a viewer: the newest frame as a packet
-  cue/            the reaction addon, godot-cpp only: CbDirector, CbReaction, cue paths and conditions
-godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
-                  joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
-  maps/             map scenes and their baked .cbmap files
-  assets/sfx/       placeholder sounds (tools/make_sfx.py)
-  addons/cinderbox_maps/  editor and dev tooling: the Bake Map button, the headless bakers,
-                    the character generators, the headless checks
-mods_src/         client mod projects (example_neon)
-tests/            determinism, rollback, gameplay, animation and loopback network tests
-scripts/          cross-compiler determinism check, stress test
-sdk/              the Godot project a mod's look is made from (sdk/README.md)
-tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, test_mod.ps1, export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
-```
+| Folder | Holds |
+|---|---|
+| `cmake/` | float flags (`Determinism.cmake`), pinned dependencies (`Dependencies.cmake`), Box3D's patches |
+| `src/expr/` | the expression language (`cb_expr`): no dependencies |
+| `src/sim/` | the deterministic simulation (`cb_sim_data`, `cb_sim`). `simulation.*` the engine (level, props, commands, slots, motions' effects, ragdolls, snapshots, hashing); `mover.*`, `move_params.*` movement; `motions.*` motion sets (compiler and runner); `anim_controller.*`, `anim_graph.*` what a state machine reads, and the machine; `physics_inputs.cpp` pushers and physics events; `stand_ins.cpp`, `puppets.cpp`, `puppet.h` the hybrid's states and puppets; `rollback.*`, `hybrid_session.*` the two client sessions; `physics_arena.*`, `box3d_shim.c` Box3D's memory and internals; `physics_threads.*`; `map.*`, `level.h` the map format and layout; `reflect.*` the component registry; `components.h`, `types.h`, `events.h` the data; `mod_schema.*`; `ragdoll.h`; `detmath.h`, `util.h` (hashes, PRNG), `bytes.h`, `small_list.h`; `fingerprint.*`; `world_lifetime.*` (the lock around making flecs and Box3D worlds); `bot_brain.h` |
+| `src/anim/` | ozz: the placeholder rig and baked characters (`anim_set.*`), the pose (`pose.*`), joint names (`profile.*`), hitboxes, retargeting, joint math |
+| `src/net/` | the protocol, the ENet transport, the hybrid's state codec (`state_codec.*`), the network simulator, replay files |
+| `src/server/` | `GameServer`, the mod API, hit tests, the navigation mesh, character and look items, the worker pool, the crowd bench, `cb_server`'s `main.cpp` |
+| `server_mods/` | the gameplay mods compiled into `cb_server`; `<mod>/client/` is a mod's look as a Godot project, `<mod>/client_item.cfg` its published item's SHA-256 |
+| `characters/` | character items: `<name>/client` the item's Godot project, `<name>/client_item.cfg` its hash |
+| `src/client/` | `GameClient` (no rendering; also a "lite" mode), the live and replay sources, replay playback, asking a server before joining, the level's static shapes for the camera |
+| `src/present/` | engine-independent presentation: the viewer protocol (`view.h`), the frame codec, view files, `PresentationFrame` and capture, the mirror, fields, the led and caught-up animations, event news, camera collision, pose tools, `scripts/` (spawn effects, player poses, ragdolls) |
+| `src/godot/` | the viewer extension (`cinderbox`): `CinderboxClient` (`cinderbox_client*.cpp`, five parts), the look (`look.*`), authoring nodes (map, entity, character, item, motion, HUD, text), the editor's skeleton, the track player, the autobake, the sheet editor; `cue/` the reaction addon (director, reactions, predictions, paths, the scene guard, names, rules sheets, Cue Preview); `peer/` the peer extension (`cinderbox_peer`) |
+| `src/tools/` | `cb_netsim`, `cb_replay`, `cb_bot` |
+| `godot/` | the game: boot, game scripts, menu, workshop, prefabs, vfx, ui; `maps/` map scenes and `.cbmap` files; `characters/` the shipped mannequin; `assets/sfx/` placeholder sounds; `addons/cinderbox_maps/` the editor tooling, bakers, generators and headless checks |
+| `sdk/` | the Godot project a mod's look is made from ([sdk/README.md](sdk/README.md)) |
+| `mods_src/` | client mod projects (`example_neon`) |
+| `tests/`, `scripts/`, `tools/` | the tests; the determinism and stress scripts; the PowerShell tools (SDK, pack, publish, test a mod, export, bake a map, playtest, crowd client) and `make_sfx.py` |
 
 ## Known limits
 
 | Area | Limit |
 |---|---|
-| Prediction | a reaction played on a wrong guess is not taken back; the led body holds what the state says about movement still over the lead; packs' layers are not checked for what they read; a predicted event's clock is one tick ahead on the frame its answer arrives |
-| Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
-| State machines | what bakes is a subset of Godot's tree ([characters.md](docs/characters.md#state-machines)): no `travel()`, Sync switching or transitions to End at the top; a OneShot's autorestart and fade curves are not baked; a grouped machine is baked as a nested one; other blend nodes are refused |
-| Characters | a slot drives a body, and may possess another: a character's or a loose prop (M220, M221), walked by the capsule controller (a prop's bounds hold its move back), or driven by a mod (an NPC, M222: it selects and uses items as a player does (M228), the `waves` mod's come in waves (M229); the combat mod hurts and kills them, at full health from the start (M224, M225); a mod's Destroy leaves any body someone drives: it stops driving it first); every body is one of the server's characters, in the simulation, the server's hit tests (M216) and the client's drawing (M217); first person only for a character with a first-person camera in its scene, shots from its eyes (M218); the third-person camera is the same for every body; another skeleton than a humanoid plays (M219) without a ragdoll, packs that do not fit it, or arms in first person; no character without a skeleton yet; the scene ships its animations' bone tracks next to the ozz clips |
-| Players with latency | the inputs model only (the hybrid's costs are under [Netcode](#netcode)): every client simulates the whole world and resimulates its rollback window when a remote input was not what it guessed (it rarely is: a mouse turns every tick). With 64 players and a 200 ms round trip that is about 16 steps a tick at 0.8 ms each: 87% of one core on this machine at full speed, with nothing to spare for a slower one (M139's measurements). `reconcile_every` 2 halves it. The step itself is the cost; snapshots are 5% since M139. Of a step at 64 players, physics and the characters are about 0.4 ms each. The physics follows what is awake, not the players: 0.02 ms with 2 players and no props, 0.3 to 0.4 ms with the 300 props the test's bots keep in the air (M140). The network is not the limit |
-| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). The controller is kinematic: its mass decides what contacts, forces and ropes exchange, but a player is not knocked over. Pushes from several players on one player in a tick add up, in slot order. A probe's line starts at the same point in every view (not at the eye in first person). One probe per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives (the hybrid: with its character's update and events; its motions are not run here). In the hybrid what your own motion does to a body or to another player is not applied by your game: it comes with the server's events (a throw is drawn at once) |
-| Mods | compiled into the server (no hot-loading); a mod is switched off by a `disabled` file in its folder (compiled in, run only when `--mods` names it), a part of one by a server option its conditions read; events between mods are a tick late; a board has as many names per scope as the mods declare (a field's number is 16 bits), each one state on every entity that has any; a look published again is taken while the server runs only when it changes nothing the simulation reads (bodies, properties, packs, motions need a restart), a player without the new item keeps the old look, and files the new look dropped stay loaded in a running game |
-| Private fields | per player, not per entity; not in recordings or view files (they read 0 there). A mod cannot hide an entity from a client, so there is no fog of war: in the inputs model each client simulates the whole world; in the hybrid each has the physics world whole and is sent the characters by priority (a far one later, not never), without the others' unshared fields and their items put away out of sight |
+| Prediction | a reaction played on a wrong guess is not taken back; the led body holds what the state says about movement over the lead; packs' layers are not checked for what they read; a predicted event's clock is one tick ahead on the frame its answer arrives |
+| Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state restarted by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
+| State machines | the baked subset of Godot's tree ([docs/characters.md](docs/characters.md#state-machines)): no `travel()`, Sync switching or transitions to End at the top; a OneShot's autorestart and fade curves are not baked; a grouped machine bakes as a nested one; other blend nodes are refused |
+| Characters | the third-person camera is the same for every body; first person only for a character with a first-person camera in its scene; a non-humanoid skeleton plays without a ragdoll, without packs that do not fit it, and without first-person arms; no character without a skeleton; the scene ships its animations' bone tracks next to the ozz clips; a mod's `Destroy` of a body someone drives releases its driver first. What bodies, possession and NPCs can do: [docs/characters.md](docs/characters.md) |
+| Players with latency (inputs model) | every client simulates the whole world and re-simulates its window when a remote input differs from its guess (almost always: a mouse turns every tick). 64 players at a 200 ms round trip: about 16 steps a tick at 0.8 ms each, 87% of a core here (M139); `reconcile_every` 2 halves it. The step itself is the cost (snapshots 5%); physics follows what is awake (0.02 ms with 2 players, 0.3 to 0.4 ms with 300 props in the air: M140). The hybrid's costs: [docs/scaling.md](docs/scaling.md) |
+| Movement | a mod's `SetMove` and `Push` are commands, not predicted (a motion is). The controller is kinematic: its mass decides what contacts, forces and ropes exchange, but a player is never knocked over. Pushes from several players in a tick add up in slot order. A probe's line starts at the same point in every view (not the eye in first person); one probe per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives (hybrid: with its update and events; not run locally). In the hybrid your own motion's effect on a body or another player comes back with the server's events (a throw is drawn at once) |
+| Mods | compiled into the server (no hot-loading); switched off by a `disabled` file in the mod's folder (compiled in, run only when `--mods` names it), a part of one by a server option its conditions read; events between mods are a tick late; a board has as many names per scope as mods declare (16-bit field numbers), each one state on every entity that has any. A look published again is taken up live only when it changes nothing the simulation reads (bodies, properties, packs, motions need a restart); a player without the new item keeps the old look; files the new look dropped stay loaded |
+| Private fields | per player, not per entity; not in recordings or view files (they read 0). No fog of war: in the inputs model each client simulates the whole world; in the hybrid each has the whole physics world and every character, far ones less often, without others' unshared fields and their items put away |
 | Combat | no teams, no spectators |
-| Aiming | no marker when the shot is blocked by something the camera sees past (cover in third person); the first-person camera does not lower when crouching (it follows the mover, and crouching is an animation); the bat's strike is rays in the look direction from the chest, not the bat's path through the pose; bots always use the camera behind |
-| First-person body | the world is the third-person one and first person only shows copies: the body is set to cast its shadow without being drawn, a legs copy and an arms copy are made for the eye (three poses of one skeleton for the viewer's own player), and the arms and the held item are drawn by a second camera over the world (the sun's shadow map is drawn once more for it). The legs are slid back when looking down, so the feet are not exactly where the body's are; the view's pose is the upper body standing still; third-person holds are not framed for the eye, so most items need a `view_offset` and `view_rotation`; fingers are the clip's; a held item's shadow is of its meshes at rest; what is stowed on the body is not drawn in first person |
+| Aiming | no marker when the shot is blocked by something the camera sees past (cover in third person); the first-person camera does not lower when crouching (crouching is an animation); the bat's strike is rays along the look from the chest, not the bat's path; bots always use the camera behind |
+| First-person body | the world is the third-person one; first person only shows copies: the body casts its shadow without being drawn, legs and arms copies are made for the eye (three poses of one skeleton), and the arms and held item are drawn by a second camera (the sun's shadow map drawn once more). Legs slide back when looking down; the view's pose is the standing upper body; most items need a `view_offset` and `view_rotation`; fingers are the clip's; a held item's shadow is of its meshes at rest; what is stowed on the body is not drawn |
 | Items | two kinds sharing a holster socket overlap |
-| Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
+| Packs and servers | neither the checks nor the client make Godot's, ozz's or the network decoders safe against malformed files or a malicious server ([ROADMAP.md](ROADMAP.md#before-launch)) |
 | Menu | no server browser |
-| Large files | `simulation.cpp` is about 7,000 lines (the mover left it in M92; possession, driven props and NPCs came in since); `cinderbox_client.cpp` is in five parts, the largest 2,150; `tests/test_main.cpp` is about 13,800 |
+| Large files | `simulation.cpp` about 7,000 lines; `cinderbox_client.cpp` in five parts, the largest 2,150; `tests/test_main.cpp` about 13,800 ([ROADMAP.md](ROADMAP.md#housekeeping)) |
 
-## Measurements (Clang Release, 32-thread desktop, everything on one machine)
-
-Netcode numbers from when they were taken (M4, M5); frame sizes are in [The viewer protocol](#the-viewer-protocol).
-
-"Client work" is reconcile plus the predicted ticks, per rendered frame, for a full bot. There are two kinds of bot:
-- **Realistic bots** hold directions and sprint, turn the camera smoothly now and then, and jump and spawn props occasionally.
-- **Chaotic bots** (`--chaotic`) change every input field every tick. They are the worst case for mispredictions and bandwidth.
-
-### M5 (unreliable frame batches, automatic window), 64 bots, 4 of them full
-
-| Link | Bots | Window | Server tick | Client work avg / max | Stalled | Late inputs | Down / up per client | Server out |
-|---|---|---|---|---|---|---|---|---|
-| loopback | realistic | 8 | 0.80 ms | 0.86 / 8.9 ms | 0% | 0% | 42 / 45 kbit/s | 2.6 Mbit/s |
-| 25±5 ms each way, 1% loss (RTT 61 ms) | realistic | 10 | 0.88 ms | 0.93 / 8.8 ms | 0% | 0% | 162 / 45 kbit/s | 10.5 Mbit/s |
-| 45±10 ms, 2% loss (RTT 106 ms) | realistic | 13 | 0.94 ms | 2.48 / 16.4 ms | 0% | 0.01% | 254 / 44 kbit/s | 17 Mbit/s |
-| 45±10 ms, 2% loss (RTT 106 ms) | chaotic | 13 | 1.08 ms | 1.17 / 24.2 ms | 0% | 0% | 1.4 Mbit / 44 kbit/s | 90 Mbit/s |
-| loopback | chaotic | 8 | 0.81 ms | 1.18 / 10.7 ms | 0% | 0% | 196 / 45 kbit/s | 12.5 Mbit/s |
-
-- **Bandwidth**: download grows with round trip, because each batch repeats the frames still in flight (about RTT × rate + 1 of them).
-- **Integration test** (3% loss and 1% duplication each way, RTT about 74 ms): 0% late inputs once settled, with windows of 13–16. Before M5 it was about 80%. (The test steps its four clients on a thread each: one after another they take longer than a tick, since each resimulates its window for every frame, at about 0.6 ms a tick with every mod running.)
-- **Mixed build**: MSVC server, GCC network simulator and bots, and a Clang client over a lossy link. No desyncs, and the GCC build verified the MSVC server's recording.
-
-### M4 (reliable ordered frames, fixed window, chaotic bots) for comparison
-
-| Link | Window | Server tick | Client work avg / max | Stalled | Late inputs | Down per client |
-|---|---|---|---|---|---|---|
-| loopback, 64 bots | 8 | 0.72 ms | 0.94 / 6.7 ms | 0% | ~0% | 118 kbit/s |
-| RTT 106 ms, 2% loss | 8 | 0.75 ms | 1.98 / 17.1 ms | 7.9% | 4.5% | 115 kbit/s |
-| RTT 106 ms, 2% loss | 16 | 0.78 ms | 1.63 / 15.5 ms | 1.1% | 0.17% | 120 kbit/s |
-
-- **Join**: one portable snapshot per join, about 80–250 KB.
-- **Replay**: `cb_replay verify` re-simulates at 0.15–0.4 ms per tick.
-
-### Findings
-- **Window vs latency**: with a fixed 8-tick window at 60 Hz, a round trip above about 75 ms pins the client to the window.
-  - Every input it sends then arrives late, and that player's own actions get corrected constantly.
-  - The automatic window fixes this, at the cost of deeper re-simulation when latency is high (client work up to about 16–24 ms in the worst frames at 106 ms with 64 very active players).
-- **Head-of-line blocking** (M4): with reliable ordered frames, one lost frame stalled confirmation until it was retransmitted. The M5 unreliable batches removed it.
-- **Test harness pitfalls**:
-  - A full bot sharing a thread with lite bots made their inputs late; each full bot now runs on its own thread.
-  - Debug builds cannot keep real time with a server and four simulating clients on one thread, so the late-input thresholds are only checked in optimized builds.
-- **Rare reconnect**: an occasional client reconnect (about one per several minutes of 64 bots at 2% loss) was seen with the 1–3 s ENet timeout. The timeout is now 2–6 s; no reconnects occurred in the M5 runs.
+The old netcode measurements (M4, M5: the inputs model with 64 bots) are in
+[docs/scaling.md](docs/scaling.md#m4-and-m5-the-inputs-model-64-bots).
