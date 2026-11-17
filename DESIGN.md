@@ -32,7 +32,7 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 | Language / build | C++20, CMake + Ninja, Clang primary (MSVC and GCC also supported) |
 | Dependencies | CMake FetchContent, pinned to exact commits, built inside each build directory (never shared between compilers) |
 | ECS | flecs 4.x |
-| Physics | Box3D (erincatto/box3d), its step on several threads (see below), cross-platform determinism mode, two local patches (`cmake/patches/`) |
+| Physics | Box3D (erincatto/box3d), its step on several threads (see below), cross-platform determinism mode, five local patches (`cmake/patches/`) |
 | Animation | ozz-animation 0.17.0, scalar (non-SIMD) build; clips and skeletons baked from Godot scenes |
 | Networking | ENet (UDP), dedicated headless server |
 | Finding the way | Recast & Detour 1.6.0, on the server only (a navigation mesh built when the game starts; not part of the simulation) |
@@ -62,14 +62,18 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 - A per-tick state hash (FNV-1a over the canonical ECS image, with physics mirrored into it) backs the tests and runtime desync detection.
 - Godot may change the FPU state of its threads: a source's simulation thread resets MXCSR before anything else and computes the build fingerprint there, so a wrong environment is rejected by the server instead of desyncing.
 
-Two Box3D bugs found by the cross-platform checks are patched when it is fetched:
+Box3D is patched when it is fetched (`cmake/patches/`, listed in `cmake/Dependencies.cmake`), each
+found by the cross-platform checks or the snapshot comparisons:
 
 | Patch | Problem |
 |---|---|
 | `box3d-snapshot-padding.patch` | the snapshot writer copied struct padding and a heap address: joining clients received scraps of server memory, and no two saves were identical |
 | `box3d-neon-minmax.patch` | ARM64 clamped to a zero of the other sign than x64 (`vmaxq`/`vminq` against SSE's `maxps`/`minps`) |
+| `box3d-snapshot-sections.patch` | a snapshot notes where each of its sections begins, so a test can say which part of two snapshots differs (`cbx_SnapSections`) |
+| `box3d-snapshot-free-contacts.patch` | a free contact slot kept a mesh contact's freed triangle cache address in a snapshot (CI's macOS build, M247) |
+| `box3d-mesh-cache-zero.patch` | a mesh contact's new triangle cache was zeroed only in its union's first member; the rest held stack bytes (CI's Linux Clang, M250) |
 
-A third hole was ours: ozz chooses its scalar math with a definition it sets for its own sources only, and its math is mostly inline. Our code that includes its headers (the leg turn, the aim chain, hitboxes, retargeting) compiled the platform's SIMD versions, SSE on x64 and NEON on ARM64, which do not round alike. `ozz_base` now carries the definition to everything that links it. The pose hash found it once it covered the leg turn and the aim (`cb_tests --anim-hash-parts` says which step differs).
+One more hole was ours: ozz chooses its scalar math with a definition it sets for its own sources only, and its math is mostly inline. Our code that includes its headers (the leg turn, the aim chain, hitboxes, retargeting) compiled the platform's SIMD versions, SSE on x64 and NEON on ARM64, which do not round alike. `ozz_base` now carries the definition to everything that links it. The pose hash found it once it covered the leg turn and the aim (`cb_tests --anim-hash-parts` says which step differs).
 
 ## The simulation
 
