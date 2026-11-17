@@ -39,7 +39,8 @@ machines. No game and no server are needed to author. The rules are the mod's C+
   marked "no".
 - **Every mod's files share one `res://`** in the game: name files after the mod
   (`vfx/<mod>_flash.tscn`).
-- **No scripts.** A mod's look is scenes and resources; the game refuses a pack with a script.
+- **No scripts.** A mod's look is scenes and resources; the game refuses a pack with a script
+  (a check that can be bypassed today: [ROADMAP.md](../ROADMAP.md#3c-groundwork)).
 
 ## Finding the nodes
 
