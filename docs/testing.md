@@ -121,6 +121,8 @@ Each build job (`scripts/ci_check.sh <preset> <name> <out-dir>`, also usable loc
 - uploads its hash dump, a portable snapshot and `cb_tests` for the cross-load jobs
   (`scripts/ci_cross.sh`), which also check that all dumps and snapshots are byte-identical.
 
-Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, Determinism):
-`box3d-snapshot-padding.patch` (snapshots carried uninitialized padding bytes and a heap pointer) and
-`box3d-neon-minmax.patch` (ARM64 clamps returned -0 where x64 returns +0).
+Box3D is fetched with five local patches in `cmake/patches/` (each in DESIGN.md, Determinism):
+three keep its snapshots free of padding, stack bytes and addresses (`box3d-snapshot-padding`,
+`box3d-snapshot-free-contacts`, `box3d-mesh-cache-zero`), one makes ARM64's clamps return the zero
+x64 does (`box3d-neon-minmax`), and one marks a snapshot's sections so a test can say which differs
+(`box3d-snapshot-sections`).
