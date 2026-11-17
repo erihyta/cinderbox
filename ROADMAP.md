@@ -1,571 +1,205 @@
 # Cinderbox — Roadmap
 
-What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work today;
-[docs/HISTORY.md](docs/HISTORY.md) is what is done. **Rewritten after M234** from a review of the
-whole project, with the decisions taken after it ([step 0](#0-decisions)). The last version's steps 1
-to 11 (M188 to M232) are done; that version is in git history, and what it left that still holds is
-below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
-[Decided earlier](#decided-earlier-still-holds)).
+The road to 1.0: what comes next, in order, and why.
 
-## Where it stands (M234)
+| Read with | |
+|---|---|
+| [DESIGN.md](DESIGN.md) | how it works today |
+| [docs/HISTORY.md](docs/HISTORY.md) | every milestone done, M1 to M261.6 |
+| [docs/scaling.md](docs/scaling.md) | how many players a server holds, and every measurement behind it |
+| [docs/hytale-comparison.md](docs/hytale-comparison.md) | what Cinderbox could take from Hytale's mods and plugins (proposals) |
+
+**Rewritten after M261** (2026-11-17, M261.6). Every statement here about what exists was read in
+the code at M261.5's merge (`d3387be`); what is planned says so. The roadmap before it grew from
+the rewrite after M234, from a review of the whole project (`c7c09bd`, 2026-10-27); what that
+review found and still holds is kept below, in the step it belongs to.
+
+## Where it stands (M261)
 
 | Area | What there is |
 |---|---|
-| The simulation | deterministic on six compilers and three OSes, checked in CI with cross-loaded snapshots and a pose hash; rollback, prediction, a lead for the viewer's own player |
-| Netcode | an authoritative server; every client simulates the whole world from everyone's inputs; replays, view files, bots, a network simulator, a chaos test |
-| Bodies | a character per body, any skeleton, possession (of a body or a prop), NPCs a mod drives on the server's navigation mesh, the `waves` mod |
-| Animation | Godot AnimationTrees baked to a deterministic subset (blend spaces, TimeScale, OneShot, Add2, nested machines); packs and overlays an item brings |
-| Rules | C++ server mods; sheets the simulation runs for what moves bodies (brawl, dash, flight, grapple, frag, grenade, cannon). The bat and the guns are still C++ with hand-written predictions |
-| Looks | reactions, predictions and HUD lines in sheets; the scene guard and the pack validator |
+| The simulation | flecs and Box3D, deterministic on six builds (Windows: Clang, GCC, MSVC; Linux: GCC, Clang; macOS arm64: Clang). CI compares every build's snapshots and animation pose hash, and loads each system's snapshots on the others |
+| Netcode | an authoritative server and two network models, the server's choice. **Hybrid** (`cb_server`'s default since 2026-11-01): the physics simulated by every client from the server's events, never sent as state; other characters as puppets of a few bytes; your own predicted; lag compensation. **Inputs**: every client simulates everything from everyone's inputs, for small servers. Replays, view files, bots, a network simulator, a chaos test |
+| Scale | 1023 players a server. 255 fighting in one crowd hold 60 Hz on the server, and the game draws them at 47 frames a second; 1023 in one crowd run, below 60 Hz ([docs/scaling.md](docs/scaling.md)) |
+| The client | Godot 4.7 with the engine as a GDExtension. It draws whatever a source hands it (a server, a replay, a view file) and runs no mod's code. Every body is drawn one way, from its character's look, through the RenderingServer (M260) |
+| Bodies | a character per body, any skeleton, possession of a body or a prop, NPCs a mod drives on the server's navigation mesh |
+| Animation | Godot AnimationTrees baked to a deterministic subset (blend spaces, TimeScale, crossfade curves, OneShot, Add2, nested machines) that the simulation runs; packs and overlays an item brings; far bodies posed less often (M259) |
+| Rules | 24 server mods in C++, compiled into the server, 18 of them on by default. Sheets that every simulation runs, so they are predicted, for what moves bodies: brawl, dash, flight, grapple, frag, grenade, cannon. The bat and the guns are still C++ with hand-written predictions |
+| Looks | reactions, predictions and HUD lines in sheets; a scene guard and a pack validator for workshop items |
 | The world | props, destructible walls, items, containers; maps baked from Godot scenes |
-| Modding | a Godot project per mod made from the SDK, Test mod, a look republished while the server runs; the editor knows the names after a server build |
+| Modding | a Godot project per mod, made from the SDK; Test mod (build, publish and play in one step); a look published again is taken up without restarting the server or the game; workshop items found by hash, never sent over the game connection; the editor knows a mod's names after a server build |
+| Tests | 174 tests in `ctest` (the simulation, the network, the tools) and 29 Godot checks (`check_*.gd`); the determinism CI after every push |
 
-## How we work from now
+## What 1.0 means
+
+**Proposed (2026-11-17), for the owner to confirm.** 1.0 is the first version people outside the
+project use: players find a server and play a game made with Cinderbox, and modders make and
+publish mods, rules included, without building the engine.
+
+**1.0 is done when:**
+
+| | Step |
+|---|---|
+| Strangers play the slice, and want another session | [4](#4-the-slice) |
+| A mod's look and rules are made, tested and published with the prebuilt SDK, and run on any server without a build | [9](#9-cinderbox-studio), [10](#10-server-rules-in-luau) |
+| The formats modders depend on are settled: the sheet, an item, the rules' API. After 1.0 a change to one is versioned and said | [6](#6-sheets-improved), [10](#10-server-rules-in-luau), [before launch](#before-launch) |
+| Joining a stranger's server is safe | [before launch](#before-launch), closed |
+| Players find servers without typing an address | [parked](#parked) today |
+| The manual says what the code does, in the words modders use | [before launch](#before-launch) |
+
+**Each step, in 1.0 or not (proposed):**
+
+| Step | In 1.0 | Why |
+|---|---|---|
+| 4 The slice | yes | it is the test of everything else |
+| 5 Every item a sheet | yes | the slice's bat; one way for every item before modders copy one |
+| 6 Sheets improved | yes | the sheet's format is settled at 1.0: it changes before, not after |
+| 7 Timing from the clip | as far as the slice needs | a fighting game's feel; the slice decides |
+| 8 Body parts with priorities | as far as the slice needs | the same |
+| 9 Cinderbox Studio | yes | modding without a compiler |
+| 10 Server rules in Luau | yes | rules without a compiler; a mod's crash stops the mod, not the server |
+| 11 Avatars | to decide | a player's identity; not needed to play |
+| 12 Godot's own, used | the parts the slice and launch need (translations, themes) | the rest is polish |
+| [A thousand in one crowd](#a-thousand-in-one-crowd) | no | 255 in one fight hold 60 Hz today |
+
+## How we work
 
 | Rule | Why |
 |---|---|
-| A milestone is done when shipped content uses it and it survived a playtest, not when its test passes | M230 to M232 are tested, and nothing shipped uses them |
+| A milestone is done when shipped content uses it and it survived a playtest, not when its test passes | M230 to M232 were tested and nothing shipped used them until M236 and M242 |
 | Features wait until [the slice](#4-the-slice) needs them | an engine with no game makes every feature generic, and a generic feature is never finished |
 | One fact, one place | the bat's swing length is in three places (the clip, the sheet, the C++) |
 | The pack is the source of truth | names declared in C++ make the editor wait for a server build |
-| Standard words in the modders' docs | modders come from Roblox, Unity and Godot: client-side prediction, replicated field, ability, cooldown, hitscan, not "a lead late" or "a body nobody drives" |
+| Standard words in the modders' docs | modders come from Roblox, Unity and Godot: client-side prediction, replicated field, ability, cooldown, hitscan |
+| The docs say what the code does | a statement about today is read in the code before it is written; where they differ, the code wins (M261.5 fixed 19 stale lines, M261.6 more) |
+| CI after every push | the determinism CI was red from M136 to M161 and nobody saw |
 
-## What the review found
+## The road
 
-### Keep
-
-- The determinism CI: six builds, cross-loaded snapshots, a pose hash. Rare, and it holds.
-- The viewer and its sources: a viewer never knows where its frames come from.
-- Mods act on the world only through commands.
-- Replays, view files, bots, `cb_netsim`, the chaos test.
-- **The brawl model**: skills fully predicted from sheets, the server deciding only damage. Most
-  Roblox fighting games either trust the client's hits or show the server's late.
-
-### Problems
-
-| Problem | Evidence | Fixed by |
+| # | Step | State |
 |---|---|---|
-| Speed with no playtest gate | 234 milestones from Sep 16 to Oct 27; M221 to M234 in under 15 hours. CI is green, but nothing checks the features in play together; M223 was crash fixes for M220 to M222 | [step 1](#1-stabilize-m215-to-m234), [the rules above](#how-we-work-from-now) |
-| Features nothing ships | TimeScale, crossfade curves, OneShot, Add2, nested machines (M230 to M232); `CbCurve` and `curve()` (M207) | steps [1](#1-stabilize-m215-to-m234), [6](#6-sheets-improved) |
-| A migration left half done | brawl, dash, flight, grapple, frag, grenade and cannon are sheets; the bat and the guns are C++ plus `predict` lines | [step 5](#5-every-item-a-sheet) |
-| Dead code | melee.cpp sets `melee` and `melee_swing` on a layer `full`, gun.cpp `gun` on `upper`; no state machine reads them (the mannequin's layers are FullBody and UpperBody; the packs start on events). bat.rules predicts `stance melee_swing on full` | steps [2](#2-small-fixes-from-the-review), [5](#5-every-item-a-sheet) |
-| Stale docs | characters.md gives the mannequin an upper-body layer for the pistol and the bat (its graph has `UpperBody` at weight 0, one `Rest` state) and uses those stances as examples; the SDK README lists the unmaintained motion nodes as Favorites | [step 2](#2-small-fixes-from-the-review) |
-| No game | the README says physics sandbox, the notes say Roblox fighting games, the review asked about hundreds of players: three different engines | steps [0](#0-decisions), [3](#3-two-network-models), [4](#4-the-slice) |
-| One fact in three places | the bat: `melee.done` at 1.1 s in the clip, `cooldown 1.1` in bat.rules, `kCooldownSeconds 0.6` in melee.cpp | steps [5](#5-every-item-a-sheet), [7](#7-timing-from-the-clip) |
-| Names declared in C++ | the editor knows a mod's names only after cb_server is built (it writes `cinderbox_names.cfg` into every project) | [step 6](#6-sheets-improved) |
-| 18 Godot projects, one `res://` | files collide already: `vfx/blast.tscn` in frag and grenade (two files that differ), `assets/sfx/bat_hit.wav` and `swing.wav` in melee and brawl. The SDK's rule (name files after the mod) is broken by the shipped mods | steps [2](#2-small-fixes-from-the-review), [9](#9-cinderbox-studio) |
-| Rules need a compiler | a modder builds the engine (CMake, Ninja, Clang); a host cannot run two authors' mods without a build. The workshop covers looks; rules mean forking the server | [step 10](#10-server-rules-in-luau) |
-| Four languages in one file | `motion` / `use` (simulated, indenting counts), `on` / `while` (the viewer's reactions, indenting "for the eye"), `predict` (the viewer's guesses), `show` / `text` / `bind` (HUD). The fist's sheet is all the first kind, the bat's has none of it | [step 6](#6-sheets-improved) |
+| 0 | [Decisions](#0-decisions) | four taken after the review, four since; six open |
+| 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean (M235 to M242). **By hand: to do** |
+| 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243); the motion nodes' deletion goes with step 6 |
+| 3 | [Two network models](#3-two-network-models) | done (M244 to M250) |
+| 3b | [Many players](#3b-many-players) | done (M251 to M261): 255 in one fight at 60 Hz |
+| 4 | [The slice](#4-the-slice) | **next** |
+| 5 | [Every item a sheet](#5-every-item-a-sheet) | next, beside the slice |
+| 6 | [Sheets improved](#6-sheets-improved) | after 5 |
+| 7 | [Timing from the clip](#7-timing-from-the-clip) | when the slice asks |
+| 8 | [Body parts with priorities](#8-body-parts-with-priorities) | when the slice asks |
+| 9 | [Cinderbox Studio](#9-cinderbox-studio) | after the slice has a game to mod |
+| 10 | [Server rules in Luau](#10-server-rules-in-luau) | after the slice has a game to mod |
+| 11 | [Avatars](#11-avatars) | not started; in 1.0 or not, to decide |
+| 12 | [Godot's own, used](#12-godots-own-used) | one row done (M259) |
+| | [Before launch](#before-launch) | open |
 
-### Weak points
-
-| Weak point | Why it matters | Where |
-|---|---|---|
-| The player cap | every client steps the whole world, and again for its rollback window: 64 players at a 200 ms round trip take 87% of a core (M139) | [step 3](#3-two-network-models) |
-| Cheating | every client has the whole world: ESP and wallhacks are trivial, and there is no fog of war | [step 3](#3-two-network-models) (the hybrid sends only the characters that are near), [before launch](#before-launch) |
-| Untrusted Godot files | workshop items are scenes loaded on every player's machine; the guard and the validator check what is in them, not Godot's parsers (DESIGN.md says so) | [before launch](#before-launch) |
-| Mods in the server's process | one mod's crash takes the server down | [step 10](#10-server-rules-in-luau) |
-| Packs cannot be unloaded | joining another server restarts the game; per-player avatars as packs would make it worse | [step 11](#11-avatars) |
-| Windows-only tools, no prebuilt SDK | the scripts are PowerShell; the extension is built from source | [step 9](#9-cinderbox-studio) |
-| Big files | `simulation.cpp` about 6,000 lines, `tests/test_main.cpp` about 12,500 | [housekeeping](#housekeeping) |
-
-## Next, in order
-
-| # | What | In one line |
-|---|---|---|
-| 0 | [Decisions](#0-decisions) | **taken**: the hybrid network model the default, today's a server's choice; `.cbsheet`; Luau; the standard skeleton only |
-| 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | a written playtest checklist, run by bots and by hand with two games under latency and loss; every feature since M215 used by shipped content or removed |
-| 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | **done (M243)**: dead stances, colliding files, stale docs, two Jolt areas, an old replay, the unmaintained nodes out of sight |
-| 3 | [Two network models](#3-two-network-models) | **M246 to M249 done** (characters never write the physics world, which stands alone). The hybrid the default: physics deterministic from the server's events, characters a shooter's (your own predicted, the rest interpolated); everyone simulating the whole world from inputs kept as a choice. M244 and M245's server-state model is dropped (it streamed the physics) |
-| 3b | [Many players](#3b-many-players) | **done (M251 to M261)**: the most players a hybrid server can hold, bandwidth first: other characters as ~13-byte puppets, their animation run on the client, only what others see, frames that carry only the physics, a byte budget per client; then the server's and the client's processor time (one look for every character), the uplink, and 1023 slots |
-| 4 | [The slice](#4-the-slice) | one game, played by people; it starts here and runs beside steps 5 to 8, each done when the slice uses it |
-| 5 | [Every item a sheet](#5-every-item-a-sheet) | the bat and the guns the way the fist is: predicted from their sheets, the C++ only deciding damage |
-| 6 | [Sheets improved](#6-sheets-improved) | a resource on the node it is about (CbRules goes), `.cbsheet`, names and parameters in the sheet, readable cooldowns, the warts fixed; every item drawn as data, its reactions run from the compiled sheet |
-| 7 | [Timing from the clip](#7-timing-from-the-clip) | windows keyed on the animation (hit, invulnerable, cancel), and a hit shape that follows a bone |
-| 8 | [Body parts with priorities](#8-body-parts-with-priorities) | animation asks for parts at a priority, instead of two named layers and overlays |
-| 9 | [Cinderbox Studio](#9-cinderbox-studio) | the Godot editor made the mod tool: prebuilt SDK, feature profile, a Cinderbox tab, gizmos, export and debugger plugins, one Play, one authoring project |
-| 10 | [Server rules in Luau](#10-server-rules-in-luau) | scripts in the mod's item, sandboxed and reloaded on save; C++ for engine mechanisms |
-| 11 | [Avatars](#11-avatars) | one standard humanoid body; the appearance is the player's, swapped on the client |
-| 12 | [Godot's own, used](#12-godots-own-used) | spring bones, instance uniforms, threaded loading, MultiMesh, translations; cosmetic physics decided |
-
-- **Why stabilize first**: the last twenty milestones went in "features first, bugs after"; this is
-  the after. Each built on the one before (characters per body, possession, NPCs, NPC items, waves),
-  so a bug found later sits under three layers that changed since.
-- **Why the network model before the slice**: it is the default now, and what the sheets predict
-  and how the slice plays both depend on it.
-- **Why the slice before the tools**: steps 5 to 8 are what a fighting game leans on (predicted
-  skills, timing, full-body moves); the slice says which parts matter. Steps 9 to 11 are for
-  modders and players, and are worth more once there is a game to mod.
+- **Why the slice now**: steps 5 to 8 are what a fighting game leans on (predicted skills, timing,
+  full-body moves), and the slice says which parts of them matter. Steps 9 to 11 are for modders
+  and players, and are worth more once there is a game to mod.
+- **Why stabilizing is not finished**: unattended sessions catch crashes, desyncs and a replay
+  that does not verify; what only a person sees (a swing that looks late, a camera that jumps)
+  needs two games played by hand.
 
 ### 0. Decisions
 
-**Taken (2026-10-27):**
+**Taken:**
 
 | Decision | Taken | Means |
 |---|---|---|
-| **The network model** | the **hybrid** is the default (decided 2026-10-28, after M245; it replaced the server-state model decided here first): the physics deterministic, simulated by every client from the server's events, never sent as states; characters the server's, your own predicted, the rest interpolated. Today's model (everyone simulates the whole world from everyone's inputs) stays as a choice. The server picks one and tells each player when it joins | [step 3](#3-two-network-models), right after the fixes |
-| **The sheet's file name** | **`.cbsheet`** (a language name gets taken: Ember is a programming language) | [step 6](#6-sheets-improved) |
-| **How server-only rules are written** | **Luau** | [step 10](#10-server-rules-in-luau) |
-| **Avatars' proportions** | **the standard skeleton only**: no body scales | [step 11](#11-avatars) |
+| **The network model** (2026-10-28; the default since 2026-11-01) | the **hybrid** is the default: the physics deterministic, simulated by every client from the server's events, never sent as state; characters the server's, your own predicted, the rest drawn from puppets. The inputs model stays a server's choice | [step 3](#3-two-network-models) |
+| **The sheet's file name** (2026-10-27) | **`.cbsheet`** (a language name gets taken: Ember is a programming language) | [step 6](#6-sheets-improved) |
+| **How server-only rules are written** (2026-10-27) | **Luau** | [step 10](#10-server-rules-in-luau) |
+| **Avatars' proportions** (2026-10-27) | **the standard skeleton only**: no body scales | [step 11](#11-avatars) |
+| **One way to draw every character** (2026-11-06) | a look made from the character's scene, drawn through the RenderingServer, the viewer's own included; only what the look takes is drawn. Built in M260 | [Where it stands](#where-it-stands-m261) |
+| **Stay on Godot** (2026-11-08) | the expensive parts are the engine's own C++; Godot is the renderer, the UI and the modders' free editor. Looked at again only if a measured target fails with the time in Godot's renderer and a GPU crowd cannot fix it | [routes not taken](#routes-not-taken) |
+| **Every item drawn as data** (2026-11-14) | an item's look made once per kind; its reactions run from the compiled sheet; no node per item | [step 6](#6-sheets-improved) |
+| **Pushers stay exact** (2026-11-06) | a pusher's place every tick, not every other tick filled in: that would change how they push | [docs/scaling.md](docs/scaling.md#the-plan-for-many-players-step-3b-2026-11-03) |
 
 **Open:**
 
 | Decision | Options | Leaning | Decides |
 |---|---|---|---|
-| Cosmetic physics | Jolt with a static copy of the level; no Jolt at all | decided later | [step 12](#12-godots-own-used) |
-| The slice's game, and the players per server it is made for | an arena brawler like a Roblox fighting game; a big sandbox | the brawler (the notes say Roblox fighting games) | [step 4](#4-the-slice) |
+| **1.0's scope** | [the table above](#what-10-means) | as proposed | 1.0 |
+| **The slice's game, and the players a server is made for** | an arena brawler like a Roblox fighting game; a big sandbox | the brawler | [step 4](#4-the-slice) |
+| **How players find servers** | Steam; a website's "play" link that starts the game; the game's own list; a desktop shortcut | none yet; needed for 1.0 | [parked](#parked) |
+| **Avatars in 1.0** | in; after | none yet | [step 11](#11-avatars) |
+| **The proposals from the Hytale comparison** | each taken, placed or dropped | [below](#proposed-from-the-hytale-comparison) | before launch, steps 6 and 9 |
+| **Cosmetic physics** | Jolt with a static copy of the level; no Jolt at all | decided later | [step 12](#12-godots-own-used) |
 
-The file name and `.res`: making a sheet a Godot resource does not make it a `.res`. `.res` and
-`.tres` are Godot's generic containers (binary and text) for any resource; Godot's own Shader and
-GDScript are resources kept as their own plain-text files (`.gdshader`, `.gd`) by loaders of their
-own. A sheet is the same: a loader and a saver in the extension for `.cbsheet`
-([step 6](#6-sheets-improved)).
+`.cbsheet` and `.res`: a sheet made a Godot resource is not a `.res`. `.res` and `.tres` are
+Godot's generic containers (binary and text) for any resource; Godot's own Shader and GDScript are
+resources kept as plain-text files of their own (`.gdshader`, `.gd`) by loaders of their own. A
+sheet is the same: a loader and a saver in the extension for `.cbsheet`.
 
 ### 1. Stabilize M215 to M234
 
-A written checklist ([docs/playtest.md](docs/playtest.md)), run by hand with two games on one
-machine (no other testers yet) and unattended, at a 150 ms round trip with 2% loss:
-`tools\playtest.ps1` starts the server, `cb_netsim` and the two games, records the session and
-verifies its replay at the end (`-Autoplay SEC`: the games play by themselves). What breaks is fixed
-with a test each.
+A written checklist ([docs/playtest.md](docs/playtest.md)) of everything M215 to M234 added,
+played together under latency and loss: `tools\playtest.ps1` starts the server, `cb_netsim` (a 150
+ms round trip, 2% lost) and two games, records the session and verifies its replay at the end.
+`-Autoplay SEC` lets the games play by themselves.
 
-| Milestones | Check |
+| | State |
 |---|---|
-| M215 (the motion lines) | F1 says why a skill did not start, for every shipped skill |
-| M216 to M218 (characters per body, eyes) | a mod changes a body's character mid-game; first person only with a camera in the scene; shots start at the eyes |
-| M219 (any skeleton) | the critter walks, dies without a ragdoll, keeps its own layer when a pack does not fit |
-| M220, M221, M225, M226 (bodies, props) | leave a body holding an item and take it back; drive a crate through a doorway, along walls, turning in a corner; the camera's distance by size |
-| M222, M224, M228 (NPCs) | an NPC walks, is shot, dies, respawns, jabs with the fist; on screen without jumps |
-| M227 (finding the way) | around obstacles; after a wall breaks (the mesh is not mended: known) |
-| M229 (waves) | 32 NPCs: the client's frame time; a player joining mid-wave; a replay and a view file of it watched to the end |
-| M230 to M232 (the tree, wider) | each used by a shipped character or pack, or removed. Ideas: the bat's swing in 0.6 s (TimeScale), a flinch on `combat.hurt` (OneShot), a nested machine for a combo |
-| M223 (the chaos test) | a long soak with every mod on, under loss |
+| Unattended sessions (the default mods, the critter, waves, waves of 32 NPCs) | clean, after the fixes of M235 to M242 ([history](docs/HISTORY.md)); run on the inputs model, the default then |
+| M230 to M232 in use | TimeScale and crossfade curves: the fist (M236). OneShot: the mannequin's flinch on `combat.hurt` (M242). A nested machine: the fist's guard (M242). Add2: kept for later (decided after M241: a lean or a breathing sway, once there are clips) |
+| **The checklist by hand, two games** | **to do**, on the hybrid (`playtest.ps1`'s default since 2026-11-01) |
 
-**Done when** the checklist passes and every feature since M215 is used by shipped content or gone.
+**Still open from the sessions:**
 
-**So far (M235)**: the launcher and the checklist; unattended sessions (the default mods, the
-critter, waves, waves of 32 NPCs) clean after two fixes.
-
-| Found | State |
+| Found | Goes with |
 |---|---|
-| Both games of a waves session crashed at once: a rollback gave a NetId to something else, and the viewer wrote a ragdoll's pose into a prop's visual | fixed (M235) |
-| A body taken back lost what its life started with: its death dropped its starting items as loot beside the next life's | fixed (M235) |
-| The local paid `ual_mannequin` predated M218: no first-person camera (first person did nothing), an upper layer reading `pistol or melee or melee_swing` | regenerated (M235) |
-| A grenade is never thrown by a skeleton its arm's pack does not fit (the critter): the throw waits for the pack's `frag.release` marker, and that pack is not played | fixed (M238): the throw waits for the marker or a moment, whichever comes first |
-| The waves mod takes any body nobody drives within 0.5 m of a spot it asked for one (a player's left body, say) | fixed (M242): only bodies that were not there when it asked |
-| `combat.hurt` was said at the attacker: a victim's state machine could not react to it (a flinch) | fixed (M242): said at the victim, the attacker as its other entity. A hurt animation per weapon would need the weapon in `combat.damage`, passed on with the hurt: later |
-| 32 NPCs: the server sends 1 to 2 Mbit/s to two players (their inputs) | to watch ([step 3](#3-two-network-models)) |
-| With brawl on, the unattended player never reaches the pistol or the bat (the kit takes the first slots) | the checklist covers them by hand |
-| The pistol and the rifle did not hurt NPCs (only a target with a player's slot counted) | fixed (M236) |
-| The regenerated `ual_mannequin` turned held items 90 degrees (its hand sockets tuned by hand before) | the old sockets put back (M236) |
-| The fist hit and shoved on the click, before the drawn punch reached anyone | fixed (M237): it hits on the clip's marker, or a moment later without one |
-| With the fist out the walk's arm swing does not show (the pack owns the upper body) | the user's own clips to come |
-| HUD lines overlap at half-screen windows (the debug lines over the skills, the hotbar over the keys' line and the health bar) | not a priority (the user plays full screen), kept |
-| Spamming use breaks the bat's and the guns' animations: their hand-written `predict` lines guess a use every 1.1 s / 0.19 s from the click, the server allows one 1.1 s after its own swing started / every 0.2 s from when the press arrives; guesses outrun it, the drawn swing restarts on a guess the server refuses and snaps back when it is taken back (measured with `--spam-use`, M239) | the fix is [step 5](#5-every-item-a-sheet): a sheet's use is predicted exactly, no guess |
-| Spamming the fist restarts its punch every 0.3 s (its cooldown), before a 0.87 to 1.33 s clip plays out; drawn exactly as simulated (no guess) | fixed (M240): a recovery marker (`brawl.fist.ready`) in each punch; the next starts from there |
-| In third person the fist hit where the camera looked but shoved along the body's facing | fixed (M241): the brawl kit hits and shoves where the body faces (`cast ... along facing`, new); the camera is the default only for what is aimed (the hook) |
-| A motion's wait (`then when EVENT`) or `if` never heard an animation's marker (said after the motions had run); the fist and the throws always took their timeouts | fixed (M240): they hear it the tick after, as a trigger does |
+| Spamming use breaks the bat's and the guns' animations: their hand-written `predict` lines guess a use more often than the server allows one | [step 5](#5-every-item-a-sheet) |
+| With brawl on, the unattended player never reaches the pistol or the bat (the kit takes the first slots) | the checklist, by hand |
+| With the fist out the walk's arm swing does not show (the fist's pack owns the upper body) | the owner's own clips |
+| HUD lines overlap in half-screen windows (the debug lines, the hotbar, the keys' line) | not a priority: the game is played full screen |
 
-**M230 to M232 in use**: TimeScale and crossfade curves are the fist's (M236: `brawl.fists`, the
-finisher); OneShot is the mannequin's flinch on `combat.hurt` (M242: said at the victim now); the
-nested state machine is the fist's `Guard` (M242). **Add2: kept for later** (decided after M241): a
-lean or a breathing sway, once there are clips for it.
-
-**Next in step 1**: the checklist by hand (two games).
+**Done when** the checklist passes by hand and every feature since M215 is used by shipped content
+or gone (`CbCurve` and `curve()`, M207, are unused: [step 6](#6-sheets-improved) makes curves
+resources).
 
 ### 2. Small fixes from the review
 
-| Fix | What |
-|---|---|
-| Dead stances | **done (M243)**: the gun's `gun` on `upper` gone (the gun aims the holder; its swap test checks the aim); the bat's go with [step 5](#5-every-item-a-sheet) |
-| Colliding files | **done (M243)**: `vfx/frag_blast.tscn`, `vfx/grenade_blast.tscn`, `assets/sfx/brawl_hit.wav`, `brawl_swing.wav`, `melee_bat_hit.wav`, `melee_swing.wav` (brawl's and melee's sounds also shared an import UID: imported again). None collide now, nor with the base game's. [Step 9](#9-cinderbox-studio) makes the folders a rule |
-| Stale docs | **done (M243)**: characters.md (the mannequin's layers, the stances' examples, "the default characters still have pistol and bat states"), server-mods.md (the gun's stance); the SDK README's Favorites |
-| The unmaintained motion nodes | `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`: **out of the Favorites (M243)**, taken out once from projects that had them; deleted in [step 6](#6-sheets-improved) (no shipped mod uses them) |
-| Two areas in Jolt | **done (M243)**: every `Area3D` of a look is made quiet when the game instantiates it (no monitoring: `cue::Instantiate`, beside taking out cameras); the bake still reads its shapes |
-| `mygame.cbr` in the checkout | **deleted (M243)**: a replay from Sep 17 (`CBRP`, version 2; today's is 47), git-ignored, nothing could play it |
-| An uncommitted file | `godot/addons/cinderbox_maps/check_anim_tree.gd.uid` (M230's check): **committed (M235)** |
-
-**What Jolt does today**: nothing of the simulation's. Godot makes a physics object only for a
-`CollisionShape3D` under a physics node; every Cinderbox authoring node (`CbStatic`, `CbProp`,
-`CbItem`, `CbCharacter`, `CbBreakable`) is a plain `Node3D`, and `CbHitbox` says so in code. The
-shapes are data the bakes read; collision is Box3D's, the camera's too (a Box3D copy of the level).
-The two areas above are the only things in Jolt. Cosmetic physics: [step 12](#12-godots-own-used).
+**Done (M243)**: the gun's dead stance, colliding file names between mods, stale docs, the
+unmaintained motion nodes out of the editor's favorites, every `Area3D` of a look made quiet in the
+game, an old replay deleted. **Left**: the motion nodes themselves (`CbMotion`, `CbProbe`,
+`CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`; no shipped mod uses them) are deleted in
+[step 6](#6-sheets-improved); the bat's dead stance goes with [step 5](#5-every-item-a-sheet).
 
 ### 3. Two network models
 
-**Decided (2026-10-28, after M245)**: the second model is the **hybrid**: the physics is
-deterministic and driven by events, the characters' netcode is a shooter's. The server-state model
-of M244 and M245 is dropped: it sent the physics world as states, a cost that grows with every
-moving body, and it threw away the determinism the project is built on. Today's inputs model stays
-a server's choice. The server picks (`cb_server --net-model inputs|hybrid`), and the welcome says
-which.
+**Done (M244 to M250).** The hybrid is `cb_server`'s default since 2026-11-01; the inputs model is
+a server's choice (`--net-model inputs|hybrid`), and the welcome says which.
 
-| | Inputs (today's) | Hybrid |
-|---|---|---|
-| Physics (props, debris, ragdolls, items lying about, projectiles) | every client simulates it, rolled back with everything | every client simulates it once a tick from the server's events, a little in the past; never sent as states |
-| Characters (players, NPCs, a driven prop) | every client simulates all of them from inputs, rolled back | the server's: a client predicts its own, and draws the rest from the server's states, interpolated, a little in the past |
-| What crosses | every player's input, every tick | the physics events (a spawn, an impulse, a blast, a break, a body tossed) and the characters' states, by what is near |
-| A client's work grows with | the players and the rollback window | the physics bodies awake (sleeping ones cost little) |
-| Your own effect on a body (a punch at a crate, a cannonball) | at once | a round trip and the buffer late (about 0.2 to 0.25 s at a 150 ms ping); the flash and the sound at once |
-| Others' effect on you (a shove) | predicted from their last input | a round trip late |
-| Fog of war | impossible | for characters: what is not sent cannot be seen (the physics world is everyone's) |
-| For | fighting games, 10 to 30 players | the default; many players and big physics |
-
-**How the hybrid works**
-
-- **The physics world is a function of its events and its pushers.** Characters read it (they
-  stand on debris, are stopped by walls, are pushed out of a falling crate) and never write to it
-  themselves. What a character does to a body (a punch's shove, a throw, a launch, a break, a body
-  tossed) is a *physics event*, applied at one point in the step and recorded with its tick. Mods'
-  commands already are.
-- **Pushers**: a capsule per character in the physics world, placed every tick where the server
-  says the character is (rounded; the server's own pusher stands at the rounded place too). It is
-  what walks into bodies: it shoves the ones *pushed by characters* and touches nothing else. The
-  server sends a character's place as physics input only while the character is near something
-  pushable: far from any, a pusher costs nothing. About 9 bytes a pusher a tick: 200 players wading
-  in one ball pit are about 0.9 Mbit/s to each client (accepted).
-- **An event is self-contained**: everything the physics world needs travels in it, and the server
-  applies it exactly as the clients get it, with the same rounded numbers. A tossed body's eleven
-  parts and their speeds are in its event; the server builds the ragdoll from those, not from its
-  own copy of the player.
-- **A client's physics runs in the past.** When it runs at least a one-way trip and the jitter
-  behind the server (a buffer chosen from the measured latency), the events for tick T arrive
-  before it reaches T. So there is no rollback and no state: each tick is stepped once, as a replay
-  is. The other characters are drawn at the same delay, so one standing on debris looks right.
-- **Two Box3D worlds**: the physics world (the level, props, debris, items lying about, ragdolls,
-  projectiles) and the characters' world (their capsules, a driven prop). A character's body cannot
-  be in the physics world, even as a body that collides with nothing: it would take Box3D's ids and
-  change its internal order, and it is in a different place on every client. A body moves between
-  the two by an event (a player tossed and landing, a crate driven and left, a body taken over).
-- **Ids of their own**: the physics world's entities take NetIds from its own counter and the
-  characters' from another range, so a client that has no characters where the server has them
-  still names every body as the server does.
-- **Desync**: the physics world's checksum, as today's; a mismatch resends the physics world
-  (megabytes with much debris).
-- **Joining**: the physics world's snapshot (as a welcome sends today) and the characters' states.
-
-**Limitations, accepted**
-
-| Limitation | What it means |
-|---|---|
-| Your own physical effects are late | a round trip and the buffer: the muzzle flash and the sound at once, the crate flies later; your own throw is drawn at once (M249). A ball game played by bumping (Rocket League) belongs to the inputs model |
-| Hooked to something that moves | your prediction reads it in the past: 0.4 m off on average while hooked to a shoved ball or a running player, corrected by each state (M249); on still things exact |
-| A body is pushable or solid, not both | **pushed by characters** (a ball): a character walks through it and its pusher shoves it, in both models (a ball pit works, the balls scattering a round trip after you wade in). **Solid** (a crate, a wall piece, debris): it stops a character, who can stand on it; only events move it. Stood on from above when it weighs 1/16 of the character or more and is not too steep there (since 2026-11-01). Pushables are for ball pits and clutter; a game about pushing boxes is a mod's (2026-11-03). Lost from today: a heavy body slowing you (a pusher shoves anything pushable at full strength; a pusher with the player's mass, chasing the player, is possible later, but you would pass through what it fails to move: heavy things are better solid). Why: a walker that bumped into what it pushes would move by where the body is, and in the hybrid a client's predicted walker reads a world drawn in the past, so it would be corrected every tick of pushing. A grapple pulling a prop, a probe holding one, driving a crate and carrying change ([M249](#3-two-network-models)) |
-| You stand in the present on a world drawn in the past | settled debris is exact; on moving or collapsing debris the server corrects you. Later, if it matters: the server checks a player's move against the physics as that player saw it |
-| The whole map's physics runs on every client | there is no interest management for physics: the weakest client's processor is the world's physics budget |
-| Determinism stays absolute | CI's six builds check it; a desync costs a physics snapshot |
-| Debris passes through characters | a falling crate pushes the player out; the player does not stop it |
-
-**The milestones**
-
-| Milestone | What |
-|---|---|
-| M244, M245 (done) | **The server-state model** ([history](docs/HISTORY.md)). Measured that a simulation's whole state is mostly Box3D's internals (760 KB at 32 players, 670 KB of them), then streamed entity states with stand-ins. Carries over: `--net-model` and the welcome saying which, the state message and its codec (for the characters' states), a session per model in the game, stand-ins (for the other characters), `cb_replay state` (now `cb_replay hybrid`), the tests' harness. Gone with M248: streaming props and debris, bodies' descriptions, applying the whole world from a state |
-| **M246** (done) | **Characters read the physics world and never write it themselves.** `CbProp`'s **pushed by characters** (solid by default; `test_ground`'s balls pushed; debris solid as before; items lying about and ragdolls pushed). The mover meets solid bodies only, a loose one pushing it out by its share of the two weights (it only reads); characters' capsules touch no body in Box3D's step. Pushers placed from each tick's list. Every write to a body that reads a character (a motion's push or break, a launch, an item let go of, a kill's ragdoll) is a self-contained physics event, applied at one of two points in the step (after the characters move; after the items' own motions: nothing waits for a later tick, as snapshots do not hold it); a mod's command whose numbers are all in it stays direct. `SetFollowsPhysics`, `PhysicsMade`, `PhysicsHash`. **Found**: a character's capsule asleep reorders Box3D's awake bodies, and the contacts of the bodies around it are then made in another order (millimetres within a second): a character's body never sleeps. Checked (`net_physics_alone`): a session of punches, frags, props and ragdolls, played again with every player standing still and the server's physics inputs, has the server's physics world on every tick. The second world stays in M247, whose check (no characters at all) rules out every other way |
-| **M247** (done) | **The physics world stands alone.** Two Box3D worlds in one arena: the physics world (the level, props, debris, items lying about, ragdolls, pushers, bodies nobody drives) and the characters' (their capsules, a driven prop's body); a stored handle says which (`BodyOf`). The mover reads the physics world (the ground, solid bodies) and meets the other characters in theirs; finds, casts and rays ask both. NetIds from two counters (the physics world's from 1, the characters' from `0x10000000`). Pushers are entities of the physics world's, named by their characters. Bodies cross by self-contained events: TakeOver (a prop driven, a body taken over, an item picked up: the character's side builds its own copy and only reads the physics body), Enter (a driven prop let go, as its body describes it), Idle (a body left behind), Remove (an item its motion removed), Spawn (a mod's prop, its owner resolved by the server). Snapshots and the portable state hold both worlds. Checked: `physics_without_characters` (every crossing, scripted) and `net_physics_alone` (a session of punches, frags, props and ragdolls): with no characters at all, the physics world is the server's on every tick, by its entities and by Box3D's own bytes |
-| **M248** (done) | **The hybrid on the wire** (`--net-model hybrid`; `state` gone). The frame batches go without the inputs, with the physics events, pushers' places (as changes) and the physics checksum; the client's physics runs a few ticks behind the newest frame (twice the jitter and two ticks), each tick once, checked. The characters' states use M245's codec, characters only: the others placed from them at the physics' time, your own predicted (`StepCharacters`) against the physics world. Joining sends the physics snapshot. M244 and M245's physics streaming is deleted. Found with chaotic bots: stand-ins only on the characters' side, a client's own NetIds for what it makes there, your slot's body the prediction's. Measured: client work a quarter of the inputs model's at 16 players, download about twice (until M250). **The default turns to `hybrid` once it passes a two-game playtest by hand** ([checklist, section 5](docs/playtest.md)): done, `cb_server`'s default since 2026-11-01 |
-| **M249** (done) | **What pushed bodies, reworked.** Measured: a hook on still things is predicted exactly; on a moving ball or a running player 0.4 m off while hooked, from others' effects arriving late (left to the corrections); driving a crate already works (M247); no shipped motion pulls a prop. Built: **a player tossed** (`Toss`: its ragdoll in the physics world breaking walls, down not dead, standing up where it lies once still) and **your own throws drawn at once** in the hybrid (from the press, the server's copy taking over, carried forward to your tick) |
-| M250 | **Many players**: hits rewind the other characters to where the shooter saw them (lag compensation); characters' states sent by what is near, by priority; private fields and hidden characters; measured with hundreds of bots. **Done so far**: 255 players on a server (was 64); the mods' item questions from the holder index, not a scan per player (64 players' server tick 10.3 ms to 1.8). Measured on the hybrid (one machine, bots in four processes): the server's tick 0.6 ms at 16 players, 1.8 at 64, 3.5 at 128, 9 at 255 (of 16.7); each client downloads 0.55, 2.05, 4.1 and 3.9 Mbit/s (flat past 128: queuing, to look at), the server sends 0.13, 0.5 and 1 Gbit/s at 64, 128 and 255. **Bandwidth is the wall**: every client gets every character, about 130 bytes a character a state. **States by distance** (the default; `--every-character` turns it off): each client is sent updates, its own character and what it holds every state, the others as they come due (every state within 25 m, every 2nd, 4th or 8th at 25, 50 and 100 m), a character with what it holds, the most overdue first, at most 512 entities a state; what is left out the client keeps (a refresh repeated until acknowledged was tried first: it cost as much as it saved). Encoded on the server's state threads. Measured: 43% smaller states with players 30 to 250 m apart (`net_hybrid_far`, far ones 0.4 m off on average); 64 bots in a crowd 82 Mbit/s out of the server against 122 (sending 2.8 ms a tick against 1.0, the bots on the same machine); 255 in a crowd 64 to 79 against 250 to 270 Mbit/s (sending about 9 ms; the machine overloaded by its bots, to measure again apart). **Lag compensation** (`--lag-compensation MS`, 500 by default): an input says how far back the player saw the others; a mod's cast from a player (a shot, a swing) meets the others' hitboxes as it saw them. `net_lag_compensation`: 50 ms each way, a target strafing 8 m off, 14 of 14 shots hit (4 of 14 without); the shooter saw it up to 20 ticks back. **Motions too** (in the simulation; the config's `compensation`, the same limit): a hybrid server's simulation keeps the characters' capsules of the last ticks, and a player's finds and probes (a punch, a hook, a thrown ball) meet the others' as its input says it saw them, the world as it is; a replay finds the same. `motion_lag_compensation`: a target moved aside 5 ticks before a shove, a hook, a grab and a ball, each seen up to 24 ticks back, is hit where it was seen (5 ticks back: hit; 4: not). `net_brawl_lag_compensation`: the brawl kit's jab, 50 ms each way, at a player running across 1.6 m off: every strike the attacker saw land hits (0 of 7 to 10 without). Protocol 84, replay 59. **Found**: a far character's turn came by `(state + NetId) % period`, so a server that sent every other state (two ticks an update, CI's) never refreshed some (it is by how long since its last update now) |
-
-**Decided with it (2026-10-28)**
-
-- **One meaning in both models**: whether characters push a body is the body's own (`CbProp`'s
-  flag), and it means the same on every server: no model switches it off, and a map plays the same
-  whichever model a server runs. (A single rule, nothing pushable, was considered: it breaks ball
-  pits.)
-- **The flag's default**: solid. Walking through a crate looks wrong and loses standing on it;
-  light things that should scatter (balls, cans) are marked.
-- **Pushers' bandwidth**: accepted as above; it only costs while characters touch pushable things.
-- **The model's name**: `hybrid`. M245's `state` model is gone (M248).
-
-**What is in the way of many players today** (the inputs model): every client steps the whole
-world, and steps it again for the whole rollback window whenever a remote player's input was not
-what it guessed: nearly every tick, since mice turn every tick.
-
-| | 64 players (M139) | 200 or more (an estimate) |
-|---|---|---|
-| One step | about 0.8 ms | about 2.5 ms or more |
-| At a 200 ms round trip | about 16 steps again each tick: 87% of a core | about 40 ms of work in a 16.7 ms tick |
-| The server | fine (it never rolls back) | still fine |
-| Bandwidth | every input to every client | grows with the players squared, at the server |
-
-In the hybrid a client steps the physics once a tick: 0.3 to 0.4 ms with 300 props in the air
-(M140), whatever the players.
-
-**Where the numbers come from** (for the targets):
-
-| Players in one place | What works | Examples |
-|---|---|---|
-| up to about 32 | everyone simulating the whole world from inputs (the inputs model) | fighting games; For Honor's 4v4 |
-| about 50 to 200 | the server's characters, sent by what is near, one server | Fortnite, PUBG, Apex |
-| hundreds in one fight | the same, with far players sent rarely and coarsely, fewer collisions | PlanetSide 2 |
-| thousands in one world | many servers per world: zones, copies of a zone, meshing | WoW, EVE (time dilation), Star Citizen |
-
-- **What MMOs add for their numbers** is not a better prediction: sending only what is near,
-  cheaper players (no collision between players, movement checked rather than simulated, 10 to 20
-  ticks a second), hits decided by the server with lag compensation, and the world split across
-  servers.
-- **Physics is what makes Cinderbox different at scale**: MMOs mostly have no props or destruction.
-  In the hybrid it costs processor time on every client, not bandwidth.
-- **The cheap way to many players** is many servers of 50 to 100 per game (how Roblox scales a
-  game), not one server of 1,000. One world across servers is [later](#one-world-across-servers).
-- **The inputs model, tuned** for small servers: `reconcile_every 2`; a better guess of a remote
-  player's input (keep its mouse turning, rather than repeating the last input).
+- **What it is**: characters read the physics world and never write it; what a character does to a
+  body is a physics event; the physics world runs on every client from those events and the
+  characters' pushers, a little in the past, each tick once, checked by its checksum. Characters are
+  the server's: your own predicted, the rest drawn from its states. [DESIGN.md](DESIGN.md#netcode)
+  has how; [docs/scaling.md](docs/scaling.md#the-two-network-models) has the two models side by side
+  and the limitations accepted with the hybrid.
+- **Lag compensation** (M250): a mod's cast from a player (a shot, a swing) and the player's own
+  finds and probes (a punch, a hook) meet the others as that player saw them.
+- **M244 and M245's server-state model was dropped**: it streamed the physics world as state
+  ([routes not taken](#routes-not-taken)).
 
 ### 3b. Many players
 
-The most players a hybrid server can hold (planned 2026-11-03). Bandwidth first: every client is
-sent every nearby character as the simulation's own record, so a crowd costs players squared.
+**Done (M251 to M261).** The most players a hybrid server can hold, bandwidth first, then the
+server's and the game's processor time. All of it, with every measurement, is in
+[docs/scaling.md](docs/scaling.md).
 
-**Decided (2026-11-03)**:
-
-| Decision | Taken |
-|---|---|
-| The rates | the simulation stays at 60 Hz; a client gets one packet every 2 ticks (30 a second) |
-| Mod fields | to their owner only; fields a character's state machine reads are shared by themselves; fields a look shows on others (a health bar over heads) are marked shared |
-| The cap | 1023 players (a slot becomes two bytes) |
-| The scope | the hybrid model only; the inputs model is kept as it is, for small servers |
-| Pushers (2026-11-06) | stay exact: a place every tick (not sent every other tick and filled in: that changes how they push) |
-| Drawing characters (2026-11-06; built in M260) | one way for every character, the own one too: a look made from its Godot scene (meshes skinned or on a bone, materials, layers, shadows, how the pose drives the bones, sockets), once per character, by the code the bake warns with; drawn through RenderingServer, no scene per player. Only what the look takes is drawn (scripts, other nodes, Godot animation on the skeleton, modifiers are not: the bake says so). Particles, lights and sounds a character has are nodes of its entity at their bones, for its animations' tracks; another player's item that only looks is its meshes, one that reacts keeps its scene. Shadows within 40 m. ozz stays on server and clients (the state machine is the simulation's; one sampler keeps hits where players are drawn) |
-| How it is measured | the crowd bench (M251): fake players inside the server, sent what a player would be, counted; a seed plays the same session however slow the machine |
-
-**Measured by M251** (`cb_server --character mannequin --fake-players N --fake-radius 15
---fake-fight --bench 25`: the default mods, the players fighting with the brawl kit's fist in a
-crowd 30 m across, a 100 ms round trip; 20 s counted after 5 s of joining; everything a player
-would get, on the wire):
-
-| | 32 players | 64 players | 255 players | 1023 players (M252; 50 m across) |
-|---|---|---|---|---|
-| To each player | 0.96 Mbit/s | 1.84 Mbit/s | 2.93 Mbit/s | 7.5 Mbit/s |
-| Out of the server | 31 Mbit/s | 118 Mbit/s | 747 Mbit/s | 7.7 Gbit/s |
-| Another character, on the wire (with what it holds and its input) | 96 B a state | 95 B | 112 B | 174 B |
-| Characters and held items updated in a state (at most 512 entities) | 29 and 261 | 56 and 443 | of 2556 entities | 51 and 461, of 10236 |
-| The head of every state (the globals: the event rings, the player list) | 572 B | 1007 B | (not kept) | 1043 B |
-| Frames, to each player a tick (each sent three times) | 136 B | 448 B | 1966 B | 9968 B (pushers 3.9 KB a frame) |
-| Server's work a tick (the tick, then sending; noisy on one machine) | 6.7 ms | 7.5 to 12.7 ms | 44 ms (27 + 17) | 567 ms (164 + 404) |
-
-- **Where another character's bytes go** (changed, before packing, an update): its animation
-  state 41 to 46 (every clock in it moves on every tick), the mover's internals 12 to 13, its place
-  7, its velocity 3, its fields and motions 4 to 6; and each of the ~9 items it holds, its place
-  again (7 each: `FollowHolders` copies the holder's onto every carried item). Packing squeezes the
-  copies: held items are ~10% of the others' part, their inputs ~5%.
-- **The head grows with what happens**: the event rings are in every state, so a fight's events
-  (hurt, damage, a strike, a marker) cost every player ~1 KB a state at 64.
-- **Frames are a third of the bytes at 255**: 798 B a tick alone, half of it pushers (23 a tick in
-  a crowd near the sandbox's balls), the rest commands (10 events a tick) and physics events; then
-  sent three times.
-- **At 1023 (M252) frames are two thirds**: 4.7 KB a frame, 3.9 KB of it 215 pushers' places a
-  tick, then sent about twice: pushers are M256's first target, not a maybe.
-- **At 1023 the 512-entity budget starves**: 51 characters a state, so a character waits ~20
-  states for its turn, its base ages out (24 states) and goes whole: 154 records whole a state.
-  M257's byte budget, and records small enough that many fit (M253), are what fix it.
-- **The server at 1023**: 567 ms a tick (34 times its budget): encoding states 346, planning 58,
-  characters 43, mods 36, physics 23 (the bench's own fake inputs another 36).
-- **Found and fixed** (M251): what a player was thought to have went out of NetId order once
-  anything was gone (M250's states by distance: the gone ones were put first), and from then on
-  every record went whole in every state and the list grew without end: 171 B per other character
-  at 64 fighting players, 95 after the fix. And a frame holds 1024 commands: the rest were dropped
-  without a word, so 255 players joining at once lost most of their start items; the rest waits
-  for the next tick now, and the server says so.
-- **Found and fixed** (M252): a character that fell below the kill plane was put back, and what it
-  carried was destroyed with everything else below it (falling off the map emptied your hands and
-  bag, and no mod was told); it follows its holder back now.
-- **Found and fixed** (M252's review): two counts were still a byte, a frame's joins and leaves
-  (256 at once broke the frame for everyone) and the names message (past 255 players, the wrong
-  number of names); the map's bodies went past a full first frame. Protocol 86, replay 61.
-- **Names go whole**: every join sends every player's name to every player, ~13 KB each at 1023
-  (M255 sends the change only).
-
-**Measured after M253 and M254** (the same, `--bench 10`: 5 s counted):
-
-| | 32 players | 64 players | 255 players | 1023 players (50 m across) |
-|---|---|---|---|---|
-| To each player | 0.35 Mbit/s (0.96) | 0.68 Mbit/s (1.84) | 2.0 Mbit/s (2.93) | 7.0 Mbit/s (7.5) |
-| Out of the server | 11 Mbit/s (31) | 44 Mbit/s (118) | 509 Mbit/s (747) | 7.2 Gbit/s (7.7) |
-| Another character, on the wire | 13.6 B a state (96) | 13.7 B (95) | 12.7 B (112) | 12.4 B (174) |
-| Of a state, the head | 570 of 1095 B | 989 of 1931 B | 1061 of 4107 B | 1042 of 7491 B |
-| Frames, of a player's bytes | 19% | 27% | 48% | 73% |
-| Server's work a tick (the tick, then sending) | 1.1 ms | 2.2 ms | 10.5 ms (7.3 + 3.3) | 134 ms (39 + 95) |
-
-- **A puppet's change is 11 B** before packing (a player standing still sends none): where it
-  is (60% of changes), its facing and look (about half), its flags (16%), and a layer's new state
-  (30%, 1.7 layers each: the fights). Its record's view changes by its fields alone (0.4 to 2 B);
-  its held items are not sent at all while they stay as they were.
-- **Found on the way**: a layer's start tick, as a OneShot that is not playing or a character
-  dead or down has it (its clock stands), moved every tick, and three of them went in every
-  update (26 B a change, 11 after).
-- **What is left**: at 255 frames are half the bytes, at 1023 three quarters (4 KB of pushers a
-  frame: M256); the head is half a state at 64 (M255); at 1023 the 512-entity budget still decides
-  how many characters a state brings (M257); the server spends 95 ms a tick sending (planning 29,
-  encoding 67: M257, M258).
-**Measured after M256** (the same):
-
-| | 32 players | 64 players | 255 players | 1023 players |
-|---|---|---|---|---|
-| To each player | 0.18 Mbit/s (0.35) | 0.33 Mbit/s (0.68) | 1.14 Mbit/s (2.0) | 3.35 Mbit/s (7.0) |
-| Out of the server | 5.9 Mbit/s | 21 Mbit/s | 290 Mbit/s | 3.4 Gbit/s |
-| A state | 592 B (head 39) | 1005 B | 3094 B | 6473 B |
-| Frames, of a player's bytes | 17% | 24% | 31% | 51% |
-| A frame alone (pushers of it) | 35 B (7) | 83 B (30) | 358 B (165) | 1713 B (1110) |
-
-- **What went**: the event rings out of every state's head (~1 KB, half a state at 64); the
-  commands clients skip (a third of a frame's, at 255); every pusher's place whole at the start of
-  each packet; each frame's third packet, and half the packets.
-- **What is left at 1023**: frames are half (224 pushers' places a tick, 5 B each: fighters in a
-  crowd change direction all the time, so going on as they went predicts little); the states the
-  other half, as many characters as the 512-entity budget lets (M257).
-- **Server times**: not compared here. While this was measured the machine was busy (88% of its
-  processor taken by other programs): main's own server took 76 ms a tick at 255, as this one did.
-**Measured after M255** (the same): each player 0.16, 0.29, 0.99 and 3.05 Mbit/s at 32, 64, 255
-and 1023; another character 10 B on the wire (others' cooldown timers no longer reach them). At
-1023 the frames are 56% (pushers 65% of a frame, the mods' events 22%), the states 44%.
-
-- **Far puppets are an interval late**: one sent less often than every other state is drawn from
-  the one before to the last over the time between them, so it moves without jumps but up to 16
-  ticks late; a shot at it 100 m off is tested as the shooter saw it, behind. M257 sends what is
-  aimed at more often.
-
-**Measured after M257** (the same; the default budget, 256 kbit/s of others a player):
-
-| | 32 players | 64 players | 255 players | 1023 players |
-|---|---|---|---|---|
-| To each player | 0.16 Mbit/s (0.16) | 0.26 Mbit/s (0.29) | 0.51 Mbit/s (0.99) | 1.91 Mbit/s (3.05) |
-| Out of the server | 5.0 Mbit/s | 17 Mbit/s | 130 Mbit/s | 1.96 Gbit/s |
-| Others updated a state, of | 27 of 31 | 51 of 63 | 41 of 254 | 42 of 1022 |
-| Another character, on the wire | 11.2 B | 11.1 B | 15.6 B | 32.3 B |
-| Events at characters a state (bytes) | 3.6 (36 B) | 8.5 (79 B) | 39 (334 B) | 92 (770 B) |
-| Frames, of a player's bytes | 14% | 19% | 43% | 70% |
-
-- **The budget decides from 255 on**: each other character is sent about 5 times a second at 255
-  (near ones and those in view more), 1.2 at 1023. A character that waited longer than a base is
-  kept goes against the record the player has (carried: 14.5 a state at 1023, where 3.2 still go
-  whole: one whose last update was not acknowledged).
-- **Events now reach the others**: what a character does itself (its motions, clip markers, using
-  its slot's item) never reached another player's game in the hybrid; with its character now,
-  once each. A mod's event at a character no longer goes to everyone in every frame twice.
-- **What is left at 1023**: frames are 70%, 1110 B of a 1327 B frame its 224 pushers'
-  places, each frame in two packets (pushers stay exact: your call); the server plans states for
-  68 ms a tick, every client walking every entity (M258).
-
-**Measured after M258** (the server's own thread a tick, the bench's fake players' inputs left
-out; this laptop's figures move by 10 to 20% from run to run):
-
-| | 64 players | 255 players | 512 players | 1023 players |
-|---|---|---|---|---|
-| The server's thread a tick (M257) | 1.8 ms | 15 to 17.5 ms (22) | 28 ms | 55 ms (178) |
-| Of it: the mods | 0.5 | 3.5 to 5.4 | 9 | 12.6 |
-| The characters, the physics | 0.3, 0.4 | 2.7 to 3.2, 3.0 | 6.7, 3.4 | 10.2, 6.5 |
-| Keeping a state | 0.3 | 2.0 | 4.0 | 9.6 |
-| Planning and encoding the states (on the state threads, while the next tick runs) | 0.4 | 5.7 | 14.5 | 31.5 |
-
-- **255 fighting players fit 60 Hz, just**: the server's thread 15 to 17.5 ms of the 16.7.
-- **What went**: a state's updates on the server's thread (they are made while the next tick
-  runs); a client's walk of ten thousand entities copying its records each state (in place now, by
-  group); a third of a megabyte made for each message's compression; each player looking up its
-  held items in every item's list; the expire mod making a map of every item each tick.
-- **Found**: mods read the last tick's events from the ring of 32. At 1023 fighting players a tick
-  says 114, so most hits hurt no one: mods read all the step said now (`RecentEvents`).
-- **What is left at 1023**: the mods (inventory, frag and the layers each look at every player
-  every tick: about 2 µs a player each), the motions' pass and the slots (one thread), keeping a
-  state (its serialization), the physics; on the state threads, a client's walk of every entity (an
-  interest grid would cut it where players are spread out; in a crowd every one is near).
-
-**The game in front of a crowd** (M259, `tools\crowd_client.ps1`: a fight recorded with
-`--record-view` and played by the game, 1280x720, this laptop; live, the game joined to a server of
-fake players, which keeps up beside it to about 100):
-
-| | 96 players, live | 255 players, a recording | 1023 players, a recording |
+| Players in one fight | The server's thread a tick | Each player, down | The game, all of them in view |
 |---|---|---|---|
-| A frame | 19 ms (53 a second) | 58 ms (17) | 840 ms (1) |
-| The game's own thread | 7.3 ms | 26 ms | 600 ms |
-| Of it: poses (characters posed of all) | 0.9 (56 of 97) | 2.0 (134 of 255) | 6.6 (446 of 1023) |
-| The nodes (characters, items) | 3.3 | 9.2 | 31 |
-| The events (a visual made or freed, a reaction) | 1.7 | 8.8 | 467 (530 visuals made a frame) |
-| The skeletons (the pose put on each) | 1.5 | 3.9 | 14 |
-| Nodes in the scene | 9,200 | 19,400 | 80,000 |
+| 255 | 15 to 17.5 ms of 16.7 | 0.51 Mbit/s | 47 frames a second (a recording) |
+| 1023 | 55 ms | 1.7 to 1.9 Mbit/s | 5 frames a second (a recording) |
 
-- **What went** (at 255, the same recording before and after): 170 ms a frame to 115 before the
-  recording was made again: poses 7.8 ms to 4.0 (by distance and view), the HUD's labels 17 to 4
-  and lists 11 to 7 (a scoreboard's rows, five labels a player, worked every frame while hidden; a
-  slot asked every visual for its item); a live game's source hands it its frame swapped, not copied.
-- **What is left is the drawing** (M260): every character a scene, every item it holds a node (at
-  1023, a few hundred made and freed a frame, ~1 ms each), a skeleton each with its modifier, Godot's
-  own work for 80,000 nodes. One baked look drawn through RenderingServer, with what a character
-  holds as kinds in its puppet, is what removes them. The mods' reactions to events (sounds,
-  effects) cost about 0.3 ms an event.
-
-**Measured after M260** (the same recordings and the same live crowd; in brackets, M259's):
-
-| | 96 players, live | 255 players, a recording | 1023 players, a recording |
-|---|---|---|---|
-| A frame | 7.2 ms, 139 a second (19 ms, 53) | 21.5 ms, 47 (58 ms, 17) | 184 ms, 5 (840 ms, 1) |
-| The game's own thread | 2.8 ms (7.3) | 11.2 ms (26) | 110 ms (600) |
-| The events (a visual made or freed, a reaction) | | 2.8 (8.8) | 68 (467) |
-| Nodes in the scene | 3,700 (9,200) | 7,900 (19,400) | 28,800 (80,000) |
-
-| The crowd bench (`--bench 10`) | 255 players | 1023 players |
-|---|---|---|
-| What a client has of a state's entities | 778 of 2,556 (all of them) | 3,082 of 10,236 (all) |
-| Planning a state, a tick | 2.0 ms (3.5) | 12.6 ms (20.6) |
-| To each player | 512 kbit/s (the same) | 1.67 Mbit/s (the same) |
-
-- **The drawing**: every body is its look's (one skeleton and one instance for the mannequin), not
-  a scene of 40 nodes with a skeleton, a modifier and bone attachments; the shots of the same
-  moments differ from M259's by a few pixels (poses timed by the clock). In first person the body's
-  shadow now shows (the old body's did not, though it was meant to).
-- **Items**: of nine a fighter carries, eight are put away out of sight: no longer sent to the
-  others, nor drawn. Bytes are the same (unchanged items cost nothing since M253): what a client
-  keeps and walks is a third, and the server plans each state in two thirds of the time.
-- **What is left**: at 1023 recorded, the held bats made as they come into sight (a recording's
-  frames a second apart: far more than in play), the HUD's and the mirror's work for the others'
-  states; Godot's own drawing of a few hundred skinned characters. Pooling item scenes, and the far
-  characters as a GPU crowd, if a measured target needs them.
-
-**Measured after M261** (the uplink, live: 32 `cb_bot` players, 2 of them full clients, through
-`cb_netsim` at 75 ms and 1% loss each way; what each sends, from `cb_bot`'s report, and what the
-server takes, from its status line's new `in`):
-
-| | Before (M260: 12 repeats) | After (by the loss) |
-|---|---|---|
-| Up, per player | 33 kbit/s (46 with UDP/IP) | 20 kbit/s (34 with UDP/IP) |
-| Into the server, 32 players | 977 kbit/s | 645 kbit/s |
-| Into the server, 1023 players (each the same) | ~47 Mbit/s | ~35 Mbit/s |
-| Late inputs | 0.02% | 0.02% |
-
-| Loss each way (`cb_netsim --loss`) | 1% | 5% | 12% |
-|---|---|---|---|
-| Counted by the server | 1% | 5% | 11 to 12% |
-| Each input in | 4 packets | 5 | 7 to 8 |
-| Late inputs (12 repeats at the same loss) | 0.00% | 0.1% | 0.3 to 0.5% (0.3 to 3.5%) |
-
-- **ENet's loss figure** counts its own reliable packets: at 12% each way it said 0, and the
-  repeats stayed at 4. The server counts the input packets that do not come (a sequence byte in
-  each) and tells the client every two seconds.
-- **Late inputs at heavy loss** are the same with 12 repeats: they come from elsewhere (the clock
-  following lost frames), not from fewer repeats.
-- **What is left**: a packet's headers (UDP and IPv4 28 bytes, ENet 12, of about 71) at 60 packets
-  a second. An input packet every other tick would take a player's uplink to about 20 kbit/s and
-  delay inputs by 8 ms on average: a choice, not taken.
-
-**The milestones**:
-
-| Milestone | What |
-|---|---|
-| **M251** (done) | **The yardstick**: `cb_server --fake-players N` (bot brains inside the server, each a client whose messages are counted and acknowledged a round trip later; `--fake-radius`, `--fake-fight`, `--fake-rtt`, `--fake-seed`) and `--bench SEC` (a clock of its own; the report by part); `cb_net_tests crowd_bench`, a ratchet on the bytes and on what a player is thought to have. The table above; the two fixes it found |
-| **M252** (done) | **1023 players**: two-byte slots (`PlayerSlot`; `kNoPlayer` for no one, apart from an inventory's `kNoSlot`), an item target's socket above the slot's 16 bits, `Character` and `Ragdoll` the same size with a two-byte slot, the states' input slots as varints, view records with a two-byte slot; the spawn's blocks of 64 a ring further out past four; protocol 85, replay 60, view files 9 (`CBV7`); new reference hashes. Reviewed: a frame's joins and leaves and the names counted in more than a byte (protocol 86, replay 61) |
-| **M253** (done) | **Other characters as puppets** (`sim/puppet.h`): where it is at 1/256 m, its facing, its look, flags, its slot, jump and air ticks, steps, motions on, stances, as changes of a few integers (`net::EncodePuppet`, 6 B for a walk and a turn); its record and its held items' as `PuppetView` makes them (what the client keeps of its own as zeros); no inputs of others; nothing sent that a client acknowledged and nothing else was sent of since (by hash). Stand-ins placed by them (`ApplyPuppets`), far ones from the one before over the interval; your own character keeps its full record. Protocol 87 |
-| **M254** (done) | **Animation run by each client**: a puppet's layers say their state, the one fading out and through which transition, their source and the tick they began; the client runs `UpdateAnimState` and the state machine following them (`UpdateAnimGraph`'s `follow`: never its own transitions, a late one caught up), its markers not its own. `net_hybrid_puppets`: through 50 ms each way and 3% lost, the fighter's every layer on the other's game in the server's state at the tick it stands as, its clock the server's, in every one of 4872 looks |
-| **M255** (done) | **Only what others see**: an entity field its player's alone unless shared (`BoardField::shared`; shared by itself when a state machine reads it; the shipped mods share their scores and the bat's glow), and a SetField of a character or what it holds out of the frames; names as changes. (No inputs of others, the head without the rings: M253, M256.) **Moved to M257**: held items as kinds in the record (unchanged they cost nothing since M253: what is left is when a character comes into view) and events with the characters they are at (12% of a player's bytes at 1023): both are what each client is sent of a character, M257's question. Protocol 89 |
-| **M256** (done) | **Frames carry the physics only**: the commands clients skip left out (and the joins and leaves); frames with the states, one datagram every 2 ticks, each frame in two; a pusher's place as a change against where it would be going on as it went, a packet's first frame against the two before; the states' head without the event rings (a client never read them). Asking for a gap was not needed (3% lost: the physics never waited). Pushers at the state rate: not done, it changes how they push (your call). Protocol 88 |
-| **M257** (done) | **A byte budget per client**: each other character's priority for a player grows by nearness, being in its view, doing something, aiming at it, and goes to 0 when sent; the most owed go until the player's budget is spent (`--client-budget`, 256 kbit/s of states sent). One that waited longer than a base is kept goes against the record the player has (carried), not whole. **Events go with their characters**: a mod's at a character, and what the others do themselves (motions, markers, slots: until now heard by no other player), once each, for half a second; a mod declares for everyone what all must hear (`Declarations::Event`'s `everyone`: the kill feed, a round's end). **Found and fixed**: CI's `net_chaos_hybrid` crash (a held item of a puppet, new on a client, had no turn). **Moved**: held items as kinds to M260 (it redraws what characters hold), the interest grid to M258 (it is the planner's processor time); far ones coarser not done (a far one is sent rarely). Protocol 90 |
-| **M258** (done) | **The server's processor at 1000**: profiled (each mod, the characters' parts, a state's keeping and planning by part); a state's updates made on the state threads while the next tick runs, sent with its frames once made; planning by group, in place; puppets, views and hashes on the state threads; a compressor per thread; the characters' movers and animation on threads (`Simulation::SetParallelFor`, each reads the world as the tick found it: the same on any number, `character_threads`); held kinds by holder; the expire mod's list. **Found**: mods heard 32 of a tick's events (a crowd's hits hurt no one); a far puppet slid across the map after a teleport. 255 fighting players at 60 Hz, just (22 ms to 15 to 17.5); 1023 at 55 ms (178). **Not done**: the interest grid (it helps where players are spread out, not in the bench's crowd), the motions' pass on threads, the mods' other per-player loops (the table above) |
-| **M259** (done) | **The game in front of a crowd**: measured (`tools\crowd_client.ps1`: a fight of N fake players recorded and played by the game, or joined live; the unattended game says its frames and where they went, `--measure-from`); poses by distance and view (every frame within 15 m to every 8th beyond, out of view only when near, in turns; a pose not made again not put on the skeleton again); the HUD's labels and lists not worked while hidden, a holder's items found once a frame, a live source's frame swapped to the game. 255 visible at 17 frames a second, 1023 at 1: what is left is the drawing, a scene and nodes for every character and what it holds (M260). Test: `pose_level_of_detail` |
-| **M260** (done) | **One look for every character**: a character's look made from its scene once (`look.h`: `CharacterLook`; the bake and `CbCharacter.describe_look` say what is not drawn), every body drawn by it through RenderingServer (`DrawnBody`: a skeleton and an instance per mesh, bones from the ozz pose when posed), the entity an empty node with its sockets; the own one's first person too (its legs and arms as copies, its body casting its shadow); shadows within 40 m; a character's particles, lights and sounds nodes at their bones, its tracks played on them and on its sockets' items. Another player's item put away out of sight is not sent (its holder's puppet names what it carries, by kind: protocol 91) and has no node; one in sight that only looks is its meshes (`ItemLook`), one that reacts keeps its scene without the viewer's predictions. Checked by the same moments drawn before and after (`--look-shots`), then a playtest. 255 recorded: 17 frames a second to 47; 1023: 1 to 5; 96 live: 53 to 139. Tests: `check_look.gd`, `net_hybrid_puppets` (what is put away is not sent), the codec's puppets with kinds |
-| **M261** (done) | **The uplink**: each input in as many packets as the loss asks (`net::InputRepeats`: 4 at little loss, 5 at 5%, 7 at 12%, 12 past 30%; it was 12 at any loss), counted in packets (a frame rate below the tick rate carries more ticks a packet), the loss the server's count of the client's input packets (a sequence byte in each; `MsgInputLoss` every two seconds: ENet's own figure missed it). The packet's acknowledgements as varints behind its newest tick. **Fixed**: a packet's first input went without how far back the player saw the others, read as 0 (lag compensation off for a tick its last copy reached the server as the first). Per player 46 kbit/s up to 34 (with UDP/IP); into the server at 1023, about 47 Mbit/s to 35. Protocol 92 |
-
-**Targets** (1000 players in one area): another character ≤ 10 B moving, ≤ 2 B still; ≤ 0.5
-Mbit/s to each player; ≤ 500 Mbit/s out of the server; the server's work ≤ 16.7 ms a tick; ≤ 6 ms
-a frame for 1000 characters' animation and drawing on the client.
+- **255 fighting players fit**; each sends 34 kbit/s up (M261).
+- **The targets set for 1000 in one area are not met** (the table in
+  [docs/scaling.md](docs/scaling.md#where-it-stands-m261)); what is left is
+  [later](#a-thousand-in-one-crowd), not in 1.0.
+- **No fog of war**: every character is sent to every player, far ones about every 12th state.
+  What each player is not sent: others' fields that are not shared, others' items put away, others'
+  inputs. Cheating is decided [before launch](#before-launch).
 
 ### 4. The slice
 
@@ -573,25 +207,33 @@ One game made with the engine and played by people. Leaning ([step 0](#0-decisio
 brawler**: one map, one mode (rounds and a score), the brawl kit and the bat, a ten-minute session
 that is fun.
 
+| | Today |
+|---|---|
+| The mode | the `deathmatch` mod, on by default: a round ends at 10 kills or 5 minutes; a scoreboard |
+| The kit | the `brawl` mod: fist, dash strike, uppercut, ground slam, guard, as hotbar skills; all predicted from sheets |
+| The bat | the `melee` mod: each life starts with one (the shop sells another); C++ with a hand-written prediction ([step 5](#5-every-item-a-sheet)) |
+| The map | `test_ground` and `example_arena` are test maps; no map is made for the slice yet |
+| Players | by hand with two games on one machine; no other testers yet |
+
 - Built from now on, beside steps 5 to 8: each of those is done when the slice uses it.
-- Played every week, with latency (by hand with two games until there are testers). What it runs
-  into is the next milestone.
+- Played every week, with latency. What it runs into is the next milestone.
 - **Done when** strangers play a session and want another.
 
 ### 5. Every item a sheet
 
 The fist's way for every item: the item's sheet runs its use in every simulation (predicted), and
-the mod's C++ turns its hit events into damage (brawl.cpp is the model, 143 lines).
+the mod's C++ turns its hit events into damage (`brawl.cpp` is the model, 158 lines).
 
 **The bat, today**:
 
 | | |
 |---|---|
-| The swing | melee.cpp (272 lines): five rays fanned out from the chest at the clip's `melee.strike` marker; the hit test poses the target (hit zones) |
+| The swing | `melee.cpp` (272 lines): five rays fanned out from the chest at the clip's `melee.strike` marker; the hit test poses the target (hit zones) |
 | The look's guess | `predict use as melee.swing`, `cooldown 1.1` copied from the clip, `stance melee_swing on full` (read by nothing) |
+| Its length | three places: `melee.done` at 1.1 s in the clip, `cooldown 1.1` in `bat.rules`, `kCooldownSeconds 0.6` in `melee.cpp` |
 | `melee.hot` | a field on the bat, set by the server when a swing hits a player (`ctx.Set`), cleared by the mod's own timer 2 s later. Not predicted; a prop hit does not heat it |
-| NPCs | cannot swing it: melee.cpp loops over player slots. The fist works for NPCs because sheets run for every driver (M228) |
-| The two sheets | `bat.rules` sits in the bat's scene (paths from the bat, `^^` its holder: the glow, the flames, the sparks, the guess); `reactions_melee.rules` in a world reactions scene loaded once (paths from `$at`: the sounds). Same format, different place, different job; both converted by a script from the old nodes (the `# NodeName` headings, `# FlamesOnSwing` heading nothing, tabs and spaces mixed) |
+| NPCs | cannot swing it: `melee.cpp` loops over player slots. The fist works for NPCs because sheets run for every driver (M228) |
+| Its sheets | `bat.rules` in the bat's scene (the glow, the flames, the sparks, the guess); `reactions_melee.rules` in a world reactions scene (the sounds) |
 
 **The bat, after** (a sketch, not tried):
 
@@ -606,7 +248,7 @@ motion Strike on melee.strike
 		impulse 7 along look
 ```
 
-- melee.cpp turns `melee.hit` into `combat.damage`: about 60 lines. NPCs swing it.
+- `melee.cpp` turns `melee.hit` into `combat.damage`: about 60 lines. NPCs swing it.
 - **The glow**: only a look, so no field: `on melee.hit` in the bat's sheet sets the emission and
   sets it back after 2 s, at once, because the hit is predicted. If heat should matter to the game
   (a hot bat hurts more), the language needs `change` on the item and a timer on a carried item
@@ -623,28 +265,28 @@ motion Strike on melee.strike
 
 The language is right: bounded, deterministic, run by every simulation, so skills are predicted
 (Overwatch does the same with a visual language, Statescript). What changes is how it is attached,
-written and checked.
+written and checked, and, since its format is settled at 1.0, it changes here.
 
 | Change | Why |
 |---|---|
-| **A resource on the node it is about**: `CbSheet`, read and written by the extension's own loader and saver, plain text in a `.cbsheet` file, as `.gd` and `.gdshader` are. A property on the node: `CbItem.sheet`, `CbMotionSet.sheet`, the world reactions root, the HUD root; the node says which blocks it allows. It may be saved inside the scene, as a built-in script is. **CbRules goes** | `file` is a plain string today: no UID, a rename breaks it, Godot does not see the dependency. Saved inside the scene, the notes stay with the item (Godot drops a scene's comments) |
+| **A resource on the node it is about**: `CbSheet`, read and written by the extension's own loader and saver, plain text in a `.cbsheet` file, as `.gd` and `.gdshader` are. A property on the node: `CbItem.sheet`, `CbMotionSet.sheet`, the world reactions root, the HUD root; the node says which blocks it allows. It may be saved inside the scene, as a built-in script is. **`CbRules` goes** | `CbRules.file` is a plain string: no UID, a rename breaks it, Godot does not see the dependency. Saved inside the scene, the notes stay with the item (Godot drops a scene's comments) |
 | **Not Godot's script slot** | the security story is "every script is refused"; "every script but ours" is a rule someone will probe, and a script language through GDExtension is a large, fragile API for two features (errors in the gutter, completion) |
-| **Where each block runs, said**: the simulated blocks and the viewer's in marked sections (or files of their own), one indenting rule (it counts) | four languages in one file today, with two indenting rules |
-| **Names in the sheet**: `field brawl.combo int`, `event brawl.jab.hit`; the server reads them from the pack | the editor waits for a server build today |
+| **Where each block runs, said**: the simulated blocks and the viewer's in marked sections (or files of their own), one indenting rule (it counts) | four languages in one file: `motion` and `use` (simulated, indenting counts), `on` and `while` (the viewer's reactions, indenting for the eye), `predict` (the viewer's guesses), `show`, `text` and `bind` (HUD) |
+| **Names in the sheet**: `field brawl.combo int`, `event brawl.jab.hit`; the server reads them from the pack | the editor waits for a server build |
 | **Parameters**: `param damage 8`, shown in the item's inspector, read by the server's rules | numbers written twice (the bat) |
-| **A motion's state readable**: its cooldown left, its charges, whether it is on, in conditions and HUD lines | brawl rebuilds cooldowns: five fields declared in C++, five `while` motions counting them down, an `if` and a `change` per skill, while `cooldown` goes unused |
+| **A motion's state readable**: its cooldown left, its charges, whether it is on, in conditions and HUD lines | brawl rebuilds its cooldowns and combo window: five fields declared in C++, five `while` motions counting them down or resetting them, while a motion's own `cooldown` goes unused |
 | **Rates said**: `change x -= 1 per second` | `change x -= 1` is once in a step and per second in a `while` |
-| **One rule for expressions**: one word bare, anything longer in brackets | an expression ends at "the next option word" today (`impulse (distance < frag.radius) * ... along away` works because `along` is one) |
-| **`let NAME = EXPRESSION`** inside a motion | the frag's falloff written out twice |
-| **A cast and the owner's own effects in one step** | dash_strike.rules: `use if brawl.cd_dash <= 0` and `motion Hit on use if brawl.cd_dash <= 0`, two motions with a copied condition |
+| **One rule for expressions**: one word bare, anything longer in brackets | an expression ends at "the next option word" (`impulse (distance < frag.radius) * ... along away` works because `along` is one) |
+| **`let NAME = EXPRESSION`** inside a motion | the frag's falloff is written out twice |
+| **A cast and the owner's own effects in one step** | `dash_strike.rules`: `use if brawl.cd_dash <= 0` and `motion Hit on use if brawl.cd_dash <= 0`, two blocks with a copied condition |
 | **`change` on the item; a timer on a carried item** | the bat's heat, if it is ever more than a look |
 | **Curves as resources**: `curve(res://falloff.tres, reach)` or a curves dictionary on the node; the frag's blast falloff the first user. The `CbCurve` node goes | no shipped sheet uses `curve()`; a node found by its name from text |
 | **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/rules-language.md#planned)) | |
 | **Tools**: a formatter; errors in the editor as you type; sheet tests run headless (a motion on a stand-in, then what moved) | |
 | **The unmaintained motion nodes deleted** | the sheet's bake is the only one |
-| **`.rules` becomes `.cbsheet`**: 40 sheets and about 80 files that name `.rules`; `docs/rules-language.md` with it; a `.gitattributes` line and a small VS Code grammar | the name says what the file is, one family with `.cbmap` and `.cbreplay` |
-| **Every item drawn as data** (decided 2026-11-14): an item's look made once per kind from its scene, as a character's since M260 (`ItemLook`): its meshes, its materials (an item's own copy where a rule changes one), its particles (the RenderingServer's particles: `GPUParticles3D` is a thin wrapper over them, its resources reused), its lights, its markers, its own animation's tracks on those (a small player of their keys); drawn with no node, for every item: another's, your own, one lying in the world, your first person's. Sounds and the scenes a reaction spawns stay nodes, pooled, only while they play. What it does not take is said at the bake, as for characters | a bat is 15 nodes today (only items that just look are drawn without, M260): at 255 fighting players, bats are half the scene's 7,900 nodes, and at 1023 making them as they come into sight is 84 ms of a frame |
-| **Reactions run from the compiled sheet**: one compiled sheet per kind, run for each entity that has it in the presentation's flecs world (the mirror): its `on` rules on cues, its `while` rules on its state, a little state per entity (cooldowns, what a `while` started), their effects on the look's parts by index (a material's value, a particle's restart, a track); Godot gets RenderingServer calls. Hand-placed `CbReaction` nodes stay for authoring and the Cue Preview | four or five reaction nodes for every bat in sight; the logic is data, only its effects are Godot's |
+| **`.rules` becomes `.cbsheet`**: 40 sheets and about 80 files that name `.rules`; `docs/rules-language.md` with them; a `.gitattributes` line and a small VS Code grammar | the name says what the file is, one family with `.cbmap` |
+| **Every item drawn as data** (decided 2026-11-14): an item's look made once per kind from its scene, as a character's is since M260 (`ItemLook`): its meshes, its materials (an item's own copy where a rule changes one), its particles (the RenderingServer's: `GPUParticles3D` is a thin wrapper over them, its resources reused), its lights, its markers, its own animation's tracks on those; drawn with no node, for every item: another's, your own, one lying in the world, your first person's. Sounds and the scenes a reaction spawns stay nodes, pooled, only while they play. What the look does not take is said at the bake | a bat is 15 nodes in the game (11 in its scene, 4 its sheet's reactions; only items that just look are drawn without nodes, M260): at 255 fighting players bats are half of the scene's 7,900 nodes; at 1023 (a recording) making and freeing what comes into sight, held bats among it, is 68 ms of a 184 ms frame |
+| **Reactions run from the compiled sheet**: one compiled sheet per kind, run for each entity that has it in the presentation's flecs world (the mirror): its `on` rules on cues, its `while` rules on its state, a little state per entity (cooldowns, what a `while` started), their effects on the look's parts by index. Hand-placed `CbReaction` nodes stay for authoring and the Cue Preview | four reaction nodes for every bat in sight; the logic is data, only its effects are Godot's |
 | **Not taken: MultiMesh for items** | one draw for every copy of a mesh, but culled as one, its shadows all or none, and a per-item glow needs a shader that reads per-instance data, which a modder's material does not. Kept for thousands of one thing (a GPU crowd of far characters) |
 
 **The dash strike, after** (proposed, not valid today):
@@ -663,8 +305,8 @@ use
 Its HUD line reads the cooldown itself: `text Line "DASH STRIKE {cooldown.brawl.dash_strike}s" if
 cooldown.brawl.dash_strike > 0`. brawl's `cd_dash` field and its `CoolDash` motion go.
 
-**Considered and not taken**: a visual graph ([routes not taken](#routes-not-taken)); a
-general deterministic VM ([later](#later)).
+**Considered and not taken**: a visual graph ([routes not taken](#routes-not-taken)); a general
+deterministic VM ([later](#a-deterministic-vm-for-heavy-predicted-logic)).
 
 ### 7. Timing from the clip
 
@@ -685,13 +327,15 @@ notify windows); so do fighting games' frame data.
 
 ### 8. Body parts with priorities
 
-**Today**: two named layers (`FullBody`, `UpperBody`) a pack replaces by name; up to three overlay
-slots a player fills in the order its items are carried; bone filters that are on or off; two
-special rules ("what the hands hold wins the arms", "a hand an overlay names lets go").
+**Today**: a character's own layers (the mannequin's `FullBody`, `UpperBody` and `Flinch`; the
+critter's `FullBody`), which a pack replaces by name; four overlay slots after them, filled in the
+order a player's items were carried, for a pack's layers the character does not have; bone filters
+that are on or off; two special rules ("what the hands hold wins the arms", "a hand an overlay
+names lets go").
 
 **Short for a fighting game**: most of its skills are full-body (an uppercut, a slam, a dash
-strike), and today a full-body move is an overlay, ordered by which item was picked up first. A
-filter's hard edge at the spine shows when a swing plays over a run. The critter has only `FullBody`.
+strike), and a full-body move is an overlay, ordered by which item was picked up first. A filter's
+hard edge at the spine shows when a swing plays over a run.
 
 **After** (Unreal's montage slots and per-bone blending, in the simulation):
 
@@ -719,22 +363,21 @@ ours). The extension makes it the mod tool:
 | `EditorFeatureProfile`, shipped with the SDK | hides script creation, the Asset Library, and every node class the scene guard refuses: a modder cannot build what the game will reject |
 | A main-screen plugin | a Cinderbox tab: the mod's items, names, problems, Publish, Test |
 | `EditorNode3DGizmoPlugin` | everything authored as a number, drawn: a find's shape, a cast's range and radius, a rope's length, sockets, hitboxes, the capsule, the eyes |
-| `EditorExportPlugin` | bake, check and pack on export: replaces `pack_mod.ps1` and `publish_mod.ps1`, on every platform |
+| `EditorExportPlugin` | bake, check and pack on export: replaces `tools/pack_mod.ps1` and `tools/publish_mod.ps1`, on every platform |
 | `EditorDebuggerPlugin` | the F1 motion lines, fields, events and rollbacks in the editor while the test game runs |
 | `EditorScenePostImportPlugin` | a dropped `.glb` becomes a `CbCharacter`: bone map, hitboxes, sockets, a starter tree (`make_mannequin.gd` does it as a script) |
 
 | Also | What |
 |---|---|
-| One authoring project | every mod in a folder of its own (`res://mods/<id>/`); the validator refuses files outside it. Ends the collisions of step 2 and the 18 projects |
+| One authoring project | every mod in a folder of its own (`res://mods/<id>/`); the validator refuses files outside it. Today there are 21 Godot projects (the game, the SDK, 17 server mods' looks, a character, an example client mod) sharing one `res://` when loaded |
 | One Play | save, bake, start a local server and the game with this mod, reload on save: Test mod, on every platform |
 | Starters by kind | an ability, a weapon, a game mode, a character, an avatar, instead of one starter with everything |
 | From "authoring, finished" | names offered inside expressions and sheets; an item used in its preview; the preview with someone else in it (a hit) and the character's own mesh; a change the server reads restarts the test |
-| The modders' docs | in standard words (see [How we work from now](#how-we-work-from-now)) |
+| The modders' docs | in standard words ([How we work](#how-we-work)) |
 
 ### 10. Server rules in Luau
 
-**Decided**: Luau. What was parked as "rules without a relink" comes back: today the workshop
-carries a mod's look, and its rules mean building the engine.
+**Decided**: Luau. Today the workshop carries a mod's look, and its rules mean building the engine.
 
 - **Luau**: what Roblox developers write; made to be sandboxed (no files, no OS, a limit on
   instructions); fast. Rules run on the server only, so they need no determinism.
@@ -744,8 +387,9 @@ carries a mod's look, and its rules mean building the engine.
 - A script's error stops its mod, not the server.
 - **C++ stays** for engine mechanisms and a mod too heavy for a script (compiled in, as now).
 - **What is predicted stays in sheets**: a Lua VM's memory cannot be copied cheaply for rollback; a
-  sheet's state is a 28-byte record.
+  sheet's state is 28 bytes a motion.
 - The shipped mods move over in the order the slice needs them.
+- Rules travel through a store only once the sandbox holds ([before launch](#before-launch)).
 
 ### 11. Avatars
 
@@ -756,67 +400,105 @@ The body and its appearance kept apart:
 | What | the standard humanoid `CbCharacter`: the skeleton with Godot's humanoid bone names, the state machine, hitboxes, capsule, sockets, camera | meshes skinned to the same bone names, material colors, accessories |
 | Who knows it | the server and every simulation | clients only |
 
-- **Spawn the standard scene and swap the model and the materials**: its default mesh hidden, the
-  avatar's `MeshInstance3D`s added with their skins bound to the same `Skeleton3D`, accessories on
-  sockets and `BoneAttachment3D`s, colors as instance uniforms.
+- **The standard look with the avatar's meshes**: since M260 a body is drawn from its character's
+  look (`CharacterLook`); an avatar is the same skeleton with other meshes, materials and
+  accessories on sockets, a look of its own, drawn the same way. Colors as instance uniforms.
 - **The avatar never changes what the server sees**: everyone's hitboxes are the same (fair), and
   one set of clips and poses serves everyone.
-- **Decided: the standard skeleton only**, no body scales (Roblox's R15 way: held items and hitboxes
-  match the drawing). An avatar made on another rig is retargeted to it when it is published
-  (assets ship baked).
-- **An avatar never blocks joining**: today a missing item refuses the join. An avatar is fetched
-  in the background, and the mannequin is drawn until it arrives.
+- **Decided: the standard skeleton only**, no body scales (Roblox's R15 way: held items and
+  hitboxes match the drawing). An avatar made on another rig is retargeted to it when it is
+  published (assets ship baked).
+- **An avatar never blocks joining**: today a workshop item a player cannot find or fetch refuses the join. An avatar is
+  fetched in the background, and the mannequin is drawn until it arrives.
 - **Budgets checked when publishing**: triangles, materials, texture sizes.
 - **Loading**: packs cannot be unloaded and share `res://`, so avatars as packs would grow memory
-  and collide. To prototype: each avatar one self-contained baked scene (meshes, materials,
-  textures inside), loaded from `user://` by its hash, not mounted; still baked, and freed when
-  nobody wears it.
-- **Which avatar a player wears**: a value per player for looks only: not in the simulation's hash,
-  sent as names are.
+  and collide. To prototype: each avatar one self-contained baked scene, loaded from `user://` by
+  its hash, not mounted; freed when nobody wears it.
+- **Which avatar a player wears**: a value per player for looks only, not in the simulation's
+  hash, sent as names are.
 
 ### 12. Godot's own, used
 
 | Godot's | For |
 |---|---|
-| `SpringBoneSimulator3D` | tails, hair, capes, after the pose modifier: cosmetic, nothing that can be shot. The critter's tail first |
+| `SpringBoneSimulator3D` | tails, hair, capes: cosmetic, nothing that can be shot. Since M260 nothing of a character's scene runs in the game, so a spring bone becomes something the look takes (its chain and settings), run on the drawn skeleton |
 | Instance uniforms (`instance uniform` in a shader) | a look per entity (heat, a team color, a hit flash) without a material per entity: the bat copies its material to glow |
 | Threaded loading (`ResourceLoader.load_threaded_request`) | packs and characters while joining |
-| `MultiMeshInstance3D`, visibility ranges | debris, crowds of NPCs |
-| Animation detail by distance | far bodies posed less often: drawing only, hit tests unchanged |
+| `MultiMeshInstance3D`, visibility ranges | debris; a GPU crowd of far characters ([later](#a-thousand-in-one-crowd)) |
+| Animation detail by distance | **done (M259)**: far bodies posed less often, out of view rarely; drawing only, hit tests unchanged |
 | Translations | a sheet's HUD text is English in the file |
 | `Theme` resources | client mods restyling the UI |
-| **Cosmetic physics** (decided later) | Jolt has no level (step 2), so a cosmetic shell casing would fall through the floor: Jolt gets a static copy of the level when the map loads, from the same shapes; or Jolt goes, with `RigidBody3D` and `StaticBody3D` out of the scene guard's list |
-| `PhysicalBone3D` | ragdolls for any skeleton ([later](#later)) |
+| **Cosmetic physics** (decided later) | nothing of the simulation is in Jolt: every Cinderbox authoring node is a plain `Node3D`, collision is Box3D's, and a look's `Area3D`s are made quiet. So a cosmetic shell casing would fall through the floor: Jolt gets a static copy of the level when the map loads, from the same shapes; or Jolt goes |
+| `PhysicalBone3D` | ragdolls for any skeleton ([later](#ragdolls-for-any-skeleton)) |
+
+## Proposed from the Hytale comparison
+
+**Not decided.** [docs/hytale-comparison.md](docs/hytale-comparison.md) (2026-11-11, checked against
+the code at M261) found Cinderbox built on Hytale's model (rules on the server, one client no mod
+changes, prediction from data) and proposes seven things. Each needs the owner's call; the column
+"Would go" is where it fits if taken.
+
+| # | Proposal | Would go | For 1.0 |
+|---|---|---|---|
+| 1 | **A server may refuse players' own packs**: a player's packs load after a server's items and may replace any file of a look, a character's scene included (see-through walls with no cheat program); nothing lets a server say no. Counter-Strike's `sv_pure`: none, listed hashes, or any, in the server's info | [before launch](#before-launch) | yes |
+| 2 | **The camera as data**: the views are four constants of the game's (`ViewMode`) and a look's cameras are taken out; a server's rig (distance, top-down, side view, a cursor) baked from its look into the schema, since the server starts a shot's line of sight from the view | a step after the slice; replaces the leftover "cameras a mod places" | to decide |
+| 3 | **Text and rows from the server**: fields are numbers; a mod can say lines on a channel (`ctx.Say`) but not text in a label's format or rows of its own (the shop's offers are written twice: in `hud_shop.tscn` and in `shop.cpp`) | step 6 (HUD lines) | to decide |
+| 4 | **Sheets on things in the world**: doors, buttons, jump pads, trigger regions as sheets on map templates; a motion's owner is a player or a kind of item today | after step 6 | to decide |
+| 5 | **One sheet for many items, and words for how skills meet**: a sheet shared across items with per-item parameters; `blocked by`, a combo window and a charge as words (`fist.rules` writes the same `find` four times) | [step 6](#6-sheets-improved) | with step 6 |
+| 6 | **A game as one file**: map, items by hash, options, the network model, the pack policy; what a play link or a host opens | with [how players find servers](#parked) | yes, if finding servers is |
+| 7 | **What an item was made for** (the engine and Godot versions, the names it reads; baked motions and graphs carry a version, an item does not); **rules from a store** only after the Luau sandbox; **shaders** in packs decided (the validator checks for scripts only) | [before launch](#before-launch) | yes |
+
+**Not to take** (the comparison's reasons): a UI the server pushes change by change, assets sent on
+join, Hytale's sync of predicted chains, a fixed set of keys.
 
 ## Before launch
 
-| What | Why |
-|---|---|
-| The pack loaders fuzzed, files limited in size | workshop items are Godot files on every player's machine; the guard checks their content, not Godot's parsers |
-| Cheating, decided | on a server running the inputs model every client holds the whole world, so ESP is trivial there; the hybrid sends only the characters that are near (the physics world is everyone's) |
-| A mod's crash | takes the server down until step 10 |
-| How players find servers | [parked](#parked) |
-| Translations, tools on every platform | steps 12 and 9 |
+| What | Why | State |
+|---|---|---|
+| **The pack loaders fuzzed, files limited in size** | workshop items are Godot files on every player's machine; the guard and the validator check what is in them, not Godot's parsers | not started |
+| **Cheating, decided** | inputs model: every client holds the whole world. Hybrid: every character is sent, far ones about every 12th state, so a client knows where everyone is; what is not sent is others' unshared fields, their items put away and their inputs. Wallhacks are trivial in both; fog of war for characters is possible in the hybrid (what is not sent cannot be seen), not built | open |
+| **A server's policy on players' packs** | proposal 1 | proposed |
+| **What an item was made for; shaders in packs** | proposal 7 | proposed |
+| **A mod's crash** | takes the server down: mods are compiled into its process | [step 10](#10-server-rules-in-luau) |
+| **Rules from a store** | only once the Luau sandbox holds | [step 10](#10-server-rules-in-luau) |
+| **How players find servers** | join by address only | [parked](#parked); needed for 1.0 |
+| **Compatibility, promised** | what 1.0 keeps (the sheet, an item, the rules' API); a protocol of another version is refused at join today, as it should be; a format's change after 1.0 is versioned and said | to write |
+| **The manual audited** | M261.5 fixed 19 stale lines (DESIGN, README, `docs/looks.md`, `mods_src/README.md`) and M261.6 this roadmap, each read against the code; `docs/characters.md`, `items.md`, `motions.md`, `maps.md`, `testing.md`, `playtest.md`, `server-mods.md` and `sdk/README.md` have not been read whole against it | to do |
+| **Translations, tools on every platform** | the scripts are PowerShell; the extension is built from source | steps [12](#12-godots-own-used), [9](#9-cinderbox-studio) |
 
 ## Later
 
 In the order they would likely come back.
 
+### A thousand in one crowd
+
+1023 players run in one crowd today, below 60 Hz ([docs/scaling.md](docs/scaling.md)). What is left,
+each measured:
+
+| Where | What is left |
+|---|---|
+| The server's thread (55 ms a tick at 1023) | the mods' loops over every player (inventory, frag, the layers: about 2 µs a player each); the motions' pass and the slots on one thread; keeping a state (its serialization); the physics |
+| Planning states (on the state threads) | each client walks every entity: an interest grid would cut it where players are spread out (in a crowd every one is near) |
+| Bandwidth (1.7 to 1.9 Mbit/s a player) | frames are 70%, most of them pushers' places (exact every tick: decided); far characters coarser |
+| The game (5 frames a second with all in view) | held items with reactions made as they come into sight (step 6 draws every item as data); the mirror's and the HUD's work for a thousand others; Godot drawing a thousand skinned characters (a GPU crowd for far ones) |
+
+Not in 1.0. The cheap way to more players is many servers of 50 to 255 per game, as Roblox scales a
+game.
+
 ### Our own animation authoring, apart from Godot's
 
-Decided after M231 instead of layers that are the look's alone (a face, breathing, a tail's wag on
-the client): when the time comes, the animation the simulation runs gets an authoring mechanism of
-its own, apart from Godot's, and Godot's `AnimationTree`s are left for what is only seen. Only the
-skeletal bones would be replicated on the server. Much later; it needs more decisions first.
-[Body parts with priorities](#8-body-parts-with-priorities) would be its core.
+Decided after M231: when the time comes, the animation the simulation runs gets an authoring
+mechanism of its own, apart from Godot's, and Godot's `AnimationTree`s are left for what is only
+seen. [Body parts with priorities](#8-body-parts-with-priorities) would be its core. Much later;
+it needs more decisions first.
 
 ### Ragdolls for any skeleton
 
-Today a skeleton without a humanoid's bones falls as no ragdoll.
+A skeleton without a humanoid's bones falls as no ragdoll today (the critter dies without one).
 
 | Piece | What |
 |---|---|
-| Authored on the scene | Godot's own way: `PhysicalBone3D` nodes on the skeleton (their shapes and joints), baked into a ragdoll the simulation builds for that character, as it builds the humanoid's eleven bodies today |
+| Authored on the scene | Godot's own way: `PhysicalBone3D` nodes on the skeleton (their shapes and joints), baked into a ragdoll the simulation builds for that character, as it builds the humanoid's eleven bodies |
 | In the schema | each character's parts and joints, so every simulation makes the same ragdoll |
 
 ### Vehicles
@@ -852,7 +534,7 @@ debugging is harder: an escape hatch, not the main way.
 ### One world across servers
 
 A seamless world split across server processes (meshing). A project the size of a company (Star
-Citizen took about a decade); many servers per game ([step 3](#3-two-network-models)) comes first.
+Citizen took about a decade); many servers per game comes first.
 
 ## Parked
 
@@ -860,9 +542,9 @@ Decided to wait; each says what it waits for.
 
 | What | Waits for |
 |---|---|
-| How players find servers | undecided: Steam, a website's "play" link that starts the game, a game's own menu or a desktop shortcut. Until then: join by address, Test locally, a server's mods listed before joining |
+| How players find servers | a decision: Steam, a website's "play" link that starts the game, the game's own list, a desktop shortcut. Today: join by address, Test locally, a server's mods listed before joining. **Needed for 1.0** |
 | Steam Workshop as the store | the decision above; the store is a folder today |
-| Ships | Box3D growing what they lack (buoyancy) rather than more patches (two today: `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (vehicles), a buoyancy component with a wave function the water's look shares |
+| Ships | Box3D growing what they lack (buoyancy) rather than more patches to it (five in `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (vehicles), a buoyancy component with a wave function the water's look shares |
 | **The player's body, for motions** | a mod that wants it; each a word of the sheet language ([its planned list](docs/rules-language.md#planned)), in the simulation, so a motion using it is predicted. In the order they would likely be wanted: |
 | · Touching a wall | a condition (`wall`: touching one, beside or ahead) and a frame along it for forces and impulses: wallrunning, wall jumps, a ledge grab |
 | · Teleport | a motion effect that sets where the player is: to the target at an offset in its frame (behind it), or to a cast's point. Blink, "behind you", swapping places |
@@ -874,21 +556,22 @@ Decided to wait; each says what it waits for.
 
 ## Leftovers, by area
 
-Not scheduled. A row moves up into "Next" when the slice wants it.
+Not scheduled. A row moves up into the road when the slice wants it.
 
 | Area | What |
 |---|---|
-| Physics | on CI's macOS build (arm64), now and then a float in Box3D's contact data (most likely a contact point's `totalNormalImpulse`) differs between two simulations that should be the same, every body the same bit for bit; Windows and Linux are the same byte for byte. `net_physics_alone` reports it there instead of failing (its diagnostics name the section and the contact). Two real leaks it found are fixed (a free contact slot's stale address, blocks reused between worlds). Expected to go with a newer Box3D, or looked at again if it ever moves a body |
+| Physics | on CI's macOS build (arm64), now and then a float in Box3D's contact data (most likely a contact point's `totalNormalImpulse`) differs between two simulations that should be the same, every body the same bit for bit; Windows and Linux are the same byte for byte. `net_physics_alone` reports it there instead of failing. Expected to go with a newer Box3D, or looked at again if it ever moves a body |
 | Items | a state machine or a motion reading the hand's fields; a lifetime for an item that was not launched; a fuse that starts when the pin is pulled (a cook); bots that use what a mod adds; a bot count in the menu |
-| The inventory | a split of one; a slot's item shown while dragged over; a key for the bag's slots; dropping or moving part of a stack; a mod taking one off a stack without throwing it; a corpse's bag (undecided: the ragdoll carries it, or a box where it fell); predicted answers to a mod's intents; numbers wider than a byte in an intent |
+| The inventory | a split of one; a slot's item shown while dragged over; a key for the bag's slots; dropping or moving part of a stack; a mod taking one off a stack without throwing it; a corpse's bag (the ragdoll carries it, or a box where it fell: undecided); predicted answers to a mod's intents; numbers wider than a byte in an intent (an intent carries two) |
 | Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot |
 | Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player |
 | Animation | a slow-motion finisher (a state's speed is in, M230); the dash's and the hook's poses are placeholders |
-| Feet on the ground | foot IK in the shared pose, beside the aim chain: each foot's ground found by a ray in the simulation, the hips lowered to the lower foot, two-bone IK per leg, so the legs' hitboxes are where the feet are drawn. Not Godot's IK nodes: they run after the pose (seen only), and Godot's physics has no level |
-| The client | keys the server says: a server maps keys to what they do, an item's own key included, sent once at join; a player may still rebind (per server). Cameras a mod places (a round's end, a kill cam) |
+| Feet on the ground | foot IK in the shared pose, beside the aim chain: each foot's ground found by a ray in the simulation, the hips lowered to the lower foot, two-bone IK per leg, so the legs' hitboxes are where the feet are drawn |
+| The client | keys the server says: a server maps keys to what they do, an item's own key included, sent once at join; a player may still rebind (per server). Cameras a mod places (a round's end, a kill cam): see proposal 2 |
 | Games | teams and spectators (mods, once private fields and the board cover them); lists on one entity (array fields, or a `CbList` over a field family) |
 | Finding the way | one mesh per character size; a mesh mended when a wall breaks; off-mesh links (a jump, a ladder) |
 | NPCs | NPCs of a character of their own; a brain in a sheet (predicted exactly, at a rollback cost) |
+| The uplink | an input packet every other tick would take a player's 34 kbit/s up to about 20 and delay inputs 8 ms on average: not taken (M261) |
 
 ## Decided earlier (still holds)
 
@@ -899,9 +582,10 @@ Not scheduled. A row moves up into "Next" when the slice wants it.
 | What a body's scene says decides how it is driven | its capsule, a first-person camera, a skeleton and state machine, its movement numbers |
 | The mover stays C++ | the hottest loop (every player, every tick, again in every rollback); sheets are bounded on purpose |
 | Walls static until broken; debris players cannot push (`CatDebris`); settling by Box3D's own sleeping | a wall costs nothing in rollback; turning sleeping pieces static would save next to nothing |
-| The ozz pose owns the body | hit tests use it; Godot animation only adds what cannot be shot |
+| The ozz pose owns the body | hit tests use it, and the game draws exactly it (since M260 nothing of a character's scene animates a body in the game) |
 | Physics players react to is shared | ragdolls and falling walls are the same on every screen; cosmetic physics is for what nobody could compare (capes, spring bones, casings) |
 | The UI stays presentation-only | a screen shows fields and sends intents; what it cannot say becomes a widget the engine gives, not a script |
+| Mods' files never cross the game connection | a server names the workshop items it needs by hash; a client finds them in its store |
 
 ## Routes not taken
 
@@ -915,29 +599,30 @@ Not scheduled. A row moves up into "Next" when the slice wants it.
 | Hitboxes as physics bodies | each bone moved every tick, copied in every snapshot, shoving props with its limbs; hitboxes are shapes on the shared pose that hit tests ask |
 | Our own editor | Godot's editor is the studio; rebuilding its viewport, inspector, animation editors and importers would take one person years ([step 9](#9-cinderbox-studio) extends it instead) |
 | A fork of Godot | every Godot release merged by hand; the extension's editor hooks cover step 9 |
+| Another engine (2026-11-08) | the simulation, the netcode, the animation and the presentation's logic are the engine's own C++; Godot's part (the renderer, the UI, the modders' editor) is what a switch would lose. The scene tree's cost at scale was removed instead (M260) |
 | Sheets in Godot's script slot | "every script is refused" is the security story; a script language through GDExtension is large and fragile for two features ([step 6](#6-sheets-improved)) |
-| Sheets as `.res` or `.tres` | Godot's generic containers would hold the sheet as one quoted string: poor diffs, no editing as text. A loader of its own keeps it plain text, as `.gd` and `.gdshader` are |
+| Sheets as `.res` or `.tres` | Godot's generic containers would hold the sheet as one quoted string: poor diffs, no editing as text |
 | A visual graph for skills | hard to diff and review; Godot dropped VisualScript for lack of users |
 | A three-letter extension | gains nothing (Godot's own are long: `.gdshader`, `.gdextension`); the `cb` three-letter names are taken: comic archives (`.cbr`, `.cbz`, `.cbt`, `.cb7`), Code::Blocks (`.cbp`), COBOL (`.cbl`) |
 | Naming the sheet language Ember | already a programming language's name |
-| Body scales for avatars | the standard skeleton only (decided after the review): held items and hitboxes match the drawing, nothing to clamp |
-| Everyone simulating the whole world as the default | the rollback window's cost grows with every body; kept as a server's choice for small servers ([step 3](#3-two-network-models)) |
-| The server's state as the second model (M244, M245) | it sends the physics world as states: bandwidth grows with every moving body, a destruction is hundreds of them at once, and the determinism the project is built on goes unused. The hybrid keeps the physics deterministic and sends only its events ([step 3](#3-two-network-models)) |
+| Body scales for avatars | the standard skeleton only: held items and hitboxes match the drawing, nothing to clamp |
+| Everyone simulating the whole world as the default | the rollback window's cost grows with every body; kept as a server's choice for small servers |
+| The server's state as the second model (M244, M245) | it sends the physics world as state: bandwidth grows with every moving body, a destruction is hundreds of them at once, and the determinism the project is built on goes unused. The hybrid keeps the physics deterministic and sends only its events |
+| Tiers of drawing (a full scene for the nearest players, something cheaper for the rest) (2026-11-06) | one way for every character, by distance only in detail (M260) |
 
 ## Housekeeping
 
-Independent of the path; each is small.
+Independent of the road; each is small.
 
 | What | Note |
 |---|---|
-| The rest of `simulation.cpp` in modules | props, ragdolls, items and animation; the mover went first (M92) |
-| `tests/test_main.cpp` in files by area | about 13,800 lines in one file (12,500 at the review) |
+| The rest of `simulation.cpp` in modules | about 7,000 lines; the mover went first (M92) |
+| `tests/test_main.cpp` in files by area | about 13,800 lines in one file; `tests/net_test.cpp` about 8,400 |
 | Replays' extension | `.cbr` is also the comic-book archive (a double-click opens a comic reader): `.cbreplay` |
 | A motion's field and a mod's | both may write one (commands first, then motions); the server could warn when a mod sets every tick a field a motion writes |
 | Slots for what is worn | the dash boots take a slot: selected, they are held like a tool |
-| `reconcile_every` 2 as the default | halves a client's rollback work with many players and latency (M139); others are seen up to 2 ticks later: to be looked at in play first |
-| The characters' part of a step | as much as the physics at 64 players (0.4 ms, M140) and not yet looked into |
+| `reconcile_every` 2 as the default (inputs model) | halves a client's rollback work with many players and latency (M139); others are seen up to 2 ticks later: to be looked at in play first |
 | Physics threads beside drawing | on by default (M141), not yet watched in the game: `--physics-threads=0` if frames suffer |
-| The old `build/` folder in the checkout | builds go outside the source tree; the folder is ignored and can be deleted |
-| `brawl.cpp`'s top comment | names the old roadmap's step 5 |
-| Old copies of the extension in `godot/bin` | `~libcinderbox...TMP` files, left by rebuilds while Godot had the library open: about 500 MB, git-ignored, can be deleted |
+| The old `build/` folder in the main checkout | builds go outside the source tree; it is ignored and can be deleted |
+| Old copies of the extension in `godot/bin` | `~libcinderbox...TMP` files, left by rebuilds while Godot had the library open: git-ignored (21 in the main checkout, about 530 MB), can be deleted |
+| The view codec's magic | `CBV7` since M252. M260 made an entity's record 36 bytes longer (what a player carries) and bumped the view file's version (10), not the magic. Nothing breaks today (frames cross between the two extensions of one build; a view file checks its version), but the magic should change with the record |

@@ -1,4 +1,4 @@
-// Waves: NPCs come in waves that grow (ROADMAP.md, step 10). Off by default:
+// Waves: NPCs come in waves that grow (M229). Off by default:
 //
 //   cb_server --mods <the others>,brawl,waves
 //

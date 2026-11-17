@@ -7270,7 +7270,7 @@ public:
 // the states smaller than with every character in every state.
 // The crowd bench (M251) as a ratchet: fake players in a crowd, on a clock of the test's own (the
 // same session, byte for byte, however slow the machine), and what each is sent must stay under
-// the numbers below. Lower them as the bytes go down (ROADMAP: many players); a change that raises
+// the numbers below. Lower them as the bytes go down (docs/scaling.md); a change that raises
 // them has to say why.
 void TestCrowdBench()
 {

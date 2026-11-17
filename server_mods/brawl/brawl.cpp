@@ -1,4 +1,4 @@
-// A brawler's kit: the measure of step 5 (ROADMAP.md), made with today's nodes. Five skills on the
+// A brawler's kit (first made in M163). Five skills on the
 // hotbar, as a Roblox fighting game has them, each an item of its own (client/prefabs). The skills
 // are used by their slots' keys where they are (CbItem.slot_key_uses): nothing changes hands.
 //

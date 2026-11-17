@@ -2,7 +2,8 @@
 
 How Cinderbox works today, by subsystem. [README.md](README.md) and [docs/](docs/) are the manual (how to build,
 play and make things); [ROADMAP.md](ROADMAP.md) is what comes next;
-[docs/HISTORY.md](docs/HISTORY.md) is every milestone so far.
+[docs/HISTORY.md](docs/HISTORY.md) is every milestone so far; [docs/scaling.md](docs/scaling.md) is how
+many players a server holds, with every measurement.
 
 ## The shape of it
 

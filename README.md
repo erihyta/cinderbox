@@ -14,7 +14,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
 | Authoring | maps, characters, their animation trees, items and motions are made in the Godot editor and baked for the server |
 
-Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, the newest last. The roadmap was rewritten after M234 from a review of the whole project ([ROADMAP.md](ROADMAP.md)).
+Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, the newest last. [ROADMAP.md](ROADMAP.md) is the road to 1.0, rewritten after M261 (M261.6).
 
 ## The manual
 
@@ -33,7 +33,9 @@ Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, t
 | [sdk/README.md](sdk/README.md) | the Godot project a mod's look is made in |
 | [mods_src/README.md](mods_src/README.md) | client mods: the files the game looks up |
 | [DESIGN.md](DESIGN.md) | how it works, by subsystem; the source layout; known limits |
-| [ROADMAP.md](ROADMAP.md) | what comes next |
+| [docs/scaling.md](docs/scaling.md) | how many players a server holds, what limits it, and every measurement behind it |
+| [docs/hytale-comparison.md](docs/hytale-comparison.md) | Cinderbox against Hytale's mods and plugins: proposals, not decisions |
+| [ROADMAP.md](ROADMAP.md) | the road to 1.0: what comes next, in order, and why |
 
 
 ## Building

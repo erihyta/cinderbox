@@ -213,6 +213,10 @@ Fixed on 2026-11-15, each after reading the code it describes. "First check" row
 - `src/present/view_codec.h:19`: its comment still says "CBV4" where the constant is "CBV7". Code,
   not docs.
 - `ROADMAP.md`, "Where it stands (M234)" and "What the review found": dated to M234 on purpose.
+- **Since (M261.6)**: the "CBV4" comment is fixed; the roadmap was rewritten after M261 (its M234
+  sections are gone, what they found that still holds kept), its step 3 and 3b measurements moved
+  to [docs/scaling.md](scaling.md), and this document's seven proposals are listed in it as
+  awaiting a decision ([ROADMAP.md](../ROADMAP.md#proposed-from-the-hytale-comparison)).
 - **Not a full audit.** Only the passages around the lines above were read against the code.
   `docs/characters.md`, `items.md`, `motions.md`, `maps.md`, `testing.md`, `playtest.md`,
   `server-mods.md` and `sdk/README.md` were not.

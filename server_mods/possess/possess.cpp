@@ -1,4 +1,4 @@
-// Possess: a test of driving bodies (ROADMAP.md, step 8). Off by default:
+// Possess: a test of driving bodies (M220, M221). Off by default:
 //
 //   cb_server --mods <the others>,possess
 //

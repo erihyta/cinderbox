@@ -1,5 +1,5 @@
 extends SceneTree
-## Checks what more of Godot's AnimationTree bakes to (ROADMAP.md step 11), on the game's mannequin
+## Checks what more of Godot's AnimationTree bakes to (M230 to M232), on the game's mannequin
 ## with a tree of its own (nothing of it is changed: the bake goes to a folder under user://):
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_anim_tree.gd
