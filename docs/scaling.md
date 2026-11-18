@@ -390,7 +390,9 @@ fake players, which keeps up beside it to about 100):
 - **What is left**: at 1023 recorded, the held bats made as they come into sight (a recording's
   frames a second apart: far more than in play), the HUD's and the mirror's work for the others'
   states; Godot's own drawing of a few hundred skinned characters. Pooling item scenes, and the far
-  characters as a GPU crowd, if a measured target needs them.
+  characters as a GPU crowd, if a measured target needs them. (Decided 2026-11-17: nodes never grow
+  with players; held items, effects, lists and the map are to be drawn from cooked items through the
+  RenderingServer: [ROADMAP.md](../ROADMAP.md#6b-cooked-items).)
 
 ### After M261: the uplink
 
