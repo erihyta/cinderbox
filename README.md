@@ -9,12 +9,12 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | Netcode | an authoritative server, client prediction and rollback, recordings that replay |
 | Rules | C++ server mods that change the world only through commands: `inventory`, `combat`, `gun`, `melee`, `brawl`, `pickup`, `deathmatch`, `waves`, ... |
 | The rules language | what moves on screen (an item's use, a dash, a hook, a skill) is a sheet the simulation runs, so it is predicted: [docs/rules-language.md](docs/rules-language.md) |
-| Looks | Godot scenes with no code (reactions, predictions, HUD nodes), shipped as workshop items |
+| Looks | Godot scenes with no scripts (reactions, predictions, HUD nodes), shipped as workshop items. The check that refuses scripts can be bypassed today: install only packs you trust ([ROADMAP.md](ROADMAP.md#3c-groundwork)) |
 | Bodies | a player drives a body: its own character, another character's, or a loose prop; a mod drives bodies too (NPCs), which walk the server's navigation mesh |
 | The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
 | Authoring | maps, characters, their animation trees, items and motions are made in the Godot editor and baked for the server |
 
-Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, the newest last. [ROADMAP.md](ROADMAP.md) is the road to 1.0, rewritten after M261 (M261.6, shortened in M261.8).
+[docs/HISTORY.md](docs/HISTORY.md) lists every milestone done, the newest last. [ROADMAP.md](ROADMAP.md) is the road to launch, rewritten after M261.
 
 ## The manual
 
@@ -35,7 +35,7 @@ Milestones M1 to M261 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them, t
 | [DESIGN.md](DESIGN.md) | how it works, by subsystem; the source layout; known limits |
 | [docs/scaling.md](docs/scaling.md) | how many players a server holds, what limits it, and every measurement behind it |
 | [docs/hytale-comparison.md](docs/hytale-comparison.md) | Cinderbox against Hytale's mods and plugins: seven proposals, placed on the roadmap |
-| [ROADMAP.md](ROADMAP.md) | the road to 1.0: what comes next, in order, and why |
+| [ROADMAP.md](ROADMAP.md) | the road to launch: what comes next, in order, and why |
 
 
 ## Building

@@ -573,7 +573,7 @@ Client mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add
 
 A player's own packs load after a server's items and replace their files, and nothing lets a server refuse them yet.
 
-Client mods and workshop items cannot contain code, and a scene without code cannot act like code.
+Client mods and workshop items may not contain code, and a scene without code cannot act like code.
 Two checks:
 
 | When | What | Checked by |
@@ -583,8 +583,15 @@ Two checks:
 
 A scene the guard refuses is not instantiated (a warning says what it found); the game draws its
 plain stand-in instead. Gameplay stays in the simulation and in the server's mods, so a pack cannot
-change it. What no check can promise is that Godot's own parsers are safe against a deliberately
-malformed file, so packs are still something to take from people you trust.
+change it.
+
+**The first check can be bypassed today** (found in M261.9): it searches a resource's bytes for
+script names, but Godot decodes escapes in text resources before it reads them, so a script can be
+hidden from it, and Godot runs that script while it loads the resource, before the scene guard sees
+anything. A pack can also replace the base game's own converted files (`.godot/exported`,
+`.godot/imported`). Until the check is tightened and mod content becomes cooked items
+([ROADMAP.md](../ROADMAP.md#6b-cooked-items)), install packs only from people you trust. No check
+promises either that Godot's own parsers are safe against a deliberately malformed file.
 
 1. Create a Godot project under `mods_src/<name>`. Copy `mods_src/example_neon` as a starting point.
 2. Put your files at the same paths the game uses, for example `vfx/prop_spawn.tscn`.

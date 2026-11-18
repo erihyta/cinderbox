@@ -431,7 +431,7 @@ beforehand, or fetched when they connect.
 | Publishing | `tools\publish_mod.ps1 -Mod <mod>`: packs it, names it by its SHA-256, installs it into the local workshop, writes `server_mods/<mod>/client_item.cfg` (commit it) |
 | Subscribed items | kept: `user://workshop/<mod>/<sha256>.zip` (`%APPDATA%\Godot\app_userdata\Cinderbox\workshop`, or `--workshop=DIR`) |
 | Cached items | fetched on connect: `user://cache/<mod>/<sha256>.zip` (or `--cache=DIR`); at start, what was not used for 30 days goes, then the least recently used past 2 GB |
-| The workshop store | where missing items come from: for now a folder of the same layout (`--store=DIR`, or Settings > Workshop store). `godot/workshop.gd` is the one place Steam Workshop would plug in |
+| The workshop store | where missing items come from: for now a folder of the same layout (`--store=DIR`, or Settings > Workshop store). `godot/workshop.gd` is the one place a real store plugs in: Cinderbox's own, not Steam ([ROADMAP.md](../ROADMAP.md#6b-cooked-items)) |
 | What the server announces | the hash from `bin/items/<mod>.item` (the build copies `client_item.cfg` there; `--items DIR` to use another folder) |
 
 Joining a server from the menu:
@@ -443,6 +443,9 @@ Joining a server from the menu:
    file against its hash, then joins.
 4. Items load after the base game and **before your own mods**, which load again last, so you can
    still restyle what an item ships. Their `ui/hud_<mod>.tscn` is laid over the game's HUD.
+   Each is checked first (`boot.gd`), a check that can be bypassed today: until mod content is
+   cooked items ([ROADMAP.md](../ROADMAP.md#6b-cooked-items)), a server's items must come from people
+   you trust.
 
 Joining without the menu (`--host`, a link later) fetches from the store the same way; an item the
 store has not got ends the attempt, naming it.

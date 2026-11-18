@@ -6,7 +6,7 @@ based; the comparison is of the modding model, not of the content.
 
 | Read this as | |
 |---|---|
-| Status | written as proposals; **decided by the owner on 2026-11-17**: 1 and 7 before launch, 5 in roadmap step 6 and 3 with it, 2, 4 and 6 postponed and kept open ([ROADMAP.md](../ROADMAP.md#from-the-hytale-comparison)) |
+| Status | written as proposals; **decided by the owner on 2026-11-17**: 1 and 7 before launch, 5 in roadmap step 6 and 3 with it, 2, 4 and 6 postponed and kept open ([ROADMAP.md](../ROADMAP.md#from-the-hytale-comparison)). How Hytale delivers assets was looked at again after M261.9's pack finding: [Asset delivery, looked at again](#asset-delivery-looked-at-again-2026-11-17) |
 | The goal it serves | the "presentation client": one client that every server drives with data and that runs no mod's code ([DESIGN.md](../DESIGN.md): "Clients present, they do not decide") |
 | Cinderbox's side | first written from the roadmap and the manual, then checked against the code at commit `cd6f9ce` (M261) on 2026-11-14. Three statements were wrong and are corrected: [Checked against the code](#checked-against-the-code) |
 | Hytale's side | the official strategy post and patch notes, and community docs built on the decompiled server: [How sure this is](#how-sure-this-is) |
@@ -44,9 +44,9 @@ from the server, and whether a player's own packs may override a server's look.
 | Keys | a fixed set (Primary, Secondary, Ability1-3, Use, Dodge) | mods declare actions with suggested keys (64 at most), rebindable | Cinderbox |
 | Camera | the server sends settings: distance, top-down, side view, cursor, smoothing | the game's own: four views (`ViewMode`), the player's choice | Hytale |
 | Text and lists | the server can put any text or rows on screen | fields are numbers (Int, Float, Bool); a mod can say lines of text on a channel (`ctx.Say`, shown by a `CbTextLog`); lists are of players, items, slots, a container's slots, events | Hytale |
-| Getting content | the server sends its assets when you join; a mod browser since Update 6 | workshop items by SHA-256, never over the game connection; the store is a folder | Cinderbox in design, Hytale in what exists |
+| Getting content | the server sends its assets when you join; a mod browser since Update 6 | workshop items by SHA-256, never over the game connection; the store is a folder (to be Cinderbox's own, with cooked items: 2026-11-17) | Cinderbox in design, Hytale in what exists |
 | A player's own packs | none: "one community, one client" | load last and may replace any file of a look: maps, characters, effects, HUDs | open (point 1) |
-| Trust | plugins are unrestricted Java | looks are checked for scripts (shaders pass: point 7); rules to be sandboxed Luau | Cinderbox |
+| Trust | plugins are unrestricted Java; the client runs no mod code | looks are checked for scripts, a check that can be bypassed (M261.9; shaders pass: point 7); rules to be sandboxed Luau | the server: Cinderbox, in design. The client: Hytale, today |
 
 ### How a sheet is predicted, by network model
 
@@ -133,12 +133,13 @@ sheet, and no sync protocol per ability.
   and every plugin needed a rebuild. In Cinderbox baked motions and graphs carry a format version
   that is checked when read (`cinderbox_motions 3`, `cinderbox_graph 1`), but the item itself is a
   name and a hash: nothing says which engine or Godot version it was exported for, or which mods'
-  names it reads.
+  names it reads. (2026-11-17: the cooked item's manifest carries them, [ROADMAP.md](../ROADMAP.md#6b-cooked-items).)
 - **Rules from a store.** Hytale has to warn that "a world can carry mods that run code on your
   computer". Rules should not travel through a store before the Luau sandbox holds.
 - **Shaders.** A pack may carry them: the validator scans resources for script types only
   (`_check_resource` in `godot/boot.gd`). Hytale's community Q&A notes say it refuses custom
-  shaders until it can sandbox them. A decision for the list that has "the pack loaders fuzzed".
+  shaders until it can sandbox them. A decision for the list that has "the pack loaders fuzzed"
+  (since 2026-11-17: decided with the cooked-item reader).
 
 ## What not to take
 
@@ -148,6 +149,46 @@ sheet, and no sync protocol per ability.
 | Assets sent on join | Update 7 had to make servers declare asset sizes and cap one asset at 256 MiB. A community plugin exists only to skip the transfer for returning players, and claims joins otherwise take minutes |
 | Its sync of predicted chains | a community bug list records drift ("Client/Server desync 3 != 0, 2987 != 2733"), data dropped on reordered packets, and kicks when the client answers late. Charging is decided by the client. Hytale's own guide gives the case for sheets: "Both client and server execute the same interaction definition, so they stay in sync natively" |
 | A fixed set of keys | no way was found for a plugin to add one; a guide gets an extra key by intercepting packets for hotbar slot 9 |
+
+## Asset delivery, looked at again (2026-11-17)
+
+Asked after M261.9 found that a script hidden in a Godot pack runs when the game loads it: how
+Hytale sends assets, whether it compresses them, and what Cinderbox should take.
+
+| | Hytale | How sure |
+|---|---|---|
+| Delivery | the server sends its assets when a player joins: each declared in `AssetInitialize`, then sent in parts (`AssetPart`, `AssetFinalize`) | `AssetInitialize` is in the official Update 7 notes; the other names are from a community packet reference seen in search results only |
+| Limits | since Update 7 a server must declare each asset's true size; the client disconnects a server that sends more; one asset is at most 256 MiB | the official Update 7 notes, this part read in summary |
+| Compression and transport | Zstd per kind of packet, over QUIC | community protocol docs, seen in search results only (the pages did not load) |
+| Returning players | a plugin, HyTurbo, exists to skip sending again what a player has: "Join times drop from minutes to mere seconds" | its author's claim, on its page |
+| Formats | JSON data, Blockbench models (`.blockymodel`), PNG, OGG, `.ui` files | the official strategy post; a community page |
+| Code on the client | none: "we don't intend to support any client mods"; the client is compiled C# and cannot be modded | the official post; a community page |
+
+Two others, for scale: Roblox converts every upload into formats of its own before it reaches its
+content servers, and hands out each asset by ID from a CDN (search results only). A Minecraft Java
+server names a resource pack (JSON, PNG, OGG in a zip) by a URL, with an optional SHA-1.
+
+**What it means for Cinderbox:**
+
+- Hytale's assets are safe because they are data its own code reads, and its client runs no mod
+  code; how they travel has nothing to do with it. A Cinderbox pack is Godot objects that Godot's
+  loader builds, scripts included: M261.9's hole.
+- **Taken (2026-11-17)**: mod content as cooked items that our own reader reads, never Godot's
+  loader ([ROADMAP.md](../ROADMAP.md#6b-cooked-items)); sizes declared before any byte, with a cap
+  per file.
+- **Still not taken**: assets sent on join. A store by hash already spares players Hytale's wait.
+- **Compression**: not needed yet (items are 1.5 to 88 KB); Zstd for downloads once items grow.
+- **Steam, considered and not taken** (2026-11-17): the store is Cinderbox's own. (The Steam
+  Workshop serves only an item's latest version, and runs nothing on its side to check an upload.)
+
+Sources, opened and read: [Hytale modding strategy and status](https://hytale.com/news/2025/11/hytale-modding-strategy-and-status);
+[Update 7, modder-facing patch notes](https://hytale.com/news/2026/10/modder-facing-patch-notes-update-7);
+[The Hytale Client](https://hytalemodding.dev/en/docs/established-information/client);
+[HyTurbo](https://www.curseforge.com/hytale/mods/hyturbo);
+[Godot proposal #4925](https://github.com/godotengine/godot-proposals/issues/4925), a loader that skips
+scripts, still open; [Nodecraft: adding a resource pack](https://nodecraft.com/support/games/minecraft/adding-a-resource-pack-to-a-minecraft-server).
+Seen in search results only: [a Hytale packet reference](https://hytale-docs-mcp.craftserve.com/protocol/reference/packets),
+[Roblox's asset usage guide](https://create.roblox.com/docs/cloud/guides/usage-assets).
 
 ## Checked against the code
 

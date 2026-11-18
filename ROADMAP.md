@@ -1,6 +1,7 @@
 # Cinderbox — Roadmap
 
-The road to 1.0: what comes next, in order, and why.
+The road to launch: what comes next, in order, and why. **Launch** is the day Cinderbox opens to
+people outside the project ([the goal](#the-goal)); the plan names no version number.
 
 | Read with | For |
 |---|---|
@@ -9,8 +10,9 @@ The road to 1.0: what comes next, in order, and why.
 | [docs/scaling.md](docs/scaling.md) | how many players a server holds, and every measurement behind it |
 | [docs/hytale-comparison.md](docs/hytale-comparison.md) | what Cinderbox could take from Hytale's mods and plugins ([what was taken](#from-the-hytale-comparison)) |
 
-Rewritten after M261 (M261.6), an outside review's findings added (M261.7), shortened (M261.8).
-Statements about what exists were checked against the code at M261.7's merge (`b1f489b`); what is
+Rewritten after M261 (M261.6), an outside review's findings added (M261.7), shortened (M261.8); a
+second review, the pack check's hole and the owner's decisions on cooked items added (M261.9).
+Statements about what exists were checked against the code at `3d67daf` (M261.8's merge); what is
 planned says so. Detail of finished steps is in the history.
 
 ## Where it stands (M261)
@@ -20,35 +22,36 @@ planned says so. Detail of finished steps is in the history.
 | The simulation | flecs and Box3D, deterministic on six builds (Windows: Clang, GCC, MSVC; Linux: GCC, Clang; macOS arm64: Clang); CI compares snapshots and the pose hash across all of them |
 | Netcode | an authoritative server, two network models (the server's choice). **Hybrid** (the default since 2026-11-01): every client steps the physics from the server's events, never sent as state; other characters are puppets of a few bytes; your own is predicted; lag compensation. **Inputs**: every client simulates everything from everyone's inputs. Replays, view files, bots, a network simulator, a chaos test |
 | Scale | 1023 players a server; 255 fighting in one crowd hold 60 Hz on the server and draw at 47 frames a second; 1023 in one crowd run below 60 Hz ([docs/scaling.md](docs/scaling.md)) |
-| The client | Godot 4.7 with the engine as a GDExtension; draws whatever a source hands it (a server, a replay, a view file) and runs no mod's code; every body drawn one way, through the RenderingServer (M260) |
+| The client | Godot 4.7 with the engine as a GDExtension; draws whatever a source hands it (a server, a replay, a view file) and is meant to run no mod's code (a script hidden in a pack runs today: Looks, below); every body drawn one way, through the RenderingServer (M260) |
 | Bodies | a character per body, any skeleton, possession of a body or a prop, NPCs a mod drives on the server's navigation mesh |
 | Animation | Godot AnimationTrees baked to a deterministic subset (blend spaces, TimeScale, crossfade curves, OneShot, Add2, nested machines) that the simulation runs; packs and overlays items bring; far bodies posed less often (M259) |
 | Rules | 24 server mods in C++, compiled into the server, 18 on by default. What moves bodies is in sheets every simulation runs, so it is predicted: brawl, dash, flight, grapple, frag, grenade, cannon. The bat and the guns are still C++ with hand-written predictions |
-| Looks | reactions, predictions and HUD lines in sheets; a scene guard and a pack validator for workshop items |
+| Looks | reactions, predictions and HUD lines in sheets; workshop items are Godot packs, checked by a pack validator and a scene guard. **The validator can be bypassed** (M261.9): a script in a pack runs when Godot loads it, before the guard sees it ([3c](#3c-groundwork), [6b](#6b-cooked-items)) |
 | The world | props, destructible walls, items, containers; maps baked from Godot scenes |
-| Modding | a Godot project per mod, made from the SDK; Test mod (build, publish, play in one step); a look published again is taken up live; workshop items found by hash, never sent over the game connection; the editor knows a mod's names after a server build |
-| Tests | 174 tests in `ctest` and 29 Godot checks (`check_*.gd`); the determinism CI after every push |
+| Modding | a Godot project per mod, made from the SDK; Test mod (build, publish, play in one step); a look published again is taken up live; workshop items found by hash, never sent over the game connection; the store is a folder; the editor knows a mod's names after a server build |
+| Tests | 174 tests in `ctest`, all passing, and 29 Godot checks (`check_*.gd`); the determinism CI after every push (M261.8's merge went red on macOS: a test that is not steady there, [3c](#3c-groundwork)). Four tests in `cb_tests`' table are not registered (they pass when run: 2026-11-17) |
 
-## What 1.0 means
+## The goal
 
-**Decided (2026-11-17).** 1.0 is the version people outside the project can build on: players find
-a server and play a game made with Cinderbox, wearing avatars of their own, and modders make and
-publish mods, rules included, without building the engine. Strangers play earlier, in
+**Decided (2026-11-17).** Launch is when people outside the project can build on Cinderbox: players
+find a server and play a game made with Cinderbox, wearing avatars of their own, and modders make
+and publish mods, rules included, without building the engine. Strangers play earlier, in
 [the alpha](#4b-the-alpha), right after the slice: what they run into shapes the rest.
 
-**1.0 is done when:**
+**Ready to launch when:**
 
 | | Step |
 |---|---|
 | Strangers play the slice and want another session | [4](#4-the-slice), [4b](#4b-the-alpha) |
-| A mod's look and rules are made, tested and published with the prebuilt SDK, and run on any server without a build | [9](#9-cinderbox-studio), [10](#10-server-rules-in-luau) |
-| The formats modders depend on are settled (the sheet, an item, the rules' API); after 1.0 a change to one is versioned and announced | [6](#6-sheets-improved), [10](#10-server-rules-in-luau), [before launch](#before-launch) |
-| Joining a server is safe: any server once every decoder of server data is fuzzed, or only official or listed servers (**open**: [which servers 1.0 joins](#0-decisions)) | [before launch](#before-launch) |
+| A mod's look and rules are made, tested and published with the prebuilt SDK, and run on any server without a build | [6b](#6b-cooked-items), [9](#9-cinderbox-studio), [10](#10-server-rules-in-luau) |
+| Anyone's items are safe to load: cooked items read by Cinderbox's own reader, never by Godot's resource loader | [6b](#6b-cooked-items), [before launch](#before-launch) |
+| The formats modders depend on are settled (the sheet, a cooked item, the rules' API), each carrying its version; after launch a change to one is versioned and announced | [6](#6-sheets-improved), [6b](#6b-cooked-items), [10](#10-server-rules-in-luau), [before launch](#before-launch) |
+| Joining a server is safe: any server once every decoder of server data is fuzzed, or only official or listed servers (**open**: [which servers the game joins](#0-decisions)) | [before launch](#before-launch) |
 | Players find servers without typing an address (the alpha needs only one address) | [parked](#parked): how, decided later |
 | A player wears an avatar of their own: uploaded, or chosen from a curated set (**open**: [players' own avatars](#0-decisions)) | [11](#11-avatars) |
 | The manual says what the code does, in the words modders use | [before launch](#before-launch) |
 
-Which steps are in 1.0: [the road](#the-road).
+Which steps launch needs: [the road](#the-road).
 
 ## How we work
 
@@ -64,18 +67,19 @@ Which steps are in 1.0: [the road](#the-road).
 
 ## The road
 
-| # | Step | State | In 1.0 |
+| # | Step | State | For launch |
 |---|---|---|---|
-| 0 | [Decisions](#0-decisions) | twelve taken; eight open | |
+| 0 | [Decisions](#0-decisions) | seventeen taken; ten open | |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean. **By hand: to do** | |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **next**: about a day each | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **next**: an arena brawler | yes: the test of everything else |
-| 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server | yes, before 9 to 11 |
+| 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | after 5 | yes: the sheet's format is settled at 1.0 |
+| 6 | [Sheets improved](#6-sheets-improved) | after 5 | yes: the sheet's format settled, with a version |
+| 6b | [Cooked items](#6b-cooked-items) | after the slice, with 6 | yes: before anyone else's items reach players |
 | 7 | [Timing from the clip](#7-timing-from-the-clip) | when the slice asks | as far as the slice needs |
 | 8 | [Body parts with priorities](#8-body-parts-with-priorities) | when the slice asks | as far as the slice needs |
 | 9 | [Cinderbox Studio](#9-cinderbox-studio) | after the alpha | yes: modding without a compiler |
@@ -85,8 +89,11 @@ Which steps are in 1.0: [the road](#the-road).
 | | [Before launch](#before-launch) | open | yes |
 | | [A thousand in one crowd](#a-thousand-in-one-crowd) | later | no: 255 in one fight hold 60 Hz today |
 
-- **Groundwork first**: four tests never ran, a malformed welcome aborts the client, and thread
-  safety rests on comments. Each fix is about a day, and every later step leans on them.
+- **Groundwork first**: the pack check can be bypassed, four tests never ran, a malformed welcome
+  aborts the client, and thread safety rests on comments. Each fix is about a day, and every later
+  step leans on them.
+- **Cooked items before anyone else's items**: a Godot pack from a stranger can run code today
+  (M261.9). Until 6b, the alpha loads official items only.
 - **The slice next**: steps 5 to 8 are what a fighting game leans on, and the slice says which
   parts matter. Steps 9 to 11 are worth more once there is a game to mod and strangers who played it.
 - **Why the slice came late**: steps 3 and 3b (M244 to M261) went to network models and to 255 and
@@ -107,26 +114,33 @@ Which steps are in 1.0: [the road](#the-road).
 | **How server-only rules are written** (2026-10-27) | **Luau** | [step 10](#10-server-rules-in-luau) |
 | **Avatars' proportions** (2026-10-27) | **the standard skeleton only**: no body scales | [step 11](#11-avatars) |
 | **One way to draw every character** (2026-11-06) | a look made from the character's scene, drawn through the RenderingServer, the viewer's own included. Built in M260 | DESIGN.md |
-| **Stay on Godot** (2026-11-08) | the expensive parts are the engine's own C++; Godot is the renderer, the UI and the modders' free editor. Revisited only if a measured target fails in Godot's renderer and a GPU crowd cannot fix it | [routes not taken](#routes-not-taken) |
-| **Every item drawn as data** (2026-11-14) | an item's look made once per kind; its reactions run from the compiled sheet; no node per item | [step 6](#6-sheets-improved) |
+| **Stay on Godot** (2026-11-08; raised again 2026-11-17 after the pack finding, and kept) | the expensive parts are the engine's own C++; Godot is the renderer, the UI, the audio, the platform layer and the modders' free editor. Revisited only if a measured target fails in Godot's renderer and a GPU crowd cannot fix it. The pack hole is not Godot's renderer: it is a check of ours and Godot files from strangers, which [6b](#6b-cooked-items) ends | [routes not taken](#routes-not-taken) |
+| **Every item drawn as data** (2026-11-14) | an item's look made once per kind; its reactions run from the compiled sheet; no node per item. Part of the cooked items since 2026-11-17 | [step 6b](#6b-cooked-items) |
 | **Pushers stay exact** (2026-11-06) | a pusher's place every tick, not every other tick filled in: that would change how they push | [docs/scaling.md](docs/scaling.md#the-plan-for-many-players-step-3b-2026-11-03) |
-| **1.0's scope** (2026-11-17) | as proposed, with avatars in it | [What 1.0 means](#what-10-means) |
+| **The goal's scope** (2026-11-17) | as proposed, with avatars in it | [the goal](#the-goal) |
 | **The slice's game** (2026-11-17) | an arena brawler | [step 4](#4-the-slice) |
-| **Avatars in 1.0** (2026-11-17) | yes; the owner brings a few models when the step starts | [step 11](#11-avatars) |
+| **Avatars before launch** (2026-11-17) | yes; the owner brings a few models when the step starts | [step 11](#11-avatars) |
 | **The Hytale comparison's proposals** (2026-11-17) | 1 and 7 before launch; 5 in step 6, 3 with it; 2, 4 and 6 postponed and kept open | [From the Hytale comparison](#from-the-hytale-comparison) |
+| **No version number in the plan** (2026-11-17) | the road ends at launch, and no release is named by a number (agents confused one with the protocol's and the formats' versions) | this file |
+| **Mod content ships as cooked items** (2026-11-17) | one cooker makes each item from what Godot imported; the client reads it with Cinderbox's own reader and draws it through the RenderingServer; no Godot pack and no Godot resource loader for anyone's mod content. The base game stays a Godot pack. Godot's editor and node trees are the modders' authoring tool only | [step 6b](#6b-cooked-items) |
+| **Nodes never grow with players** (2026-11-17) | every visual that comes with an entity is drawn through the RenderingServer; nodes are a fixed set (the HUD's frame, menus, the camera) and fixed pools (sound voices); lists make only the rows in view | [step 6b](#6b-cooked-items), DESIGN.md |
+| **Not on Steam** (2026-11-17, the working assumption) | no Steam Workshop: the store is Cinderbox's own | [step 6b](#6b-cooked-items), [parked](#parked) |
+| **GDScript stays in the shipped game, for now** (2026-11-17) | taking it out (export templates built without it, the game's own scripts moved into the extension) is postponed: once no mod content is a Godot pack, content cannot reach a script engine. Until then the tightened pack check ([3c](#3c-groundwork)) is the only guard | [3c](#3c-groundwork), [6b](#6b-cooked-items) |
 
 **Open:**
 
 | Decision | Options | Leaning | Decides |
 |---|---|---|---|
-| **How players find servers** | Steam; a website's "play" link that starts the game; the game's own list; a desktop shortcut | decided later (the owner, 2026-11-17); needed for 1.0, not for the alpha | [parked](#parked) |
+| **How players find servers** | a website's "play" link that starts the game; the game's own list; a desktop shortcut (not Steam: 2026-11-17) | decided later (the owner, 2026-11-17); needed for launch, not for the alpha. The second review (2026-11-17): it is one decision with the website, updates, the store and avatar uploads; take it before the alpha ends | [parked](#parked) |
 | **The players an arena is made for** | a few (a duel, 2v2) to tens | decided with the slice's map | [step 4](#4-the-slice) |
 | **Cosmetic physics** | Jolt with a static copy of the level; no Jolt at all | decided later | [step 12](#12-godots-own-used) |
-| **The slice's network model** | the hybrid (the default); the inputs model | chosen by playing both at 150 ms (`playtest.ps1 -NetModel inputs`) | [step 4](#4-the-slice) |
-| **Both network models after the alpha** | keep both (the inputs model for small servers); keep one | after the alpha. Two models cost every feature twice (three client sessions in `game_client.h`; NetIds used up by hand to follow the server in `Simulation::ApplyCommand`) | [step 3](#3-two-network-models) |
-| **Which servers 1.0 joins** | any; official or listed ones only | none yet: any server needs every decoder of server data fuzzed first | [before launch](#before-launch) |
-| **Players' own avatars at 1.0** | uploaded by players; a curated set (the owner's models) | none yet: uploads need terms, moderation and budgets | [step 11](#11-avatars) |
-| **The repository out of OneDrive** | a plain folder with GitHub as the backup; stay | none yet: `.git` and the worktrees sync through OneDrive (`git fsck` clean on 2026-11-17) | [housekeeping](#housekeeping) |
+| **The slice's network model** | the hybrid (the default); the inputs model | chosen by playing both (`playtest.ps1 -NetModel inputs`), at 60 ms and at 150 ms, in an arena with physics in it (review, 2026-11-17). The review's lean, for up to 16 players where physics matters: the inputs model (in the hybrid your own hit on a body shows about 0.2 s late at 150 ms) | [step 4](#4-the-slice) |
+| **Both network models after the alpha** | keep both (the inputs model for small servers); keep one | after the alpha. Two models cost every feature twice (three client sessions in `game_client.h`; NetIds used up by hand to follow the server in `Simulation::ApplyCommand`). The review: the model the slice does not take gets no new features from that day | [step 3](#3-two-network-models) |
+| **Which servers the game joins at launch** | any; official or listed ones only | none yet: any server needs every decoder of server data fuzzed first. The review's lean: official and listed. Mods are compiled C++, so a community host runs a server program of its own, and Box3D's world bytes were not made to be read from a hostile source | [before launch](#before-launch) |
+| **Players' own avatars at launch** | uploaded by players; a curated set (the owner's models) | none yet: uploads need terms, moderation and budgets. The review's lean: a curated set; with a store of our own (not Steam), moderating uploads is all ours | [step 11](#11-avatars) |
+| **The repository out of OneDrive** | a plain folder with GitHub as the backup; stay | none yet. The review's lean: move now. `.git` and the worktrees sync through OneDrive; `git fsck` was clean, but `git count-objects` reports stray files in `.git/worktrees/m251-crowd/refs`; about 530 MB of leftover extension copies and the paid assets sync with it; the main checkout sits on `m250-prep`, 62 commits behind `main` (all 2026-11-17) | [housekeeping](#housekeeping) |
+| **Our own mod editor** (raised 2026-11-17) | Godot's editor with plugins ([step 9](#9-cinderbox-studio)); an editor of our own, closer to the ECS | the review's lean: Godot's editor. Authoring in a tree and baking to an ECS is the usual split (Unity's DOTS authors GameObjects and bakes them to entities); Godot's import, animation, AnimationTree, particle, material and UI editors would each have to be rebuilt. The ECS-native tool worth making is a live tuning panel in the game (the mirror's entities, the board) | [step 9](#9-cinderbox-studio) |
+| **Where items are cooked** (raised 2026-11-17) | on the modder's machine; in the store, from the uploaded project (Roblox converts uploads on its side) | the review's lean: the modder's machine first; the store checks every upload with the client's reader and the budgets before anyone can download it. Cooking in the store lets old items be cooked again when the format changes, but the store then reads strangers' Godot files and needs a sandbox | [step 6b](#6b-cooked-items) |
 
 ### 1. Stabilize M215 to M234
 
@@ -181,19 +195,27 @@ dropped ([routes not taken](#routes-not-taken)).
 
 ### 3c. Groundwork
 
-From the outside review (2026-11-17), checked against the code. Each is about a day.
+From the outside review (M261.7) and the second review (M261.9), both checked against the code.
+Each is about a day or less.
 
 | What | Why |
 |---|---|
-| Register the four tests that never ran (`motion_order`, `motion_regular`, `motion_amounts`, `motion_inspector`), and make CMake's list from the C++ table so the two cannot drift | they are in `test_main.cpp`'s table but not in `tests/CMakeLists.txt`: `ctest` and CI never ran them |
+| **The pack check tightened** (the stopgap until [6b](#6b-cooked-items)): text resources refused in packs (exports already write binary `.scn`); any backslash refused in `.remap` and `.import` files; any pack file refused whose `res://` path already exists outside the moddable folders, Godot's converted copies (`.godot/exported`, `.godot/imported`) included. `check_mod_validator.gd` builds each case as a hostile pack | **found in M261.9**: `boot.gd`'s `check_mod` searches raw bytes for script names, but Godot decodes `\u` escapes in text resources first, so an escaped `GDScript` type passes, and its `_init` runs inside `ResourceLoader.load`, before the scene guard (reproduced in the game: a player's mod replacing `ui/hud.tscn` ran code at startup). An escaped `res://` in a `.remap` passes too and redirects to any file of the game. The validator also accepts any file under `.godot/exported` and `.godot/imported`, where the base game's own converted files live (read in the code, not run) |
+| Register the four tests that never ran (`motion_order`, `motion_regular`, `motion_amounts`, `motion_inspector`), and make CMake's list from the C++ table so the two cannot drift | they are in `test_main.cpp`'s table but not in `tests/CMakeLists.txt`: `ctest` and CI never ran them. All four pass when run (2026-11-17) |
+| The viewer extension built and the 29 Godot checks run in CI (Windows, headless) | the client's half has no CI; Godot runs headless here without trouble |
 | Two Linux CI jobs: ASan and UBSan running every test; TSan running the `net_*` tests (with `CB_NO_TIMING_CHECKS=1`: TSan is 5 to 15 times slower, too slow for the late-input limits) | thread safety rests on comments: a new thread for each state (`GameServer::m_making`), `FinishStates( true )` in seven places, `ItemsOf` rebuilding a `mutable` index inside a const method |
-| Reading a snapshot or a server's image fails with an error, never `std::abort()` | a malformed welcome aborts the client (`Simulation::LoadPortable` through `Reader::Take` and `DeserializeEcs`) |
-| A `.clang-format` and a `.clang-tidy` (the `bugprone-*` checks); `-Werror` for our own targets in CI | |
+| Reading a snapshot or a server's image fails with an error, never `std::abort()` | a malformed welcome aborts the client (`Simulation::LoadPortable` through `Reader::Take` and `DeserializeEcs`); `bytes.h`'s `ByteReader` already fails softly, `simulation.cpp` has a second reader that aborts |
+| Lag compensation capped by the client's measured round trip | `seenBack` is capped at the server's 500 ms only (`game_server.cpp:1334`, `Simulation::SeenAt`), so any client may always claim the full 500 ms |
+| CI skips pushes that change only Markdown | M261.5 to M261.8 each started two runs of six jobs, about 20 minutes each, for docs alone |
+| `net_brawl_lag_compensation` steady on a slow runner | M261.8's merge (docs only) went red on macOS: the test's run without compensation saw 2 jabs in reach where its check needs 3 (`net_test.cpp:7677`); the hashes all matched. More strikes, or the check left out under `CB_NO_TIMING_CHECKS`. (The branch's run lost its macOS cross-load: cancelled, the runners short) |
+| A `.clang-format` and a `.clang-tidy` (the `bugprone-*` checks); `-Werror` for our own targets in CI | lower value than it looked: `clang-tidy`'s `bugprone`, `performance` and `concurrency` checks on ten core files found about 60 things, none that matter (the byte comparisons are of structs asserted free of padding) |
 | Delete the motion nodes (`CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`) and `CbCurve`, after moving `BakeSheetMotion` to a file of its own | no shipped content uses them; `BakeSheetMotion` (the sheet's bake) lives beside them in `cinderbox_motion.cpp` |
-| Move the protocol's changelog out of `protocol.h` (`kProtocolVersion`'s comment) into the history | the code says what is; the history says how it came to be |
+| Move the protocol's changelog out of `protocol.h` (`kProtocolVersion`'s comment) into the history | the code says what is; the history says how it came to be (the comment is one line of about 6,000 characters) |
 
 **Not here**: the large splits ([housekeeping](#housekeeping)) happen where later steps touch the
-code: `Simulation` with steps 5 to 8, `GameServer` with [step 10](#10-server-rules-in-luau).
+code: `Simulation` with steps 5 to 8, `GameServer` with [step 10](#10-server-rules-in-luau). (The
+second review proposes one exception, open: `simulation.cpp` moved into files by area now, as a
+pure move that the reference hashes prove changed nothing.)
 
 ### 4. The slice
 
@@ -210,10 +232,15 @@ ten-minute session that is fun. How many players an arena is made for is decided
 | Players | the owner, with two games on one machine |
 | The network model | not chosen. The hybrid is the default; [docs/scaling.md](docs/scaling.md#the-two-network-models) calls the inputs model the fighting games' (10 to 30 players). In the hybrid your punch moves another player a round trip and the buffer late; in the inputs model at once, with every client simulating everyone |
 
-- **First**: both network models played by hand at 150 ms (`tools\playtest.ps1 -NetModel inputs`,
-  then the default), the brawl kit against each other; the slice takes the one that feels right.
+- **First**: both network models played by hand (`tools\playtest.ps1 -NetModel inputs`, then the
+  default), the brawl kit against each other, at 150 ms and at 60 ms (150 alone is the hard case,
+  not the usual one); the slice takes the one that feels right.
 - Built beside steps 5 to 8: each of those is done when the slice uses it. Played every week, with
   latency; what it runs into is the next milestone.
+- **Proposed by the second review (2026-11-17), not decided**: an arena that shows what only
+  Cinderbox has, shared physics (walls that break, props to throw, ring-outs), so the network model
+  is chosen on what matters; and bots that fight with the kit, since strangers in a weekly alpha
+  will often find the server empty.
 - **Done when** the playtest checklist ([docs/playtest.md](docs/playtest.md)) passes by hand and our own ten-minute sessions run clean and are fun.
   **Time limit: four weeks** from the step's start; then [the alpha](#4b-the-alpha) goes ahead with
   what is left.
@@ -224,10 +251,12 @@ Strangers play the slice on one official server, every week. Steps 9 to 11 come 
 
 | Needs | Why |
 |---|---|
-| **Updates**: a build players download, and a way to get the next one | the server refuses any other protocol version (`kProtocolVersion`, 92 so far) or build: every protocol change locks out the old game |
+| **Updates**: a build players download, and a way to get the next one (not Steam: 2026-11-17) | the server refuses any other protocol version (`kProtocolVersion`) or build: every protocol change locks out the old game |
 | The official server's address handed out (a link, or typed) | how players find servers is decided later; one server needs no list |
 | The alpha's build joins only the official server's address | a stranger's server is not safe to join until [before launch](#before-launch)'s decoders are fuzzed; a rule players are asked to keep is not a defence |
+| Official items only, and the pack check tightened ([3c](#3c-groundwork)) | a stranger's Godot pack can run code until [6b](#6b-cooked-items); players' own mods stay a risk they take ("install only what you trust") |
 | A place to hear back from players | what they run into is the next milestone |
+| Proposed by the second review (2026-11-17): crash reports from the game and the server; every official session recorded (`--record`); the server restarted and logged by itself; a refusal that says "update required" with where to download; third-party licence notices in the build | an invariant that fails calls `abort()` and nobody hears of it; a recording replays any bug; the licences of Box3D, flecs, ozz, ENet, Recast, godot-cpp and Godot (MIT and zlib) ask for their notices in what is shipped, and none are today |
 
 **Done when** strangers play sessions and come back for more.
 
@@ -274,13 +303,14 @@ motion Strike on melee.strike
 
 The language is right: bounded, deterministic, run by every simulation, so skills are predicted
 (Overwatch does the same with a visual language, Statescript). What changes is how it is attached,
-written and checked. Its format is settled at 1.0, so it changes here.
+written and checked. Its format is settled before launch, so it changes here: a sheet carries
+its format's version, and the compiler reads older ones, so words can still be added after launch.
 
 | Change | Why |
 |---|---|
-| **First: the sheet compiler as a plain C++ library**, with no Godot types, like `src/expr`. Today a sheet is read twice: `ParseRules` (1,198 lines, `cue_rules.cpp`) into Godot Dictionaries in the editor, then `BakeSheetMotion` (`cinderbox_motion.cpp`) writes a second text format that every simulation parses (`CompileMotionSet`, 957 lines, `motions.cpp`) | the server then reads sheets (and their names) itself; sheet tests run headless; the formatter and errors as you type share the one parser |
+| **First: the sheet compiler as a plain C++ library**, with no Godot types, like `src/expr`; the first part of the single cooker ([6b](#6b-cooked-items)). Today a sheet is read twice: `ParseRules` (1,198 lines, `cue_rules.cpp`) into Godot Dictionaries in the editor, then `BakeSheetMotion` (`cinderbox_motion.cpp`) writes a second text format that every simulation parses (`CompileMotionSet`, 957 lines, `motions.cpp`) | the server then reads sheets (and their names) itself; sheet tests run headless; the formatter and errors as you type share the one parser. The language's words are kept by hand in step across the parsers: the list of directions is written three times (`motions.cpp:151`, `cinderbox_motion.cpp:116`, `cue_rules.cpp:391`) |
 | **A resource on its node**: `CbSheet`, plain text in a `.cbsheet` file, read and written by the extension's own loader and saver (as `.gd` and `.gdshader` are); a property on the node (`CbItem.sheet`, `CbMotionSet.sheet`, the world reactions root, the HUD root), which says which blocks it allows; may be saved inside the scene. **`CbRules` goes** | `CbRules.file` is a plain string: no UID, a rename breaks it, Godot does not see the dependency |
-| **Not Godot's script slot** | "every script is refused" is the security story; a script language through GDExtension is a large, fragile API for two features |
+| **Not Godot's script slot** | "every script is refused" is the security story (today's check has a hole, [3c](#3c-groundwork); cooked items end it, [6b](#6b-cooked-items)); a script language through GDExtension is a large, fragile API for two features |
 | **Where each block runs, marked**: simulated blocks and the viewer's in separate sections (or files); one indentation rule (it counts) | today four languages share a file: `motion` and `use` (simulated, indentation counts), `on` and `while` (reactions), `predict`, and `show` / `text` / `bind` (HUD) |
 | **Names in the sheet**: `field brawl.combo int`, `event brawl.jab.hit`; the server reads them from the pack | the editor waits for a server build |
 | **Parameters**: `param damage 8`, shown in the inspector, read by the server's rules | numbers written twice (the bat) |
@@ -297,9 +327,7 @@ written and checked. Its format is settled at 1.0, so it changes here.
 | **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/rules-language.md#planned)) | |
 | **Tools**: a formatter; errors in the editor as you type; headless sheet tests (a motion on a stand-in, then what moved) | |
 | **`.rules` becomes `.cbsheet`**: 40 sheets and about 80 files that name `.rules`; `docs/rules-language.md`; a `.gitattributes` line and a small VS Code grammar | the name says what the file is, one family with `.cbmap` |
-| **Last, not needed by the slice: every item drawn as data** (decided 2026-11-14): an item's look made once per kind from its scene, as a character's is (`ItemLook`): meshes, materials (an item's own copy where a rule changes one), particles, lights, markers, its animation's tracks; drawn with no node, for every item. Sounds and spawned scenes stay pooled nodes while they play; what the look does not take is said at the bake | a bat is 15 nodes in the game; at 255 fighting players bats are half of the scene's 7,900 nodes; at 1023, making and freeing what comes into sight is 68 ms of a 184 ms frame |
-| **Last, with the row above: reactions run from the compiled sheet**, per entity in the presentation's flecs world (the mirror): `on` rules on cues, `while` rules on state, a little state per entity, effects on the look's parts by index. Hand-placed `CbReaction` nodes stay for authoring and the Cue Preview | four reaction nodes for every bat in sight |
-| **Not taken: MultiMesh for items** | culled as one, shadows all or none, and a per-item glow needs a shader a modder's material does not have; kept for thousands of one thing |
+| **Last, not needed by the slice: items drawn as data and reactions run from the compiled sheet** | moved to [6b](#6b-cooked-items) (2026-11-17) |
 
 **The dash strike after** (proposed, not valid today); its HUD reads the cooldown itself, and
 brawl's `cd_dash` field and `CoolDash` motion go:
@@ -314,6 +342,96 @@ use
 		emit brawl.dash_strike.hit
 		impulse 10 on target along move
 ```
+
+### 6b. Cooked items
+
+**Decided (2026-11-17).** Mod content stops being Godot packs. One cooker makes each item from what
+Godot imported; the game reads it with Cinderbox's own reader and draws it through the
+RenderingServer. Godot's editor and its node trees are the modders' authoring tool only. The base
+game stays a Godot pack (it is ours).
+
+**Why**:
+- **A Godot pack can run code** (found in M261.9): Godot builds a pack's resources, scripts
+  included, while it loads them, before any check of ours sees a node. A byte scan cannot follow
+  Godot's own decoding (an escaped type name passed it), and Godot has no loader that skips
+  scripts ([its proposal #4925](https://github.com/godotengine/godot-proposals/issues/4925) is open).
+- **Nodes never grow with players** (decided the same day): a look must be data the
+  RenderingServer draws, as characters are since M260.
+
+**The cooker**: one, in the extension, run when publishing and in the editor. It replaces today's
+pack bake, the autobake, `BakeSheetMotion` and the scene reading in `CharacterLook` and `ItemLook`.
+
+| It takes | From |
+|---|---|
+| simulation data: item bodies, motions, characters' state machines, clips, hitboxes | today's bakes |
+| sheets | [step 6](#6-sheets-improved)'s compiler |
+| looks: meshes, skins, materials, sockets, lights, emitters, sounds, animation tracks | what `CharacterLook` and `ItemLook` take from a scene today, at publish time instead of at load |
+| the bytes of meshes, textures and sounds | what Godot already imported: mesh arrays, textures as GPU-ready compressed blocks, Ogg Vorbis. A player's machine imports nothing |
+
+An item is then a manifest (the format's version, the engine's, the names it reads, each file's
+size and hash) and files named by their hash. Hytale proposal 7's "what an item was made for" is
+the manifest's versions.
+
+**The reader is the security boundary.** Anyone can upload an item made by hand, so the cooker is
+for correctness and the reader for safety: a small C++ library with no Godot types (like
+`src/expr`), fuzzed headless in CI. No `load_resource_pack` and no Godot resource loader for
+anyone's items, players' own restyles included.
+
+| In an item | The reader checks |
+|---|---|
+| meshes | counts capped, every index below the vertex count, every float finite |
+| textures | GPU block formats only, sizes matching their bytes: no PNG or JPEG decoded on a player's machine |
+| sounds | Ogg Vorbis only, one decoder, fuzzed with the reader |
+| animation | ozz clips; the ozz archive reader fuzzed |
+| sheets | step 6's compiler, plain text |
+| what a part is (a light, an emitter, a socket) | a kind from a fixed list and named fields, never a class name for Godot to build |
+| everything | sizes declared before anything is read, and capped |
+
+**Delivery** (not Steam, 2026-11-17):
+- The store is Cinderbox's own: files named by SHA-256 over HTTPS (static files behind a CDN are
+  enough), never over the game connection. A server names its items by hash, as today; the game
+  fetches what it lacks, checks the declared sizes before downloading and every hash after, and
+  caches by hash (it does all this today from a store that is a folder: `workshop.gd`,
+  `workshop_fetch.gd`).
+- Every version stays fetchable while the store keeps it, so a server pinned to a hash always finds
+  its item (Steam would serve only an item's latest version).
+- The store checks every upload with the same reader and the budgets (triangles, materials, texture
+  sizes) before anyone can download it. Where items are cooked is open ([step 0](#0-decisions)).
+- Downloads compressed (Zstd) once items grow; today's items are 1.5 to 88 KB.
+- From Hytale ([docs/hytale-comparison.md](docs/hytale-comparison.md#asset-delivery-looked-at-again-2026-11-17)):
+  sizes declared before any byte, a cap per file; not its transfer on join, which a plugin exists
+  to skip.
+
+**Drawn so that nodes never grow with players:**
+
+| Comes with entities | Drawn by |
+|---|---|
+| bodies | the RenderingServer (M260) |
+| held items | the RenderingServer, from the cooked item (decided 2026-11-14 as "every item drawn as data") |
+| particles, lights, decals | RenderingServer instances, started by reactions run from the compiled sheet per entity in the presentation's flecs world (the mirror): `on` rules on cues, `while` rules on state, effects on the look's parts by index. Hand-placed `CbReaction` nodes stay for authoring and the Cue Preview |
+| sounds | a fixed pool of voices |
+| lists (a scoreboard of 1023) | only the rows in view |
+| the map | RenderingServer instances from the cooked map |
+
+- Measured: a bat is 15 nodes in the game; at 255 fighting players bats are half of the scene's
+  7,900 nodes; at 1023, making and freeing what comes into sight is 68 ms of a 184 ms frame.
+- A ratchet in the crowd bench: the node count must not grow with players (`tools\crowd_client.ps1`
+  prints it).
+- **Not taken: MultiMesh for items**: culled as one, shadows all or none, and a per-item glow needs
+  a shader a modder's material does not have; kept for thousands of one thing.
+
+**In order**: characters and items (the scene readers exist), then effects (particles, lights,
+sounds, track events), then the map (statics, lights, environment, lightmaps: the largest), then
+HUDs (Godot scenes behind the guard until then, or a fixed-list description our code builds into
+controls).
+
+**Also:**
+- The editor's previews (the Cue Preview, an item's, a character's) cook on the fly and draw with
+  the game's own code, so a look is the same in the editor and in the game.
+- Shaders are decided with the reader: refused, or a checked subset (a modder's shader source would
+  be read by Godot's shader compiler).
+- Once no mod content is a Godot pack, nothing a stranger made reaches GDScript, so removing it from
+  the shipped game is not needed for content (postponed: [step 0](#0-decisions)).
 
 ### 7. Timing from the clip
 
@@ -353,7 +471,8 @@ hitboxes follow):
 
 ### 9. Cinderbox Studio
 
-Godot's editor is the studio; the extension makes it the mod tool.
+Godot's editor is the studio; the extension makes it the mod tool. (An editor of our own was raised
+again on 2026-11-17: open, [step 0](#0-decisions).)
 
 | Godot's hook | Use |
 |---|---|
@@ -361,16 +480,21 @@ Godot's editor is the studio; the extension makes it the mod tool.
 | `EditorFeatureProfile`, shipped with the SDK | hides script creation, the Asset Library and every node class the scene guard refuses |
 | A main-screen plugin | a Cinderbox tab: the mod's items, names, problems, Publish, Test |
 | `EditorNode3DGizmoPlugin` | every authored number drawn: a find's shape, a cast's range, a rope, sockets, hitboxes, the capsule, the eyes |
-| `EditorExportPlugin` | bake, check and pack on export, on every platform (replaces `pack_mod.ps1` and `publish_mod.ps1`) |
+| `EditorExportPlugin` | cook, check and publish to the store, on every platform ([6b](#6b-cooked-items); replaces `pack_mod.ps1` and `publish_mod.ps1`) |
 | `EditorDebuggerPlugin` | the F1 motion lines, fields, events and rollbacks in the editor during a test |
 | `EditorScenePostImportPlugin` | a dropped `.glb` becomes a `CbCharacter` (what `make_mannequin.gd` does as a script) |
 
-Also: **one authoring project**, every mod in `res://mods/<id>/` and the validator refusing files
+Also: **one authoring project**, every mod in `res://mods/<id>/` and the cooker refusing files
 outside it (today 21 Godot projects share one `res://` when loaded); **one Play** (save, bake, start
 a local server and the game, reload on save) on every platform; **starters by kind** (an ability, a
 weapon, a game mode, a character, an avatar); names offered inside expressions; an item used in
 its preview, with someone else in it and the character's own mesh; the modders' docs in standard
 words.
+
+**Proposed by the second review (2026-11-17), not decided**: split the step. What launch needs is the
+prebuilt extension and the export plugin; the tab, the gizmos and the debugger plugin come as
+modders ask. Luau ([step 10](#10-server-rules-in-luau)) before those: rules without a compiler are
+the larger gain, and real mods are what settle its API.
 
 ### 10. Server rules in Luau
 
@@ -392,7 +516,7 @@ instruction limit), and fast. Rules run on the server only, so they need no dete
 |---|---|---|
 | Reads | the `Context`'s reads, and more of the engine opened read-only as mods ask | the `Context`'s reads, grown as mods ask |
 | Writes | commands in the tick's frame, never the simulation directly | the same commands |
-| Its API | may change with the engine | narrow and versioned: settled at 1.0 |
+| Its API | may change with the engine | narrow and versioned: settled before launch |
 | Cost | native | measured: deathmatch ported first, its time a tick at 64 players |
 
 Writes are commands for both because every client runs the same simulation from them: a write
@@ -400,7 +524,7 @@ behind its back desyncs every player.
 
 ### 11. Avatars
 
-**In 1.0 (decided 2026-11-17).** The owner brings a few models when the step starts. Whether players
+**Before launch (decided 2026-11-17).** The owner brings a few models when the step starts. Whether players
 upload their own is **open** ([step 0](#0-decisions)).
 
 | | The body: one for everyone | The avatar: one per player |
@@ -414,9 +538,9 @@ upload their own is **open** ([step 0](#0-decisions)).
   serves everyone. **Standard skeleton only** (Roblox's R15 way); an avatar made on another rig is
   retargeted when it is published.
 - **It never blocks joining**: fetched in the background, the mannequin drawn until it arrives.
-- **Budgets** checked when publishing: triangles, materials, texture sizes.
-- **Loading**: packs cannot be unloaded and share `res://`; to prototype, each avatar is one
-  self-contained baked scene loaded from `user://` by hash, not mounted, freed when nobody wears it.
+- **Budgets** checked by the cooker and again by the store: triangles, materials, texture sizes.
+- **Loading**: an avatar is a cooked item ([6b](#6b-cooked-items)): fetched by hash, drawn through
+  the RenderingServer, freed when nobody wears it. No pack is mounted (packs cannot be unloaded).
 - **Which avatar a player wears**: a per-player value for looks only, outside the hash, sent as
   names are.
 
@@ -426,7 +550,7 @@ upload their own is **open** ([step 0](#0-decisions)).
 |---|---|
 | `SpringBoneSimulator3D` | tails, hair, capes (cosmetic): something the look takes and runs on the drawn skeleton |
 | Instance uniforms | a look per entity (heat, a team color, a hit flash) without a material per entity: the bat copies its material to glow |
-| Threaded loading | packs and characters while joining |
+| Threaded loading | the base game's scenes while joining (cooked items are read on a thread of ours: [6b](#6b-cooked-items)) |
 | `MultiMeshInstance3D`, visibility ranges | debris; a GPU crowd of far characters ([later](#a-thousand-in-one-crowd)) |
 | Animation detail by distance | **done (M259)**: drawing only, hit tests unchanged |
 | Translations | a sheet's HUD text is English in the file |
@@ -442,13 +566,13 @@ seven things. **Decided by the owner (2026-11-17):**
 
 | # | Proposal | Decided |
 |---|---|---|
-| 1 | **A server may refuse players' own packs** (they load last and may replace any file of a look: see-through walls with no cheat program) | **taken**: [before launch](#before-launch) |
+| 1 | **A server may refuse players' own packs** (they load last and may replace any file of a look: see-through walls with no cheat program; after [6b](#6b-cooked-items), players' own restyles are cooked items, and the policy covers them) | **taken**: [before launch](#before-launch) |
 | 2 | **The camera as data**: a server's camera rig instead of the game's four views | **postponed**, [kept open](#postponed-kept-open) |
 | 3 | **Text and rows from the server**, the layout still the look's | **taken with [step 6](#6-sheets-improved)** |
 | 4 | **Sheets on things in the world**: doors, buttons, jump pads, trigger regions on map templates | **postponed**, [kept open](#postponed-kept-open) |
 | 5 | **One sheet for many items, and words for how skills meet** | **taken**: [step 6](#6-sheets-improved) |
 | 6 | **A game as one file**: the map, items by hash, options, the network model, the pack policy | **postponed** with how players find servers, [kept open](#postponed-kept-open) |
-| 7 | **What an item was made for; rules from a store only after the Luau sandbox; shaders in packs decided** | **taken**: [before launch](#before-launch) |
+| 7 | **What an item was made for; rules from a store only after the Luau sandbox; shaders in packs decided** (the first becomes the cooked item's manifest: [6b](#6b-cooked-items)) | **taken**: [before launch](#before-launch) |
 
 **Not taken**: a UI the server pushes change by change, assets sent on join, Hytale's sync of
 predicted chains, a fixed set of keys.
@@ -491,19 +615,20 @@ Test locally would open.
 
 | What | Why | State |
 |---|---|---|
-| **Pack loaders fuzzed, files limited in size** | workshop items are Godot files on every player's machine; the guard and the validator check what is in them, not Godot's parsers | not started |
-| **Everything a client reads from a server fuzzed** | a client loads the server's whole world on join: the simulation's image (the ECS state, and Box3D's own world bytes through `b3DeserializeIntoShell`), the schema, the map, the sheets' text; then states and frames. Every decoder fuzzed, handles checked after loading. Or 1.0 joins official or listed servers only ([step 0](#0-decisions)) | not started (errors instead of aborts: [3c](#3c-groundwork)) |
+| **The cooked-item reader fuzzed, files limited in size** | after [6b](#6b-cooked-items) an item is read by our reader alone (and the Ogg Vorbis and ozz readers behind it). Until then workshop items are Godot files on every player's machine: the validator has a hole ([3c](#3c-groundwork)), and neither it nor the guard makes Godot's parsers safe | not started (the pack check tightened: [3c](#3c-groundwork)) |
+| **Everything a client reads from a server fuzzed** | a client loads the server's whole world on join: the simulation's image (the ECS state, and Box3D's own world bytes through `b3DeserializeIntoShell`), the schema, the map, the sheets' text; then states and frames. Every decoder fuzzed, handles checked after loading. Or the game joins only official or listed servers at launch ([step 0](#0-decisions)) | not started (errors instead of aborts: [3c](#3c-groundwork)) |
 | **Terms for modders, a licence for mods** | `LICENSE` is "all rights reserved": nothing lets a modder use the SDK or says what becomes of uploads (avatars included) | not started |
 | **Updates** | | needed for [the alpha](#4b-the-alpha), described there |
-| **Cheating, decided** | inputs model: every client holds the whole world. Hybrid: every character is sent, so a client knows where everyone is. Wallhacks are trivial in both; fog of war for characters is possible in the hybrid, not built | open |
-| **A server's policy on players' packs** (proposal 1) | the server says none, listed hashes, or any (Counter-Strike's `sv_pure`) in its info (`MsgInfo`); the game loads only what it allows | decided; to do |
-| **What an item was made for** (proposal 7) | baked motions and graphs carry a format version, an item does not: nothing says the engine and Godot versions it was made for or the names it reads | decided; to do |
-| **Shaders in packs** (proposal 7) | the validator refuses scripts only, and a pack's shaders run on every player's GPU: refused, or a checked subset, decided with the loaders' fuzzing | decided; to do |
+| **Cheating, decided** | inputs model: every client holds the whole world. Hybrid: every character is sent, so a client knows where everyone is. Wallhacks are trivial in both; fog of war for characters is possible in the hybrid, not built. Lag compensation trusts how far back a client says it saw (capped by its ping: [3c](#3c-groundwork)) | open |
+| **A server's policy on players' own packs** (proposal 1; their restyles are cooked items after [6b](#6b-cooked-items)) | the server says none, listed hashes, or any (Counter-Strike's `sv_pure`) in its info (`MsgInfo`); the game loads only what it allows | decided; to do |
+| **What an item was made for** (proposal 7) | baked motions and graphs carry a format version, an item does not: nothing says the engine and Godot versions it was made for or the names it reads | decided; the cooked item's manifest ([6b](#6b-cooked-items)) |
+| **Shaders in items** (proposal 7) | the validator refuses scripts only, and a pack's shaders run on every player's GPU: refused, or a checked subset, decided with the cooked-item reader ([6b](#6b-cooked-items)); a modder's shader source would be read by Godot's shader compiler | decided; to do |
+| **GDScript out of the shipped game** | the game's own scripts moved into the extension, export templates built without GDScript: no script engine for a pack to reach. Not needed for content once [6b](#6b-cooked-items) ships | postponed (2026-11-17) |
 | **A mod's crash** | takes the server down (mods are compiled in) | [step 10](#10-server-rules-in-luau) |
 | **Rules from a store** (proposal 7) | only once the Luau sandbox holds | [step 10](#10-server-rules-in-luau) |
-| **How players find servers** | join by address only | [parked](#parked); needed for 1.0 |
-| **Compatibility, promised** | what 1.0 keeps (the sheet, an item, the rules' API); a format change after 1.0 is versioned and announced | to write |
-| **The manual audited** | DESIGN, README, `docs/looks.md`, `mods_src/README.md` and this roadmap were checked against the code (M261.5 to M261.7; M261.8 shortened DESIGN and the roadmap); `docs/characters.md`, `items.md`, `motions.md`, `maps.md`, `testing.md`, `playtest.md`, `server-mods.md` and `sdk/README.md` have not been read whole against it | to do |
+| **How players find servers** | join by address only | [parked](#parked); needed for launch |
+| **Compatibility, promised** | what launch keeps (the sheet, a cooked item, the rules' API); a format change after launch is versioned and announced | to write |
+| **The manual audited** | DESIGN, README, `docs/looks.md`, `mods_src/README.md` and this roadmap were checked against the code (M261.5 to M261.7; M261.8 shortened DESIGN and the roadmap; M261.9 corrected what each says about the pack check, in `sdk/README.md`, `server-mods.md` and `testing.md` too); `docs/characters.md`, `items.md`, `motions.md`, `maps.md`, `testing.md`, `playtest.md`, `server-mods.md` and `sdk/README.md` have not been read whole against it | to do |
 | **Tools on every platform, translations** | the scripts are PowerShell; the extension is built from source | steps [9](#9-cinderbox-studio), [12](#12-godots-own-used) |
 
 ## Later
@@ -520,9 +645,9 @@ In the order they would likely come back.
 | The server's thread (55 ms a tick at 1023) | the mods' loops over every player (about 2 µs a player each); the motions' pass and the slots on one thread; keeping a state; the physics |
 | Planning states | each client walks every entity: an interest grid would help where players are spread out |
 | Bandwidth (1.7 to 1.9 Mbit/s a player) | frames are 70%, mostly pushers' places (exact every tick: decided); far characters could be coarser |
-| The game (5 frames a second with all in view) | held items made as they come into sight (step 6 draws items as data); the mirror's and the HUD's work; Godot drawing a thousand skinned characters (a GPU crowd for far ones) |
+| The game (5 frames a second with all in view) | held items made as they come into sight ([6b](#6b-cooked-items) draws items as data); the mirror's and the HUD's work; Godot drawing a thousand skinned characters (a GPU crowd for far ones) |
 
-Not in 1.0. The cheap way to more players is many servers of 50 to 255 per game, as Roblox does.
+Not before launch. The cheap way to more players is many servers of 50 to 255 per game, as Roblox does.
 
 ### Our own animation authoring
 
@@ -567,8 +692,8 @@ Decided to wait; each says what it waits for.
 
 | What | Waits for |
 |---|---|
-| How players find servers | a decision, taken later (the owner, 2026-11-17): Steam, a website's "play" link, the game's own list, a desktop shortcut. Today: join by address, Test locally, a server's mods listed before joining. **Needed for 1.0**; [a game as one file](#postponed-kept-open) comes back with it |
-| Steam Workshop as the store | the decision above; the store is a folder today |
+| How players find servers | a decision, taken later (the owner, 2026-11-17): a website's "play" link, the game's own list, a desktop shortcut (not Steam). Today: join by address, Test locally, a server's mods listed before joining. **Needed for launch**; [a game as one file](#postponed-kept-open) comes back with it |
+| The store's form | Cinderbox's own (not Steam, 2026-11-17), described in [6b](#6b-cooked-items); a folder today |
 | Ships | Box3D growing buoyancy rather than more patches (five already). In the simulation, so everyone predicts them: platform carry, a buoyancy component with a wave function the water's look shares |
 | **The player's body, for motions** | a mod that wants it; each a word of the sheet language ([planned list](docs/rules-language.md#planned)), in the simulation, so predicted. In likely order: |
 | · Touching a wall | a condition (`wall`) and a frame along it: wallrunning, wall jumps, a ledge grab |
@@ -592,7 +717,7 @@ Not scheduled. A row moves into the road when the slice wants it.
 | Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player |
 | Animation | a slow-motion finisher (a state's speed exists, M230); the dash's and the hook's poses are placeholders |
 | Feet on the ground | foot IK in the shared pose: each foot's ground by a ray in the simulation, the hips lowered to the lower foot, two-bone IK per leg, so leg hitboxes are where the feet are drawn |
-| The client | keys the server says (a server maps keys to actions at join; players may still rebind, per server); cameras a mod places, with [the camera as data](#postponed-kept-open) |
+| The client | keys the server says (a server maps keys to actions at join; players may still rebind, per server); cameras a mod places, with [the camera as data](#postponed-kept-open); two mods' keys may clash and nothing says so (chat's text entry, `CbTextEntry`, opens on T by default, and `flight`'s `fly` action suggests T) |
 | Games | teams and spectators (mods, once private fields and the board cover them); lists on one entity (array fields, or a `CbList` over a field family) |
 | Finding the way | one mesh per character size; mending the mesh when a wall breaks; off-mesh links (a jump, a ladder) |
 | NPCs | NPCs of their own character; a brain in a sheet (predicted exactly, at a rollback cost) |
@@ -622,7 +747,9 @@ Not scheduled. A row moves into the road when the slice wants it.
 | Separate physics for the map and the game | there is one world; a map's bodies and a mod's are authored the same way (M185) |
 | Godot's physics at runtime | collision is Box3D's on the server and in every prediction; `CollisionShape3D` is only how shapes are authored |
 | Hitboxes as physics bodies | every bone moved every tick, copied in every snapshot, shoving props with its limbs; hitboxes are shapes on the shared pose that hit tests ask |
-| Our own editor; a fork of Godot | rebuilding Godot's editor would take one person years; a fork means merging every release by hand. The extension's editor hooks cover [step 9](#9-cinderbox-studio) |
+| A fork of Godot | merging every release by hand. The extension's editor hooks cover [step 9](#9-cinderbox-studio). (An editor of our own, also listed here before, was raised again on 2026-11-17 and is open: [step 0](#0-decisions)) |
+| Leaving Godot over the pack hole (asked 2026-11-17) | the hole is a check of ours and Godot files from strangers, not Godot's renderer; any engine that loads a rich object format from strangers has it (Unreal's packs can carry Blueprint code), and a renderer, UI, audio, platform layer and import of our own would cost a year. Cooked items end it instead ([6b](#6b-cooked-items)) |
+| The Steam Workshop (2026-11-17) | not on Steam: the store is our own ([6b](#6b-cooked-items)) |
 | Another engine (2026-11-08) | the simulation, netcode, animation and presentation logic are our own C++; Godot's part (renderer, UI, the modders' editor) is what a switch would lose. The scene tree's cost at scale was removed instead (M260) |
 | Sheets in Godot's script slot | "every script is refused" is the security story; a script language through GDExtension is large and fragile for two features |
 | Sheets as `.res` or `.tres` | Godot's generic containers would hold the sheet as one quoted string: poor diffs, no editing as text |
@@ -639,12 +766,18 @@ Independent of the road; each is small unless it says otherwise.
 
 | What | Note |
 |---|---|
-| `Simulation` in modules | `simulation.cpp` about 7,000 lines, about 200 methods; the mover went first (M92). Split where steps 5 to 8 touch it: slots and items, motions, possession, breakables, sending states |
+| `Simulation` in modules | `simulation.cpp` about 7,000 lines, about 200 methods and 100 members; the mover went first (M92). Split where steps 5 to 8 touch it: slots and items, motions, possession, breakables, sending states. The second review (2026-11-17) proposes the pure move into files by area now: the reference hashes prove nothing changed |
+| Typed commands | a `SimCommand`'s `mode`, `index`, `value`, `a`, `b` and `c` mean something else for each command, said only in comments (`types.h`), written in `mod_api.cpp` and read in `simulation.cpp`: a pack and an unpack per command in one header, the wire unchanged; before Luau binds the API (review, 2026-11-17) |
+| What a follower skips, in one place | the hybrid sorts commands in `FollowerSkips` (the client), `FollowerSkipped` (the server) and a NetId fix-up written twice (`simulation.cpp:3981`, `FollowerSkipped`); a new command is classified in each, and a slip desyncs: one table per command type, or the server's NetId in the command (review, 2026-11-17) |
+| The state thread | a new `std::thread` every state (30 a second): one thread that lives, and a debug check in every function that changes a client while a state is made (review, 2026-11-17) |
+| `CinderboxClient` | one class in five files, about 140 methods |
 | `GameServer` in modules | 3,211 lines: connections, the schema, the mods, states, the bench. Split when [step 10](#10-server-rules-in-luau) starts: the Luau host replaces part of it |
 | Long functions | `ParseRules` 1,198 lines (step 6 replaces it), `CompileMotionSet` 957, `CbCharacter::BakeGraph` 765, `Simulation::ApplyCommand` 529, `GameServer::Start` 497, `Simulation::MoveCharacters` 433: table-driven parsers, one builder for the schema |
 | The bench inside the server | `game_server.cpp` names the bench or fake players 132 times: a profiler interface and a fake transport |
-| Box3D's pin | a commit 21 past its `v0.1.0` tag, with five patches: pinned through 1.0; an upgrade is a milestone of its own |
-| `tests/test_main.cpp` in files by area | about 13,800 lines; `tests/net_test.cpp` about 8,400 |
+| Box3D's pin | a commit 21 past its `v0.1.0` tag, with five patches: pinned until launch; an upgrade is a milestone of its own |
+| `tests/test_main.cpp` in files by area | about 13,800 lines; `tests/net_test.cpp` about 8,400. For reading: alone, `test_main.cpp` recompiles in about 17 s and a file of the extension in 2 to 7 s (2026-11-17), so build times are not the reason |
+| The docs' weight | about 830 KB of Markdown for about 77k lines of C++; the history is 361 KB, with lines up to 5,400 characters; code comments carry 370 milestone tags. Proposed (review, 2026-11-17): the history a line per milestone with its merge commit; reference generated from the code (server options from `--help`, sheet words from the compiler); numbers that change named where they live, not quoted; a glossary (puppet, stand-in, pusher, sheet, look, board, mirror) |
+| The repository out of OneDrive | open: [step 0](#0-decisions) |
 | Replays' extension | `.cbr` is also the comic-book archive: `.cbreplay` |
 | A motion's field and a mod's | both may write one (commands first, then motions); the server could warn when a mod sets a field a motion writes every tick |
 | Slots for what is worn | the dash boots take a slot: selected, they are held like a tool |

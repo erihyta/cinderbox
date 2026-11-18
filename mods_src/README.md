@@ -22,6 +22,12 @@ The game checks each pack before it loads it, against an allowlist. A pack is re
 - a resource is compressed (its contents could not be checked);
 - a resource names a script type (`GDScript`, `Script`, `GDExtension`, ...) or a script file (`.gd`, `.cs`).
 
+This check can be bypassed today (M261.9): it reads a resource's bytes as they are, while Godot
+decodes escapes in text resources first, so a script can hide from it and runs while Godot loads
+the resource. Converted copies are accepted at any path under `.godot/exported` and
+`.godot/imported`, so a pack can also replace the game's own converted files. Install packs only
+from people you trust; the fix is in [ROADMAP.md](../ROADMAP.md#3c-groundwork).
+
 A scene is checked again before the game uses it, and is not used if it has:
 - a node of a class that is not listed (the list is in `src/godot/cue/cue_guard.cpp`: meshes,
   particles, lights, sounds, skeletons, animation, UI controls and the `Cb*` nodes; not an
