@@ -5790,7 +5790,13 @@ std::vector<uint32_t> Simulation::BreakablesNear( b3Vec3 point, float radius ) c
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
-		const Transform& at = e.get<Transform>();
+		// (Not every entity has a place: get<> of none bound a reference to nothing, UBSan, M270.)
+		const Transform* where = e.try_get<Transform>();
+		if ( where == nullptr )
+		{
+			continue;
+		}
+		const Transform& at = *where;
 		if ( const WallPiece* piece = e.try_get<WallPiece>() )
 		{
 			consider( piece->wall, b3Length( b3Sub( at.position, point ) ), r.netId );
