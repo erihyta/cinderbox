@@ -1,11 +1,5 @@
-* text=auto
-*.sh text eol=lf
-tests/reference_hashes.txt text eol=lf
-*.patch text eol=lf
+# Every text file is LF in the working copy too, whatever core.autocrlf says. A published item's
+# hash is the SHA-256 of its pack, and the pack holds sheets and scenes as they are on disk: a clone
+# with CRLF would publish every item under another hash. Godot and the bakes write LF themselves.
+* text=auto eol=lf
 *.ozz binary
-# Files Godot writes itself, always with LF: keep them LF in the working copy, or every editor run
-# shows them as modified.
-*.import text eol=lf
-project.godot text eol=lf
-*.uid text eol=lf
-src/godot/**/doc_classes/*.xml text eol=lf

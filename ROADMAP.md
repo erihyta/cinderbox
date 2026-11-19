@@ -12,7 +12,7 @@ people outside the project ([the goal](#the-goal)); the plan names no version nu
 
 Rewritten after M261 (M261.6), an outside review's findings added (M261.7), shortened (M261.8); a
 second review, the pack check's hole and the owner's decisions on cooked items added (M261.9);
-the macOS test's run made steady (M261.10).
+the macOS test's run made steady (M261.10); the repository moved out of OneDrive (M261.11).
 Statements about what exists were checked against the code at `3d67daf` (M261.8's merge); what is
 planned says so. Detail of finished steps is in the history.
 
@@ -70,7 +70,7 @@ Which steps launch needs: [the road](#the-road).
 
 | # | Step | State | For launch |
 |---|---|---|---|
-| 0 | [Decisions](#0-decisions) | seventeen taken; ten open | |
+| 0 | [Decisions](#0-decisions) | eighteen taken; nine open | |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean. **By hand: to do** | |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
@@ -126,6 +126,7 @@ Which steps launch needs: [the road](#the-road).
 | **Mod content ships as cooked items** (2026-11-17) | one cooker makes each item from what Godot imported; the client reads it with Cinderbox's own reader and draws it through the RenderingServer; no Godot pack and no Godot resource loader for anyone's mod content. The base game stays a Godot pack. Godot's editor and node trees are the modders' authoring tool only | [step 6b](#6b-cooked-items) |
 | **Nodes never grow with players** (2026-11-17) | every visual that comes with an entity is drawn through the RenderingServer; nodes are a fixed set (the HUD's frame, menus, the camera) and fixed pools (sound voices); lists make only the rows in view | [step 6b](#6b-cooked-items), DESIGN.md |
 | **Not on Steam** (2026-11-17, the working assumption) | no Steam Workshop: the store is Cinderbox's own | [step 6b](#6b-cooked-items), [parked](#parked) |
+| **The repository out of OneDrive** (2026-11-19) | moved to a plain folder (`C:\Cinderbox_Dev\cinderbox`, a fresh clone of `main`), GitHub the backup; the paid assets copied beside it, still outside git. Every text file is LF in the working copy whatever `core.autocrlf` says (`.gitattributes`): a clone with CRLF published every item under another hash | M261.11 |
 | **GDScript stays in the shipped game, for now** (2026-11-17) | taking it out (export templates built without it, the game's own scripts moved into the extension) is postponed: once no mod content is a Godot pack, content cannot reach a script engine. Until then the tightened pack check ([3c](#3c-groundwork)) is the only guard | [3c](#3c-groundwork), [6b](#6b-cooked-items) |
 
 **Open:**
@@ -139,7 +140,6 @@ Which steps launch needs: [the road](#the-road).
 | **Both network models after the alpha** | keep both (the inputs model for small servers); keep one | after the alpha. Two models cost every feature twice (three client sessions in `game_client.h`; NetIds used up by hand to follow the server in `Simulation::ApplyCommand`). The review: the model the slice does not take gets no new features from that day | [step 3](#3-two-network-models) |
 | **Which servers the game joins at launch** | any; official or listed ones only | none yet: any server needs every decoder of server data fuzzed first. The review's lean: official and listed. Mods are compiled C++, so a community host runs a server program of its own, and Box3D's world bytes were not made to be read from a hostile source | [before launch](#before-launch) |
 | **Players' own avatars at launch** | uploaded by players; a curated set (the owner's models) | none yet: uploads need terms, moderation and budgets. The review's lean: a curated set; with a store of our own (not Steam), moderating uploads is all ours | [step 11](#11-avatars) |
-| **The repository out of OneDrive** | a plain folder with GitHub as the backup; stay | none yet. The review's lean: move now. `.git` and the worktrees sync through OneDrive; `git fsck` was clean, but `git count-objects` reports stray files in `.git/worktrees/m251-crowd/refs`; about 530 MB of leftover extension copies and the paid assets sync with it; the main checkout sits on `m250-prep`, 62 commits behind `main` (all 2026-11-17) | [housekeeping](#housekeeping) |
 | **Our own mod editor** (raised 2026-11-17) | Godot's editor with plugins ([step 9](#9-cinderbox-studio)); an editor of our own, closer to the ECS | the review's lean: Godot's editor. Authoring in a tree and baking to an ECS is the usual split (Unity's DOTS authors GameObjects and bakes them to entities); Godot's import, animation, AnimationTree, particle, material and UI editors would each have to be rebuilt. The ECS-native tool worth making is a live tuning panel in the game (the mirror's entities, the board) | [step 9](#9-cinderbox-studio) |
 | **Where items are cooked** (raised 2026-11-17) | on the modder's machine; in the store, from the uploaded project (Roblox converts uploads on its side) | the review's lean: the modder's machine first; the store checks every upload with the client's reader and the budgets before anyone can download it. Cooking in the store lets old items be cooked again when the format changes, but the store then reads strangers' Godot files and needs a sandbox | [step 6b](#6b-cooked-items) |
 
@@ -778,12 +778,9 @@ Independent of the road; each is small unless it says otherwise.
 | Box3D's pin | a commit 21 past its `v0.1.0` tag, with five patches: pinned until launch; an upgrade is a milestone of its own |
 | `tests/test_main.cpp` in files by area | about 13,800 lines; `tests/net_test.cpp` about 8,400. For reading: alone, `test_main.cpp` recompiles in about 17 s and a file of the extension in 2 to 7 s (2026-11-17), so build times are not the reason |
 | The docs' weight | about 830 KB of Markdown for about 77k lines of C++; the history is 361 KB, with lines up to 5,400 characters; code comments carry 370 milestone tags. Proposed (review, 2026-11-17): the history a line per milestone with its merge commit; reference generated from the code (server options from `--help`, sheet words from the compiler); numbers that change named where they live, not quoted; a glossary (puppet, stand-in, pusher, sheet, look, board, mirror) |
-| The repository out of OneDrive | open: [step 0](#0-decisions) |
 | Replays' extension | `.cbr` is also the comic-book archive: `.cbreplay` |
 | A motion's field and a mod's | both may write one (commands first, then motions); the server could warn when a mod sets a field a motion writes every tick |
 | Slots for what is worn | the dash boots take a slot: selected, they are held like a tool |
 | `reconcile_every` 2 as the inputs model's default | halves rollback work with many players and latency (M139); others are seen up to 2 ticks later: look at it in play first |
 | Physics threads beside drawing | on by default (M141), not yet watched in the game: `--physics-threads=0` if frames suffer |
-| The old `build/` folder in the main checkout | builds go outside the source tree; it can be deleted |
-| Old extension copies in `godot/bin` | `~libcinderbox...TMP` files from rebuilds while Godot had the library open: git-ignored (21 in the main checkout, about 530 MB), can be deleted |
 | The view codec's magic | `CBV7` since M252; M260 made an entity's record 36 bytes longer and bumped the view file's version (10), not the magic. Nothing breaks today, but the magic should change with the record |
