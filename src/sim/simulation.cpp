@@ -8,6 +8,7 @@
 #include "map.h"
 #include "motions.h"
 #include "mover.h"
+#include "puppet.h"
 #include "ragdoll.h"
 #include "util.h"
 
@@ -370,6 +371,10 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Pusher>();
 	RegisterSnapComponent<Downed>();
 	RegisterSnapComponent<Tossed>();
+	// (Not in snapshots, used by the hybrid's states: registered here, once, not when first used.)
+	m_world.component<StandIn>();
+	m_world.component<StateBody>();
+	m_world.component<PuppetState>();
 
 	if ( m_snapComponents.size() > 32 )
 	{

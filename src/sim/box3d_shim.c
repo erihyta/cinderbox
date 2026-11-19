@@ -207,8 +207,12 @@ bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size, 
 	}
 
 	// Slots borrow the input bytes. Hulls are cloned into the world; a mesh or a height field is used
-	// where it is, so it gets lasting memory of its own (`keep`). This project makes no compounds.
+	// where it is, so it gets lasting memory of its own (`keep`). This project makes no compounds. A
+	// hull is read as a struct where it lies, so it is copied to memory of its own too, aligned, for
+	// as long as the world is read (M270: UBSan saw one at an odd address of the image).
 	b3RegistrySlot* slots = NULL;
+	uint8_t** hullCopies = NULL;
+	uint32_t hullCount = 0;
 	if ( slotCount > 0 )
 	{
 		slots = (b3RegistrySlot*)calloc( slotCount, sizeof( b3RegistrySlot ) );
@@ -228,6 +232,22 @@ bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size, 
 		{
 			c.ok = false;
 			break;
+		}
+		if ( kind == (uint32_t)b3_geometryHull && byteCount > 0 )
+		{
+			uint8_t* aligned = (uint8_t*)malloc( byteCount );
+			uint8_t** grown = (uint8_t**)realloc( hullCopies, sizeof( uint8_t* ) * ( hullCount + 1 ) );
+			if ( aligned == NULL || grown == NULL )
+			{
+				free( aligned );
+				hullCopies = grown != NULL ? grown : hullCopies;
+				c.ok = false;
+				break;
+			}
+			hullCopies = grown;
+			hullCopies[hullCount++] = aligned;
+			memcpy( aligned, bytes, byteCount );
+			bytes = aligned;
 		}
 		if ( kept )
 		{
@@ -259,5 +279,10 @@ bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size, 
 	}
 
 	free( slots );
+	for ( uint32_t i = 0; i < hullCount; ++i )
+	{
+		free( hullCopies[i] );
+	}
+	free( hullCopies );
 	return ok;
 }

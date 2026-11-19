@@ -175,12 +175,12 @@ enum ViewKind : uint8_t
 void Simulation::PrepareViews()
 {
 	const flecs::entity_t local[] = {
-		m_world.component<Transform>().id(),	 m_world.component<Velocity>().id(),	  m_world.component<PhysicsBody>().id(),
-		m_world.component<Character>().id(),	 m_animId,								  m_motionId,
-		m_world.component<MoveOverrides>().id(), m_world.component<MoveEffects>().id(), m_world.component<MoveValues>().id(),
-		m_world.component<ModDriven>().id(),
+		IdOf<Transform>(),	 IdOf<Velocity>(),	  IdOf<PhysicsBody>(),
+		IdOf<Character>(),	 m_animId,								  m_motionId,
+		IdOf<MoveOverrides>(), IdOf<MoveEffects>(), IdOf<MoveValues>(),
+		IdOf<ModDriven>(),
 	};
-	const flecs::entity_t slots = m_world.component<Slots>().id();
+	const flecs::entity_t slots = IdOf<Slots>();
 	m_viewKinds.assign( m_snapComponents.size(), ViewKeep );
 	for ( size_t i = 0; i < m_snapComponents.size(); ++i )
 	{

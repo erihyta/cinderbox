@@ -155,7 +155,10 @@ public:
 	void copy_to( T* out, size_t n ) const
 	{
 		size_t have = m_size < n ? m_size : n;
-		std::memcpy( static_cast<void*>( out ), data(), have * sizeof( T ) );
+		if ( have > 0 ) // (memcpy of nothing from no data is still undefined: UBSan, M270)
+		{
+			std::memcpy( static_cast<void*>( out ), data(), have * sizeof( T ) );
+		}
 		for ( size_t i = have; i < n; ++i )
 		{
 			out[i] = T{};

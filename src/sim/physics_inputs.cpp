@@ -506,8 +506,8 @@ uint64_t Simulation::PhysicsHash() const
 {
 	// Where its bodies are and how they move: what the physics decides (a body left behind keeps
 	// what its character had, its slots, its fields: the characters' side's, M248).
-	const int kept[] = { SnapIndex( m_world.component<Transform>().id() ), SnapIndex( m_world.component<Velocity>().id() ),
-						 SnapIndex( m_world.component<RagdollPose>().id() ) };
+	const int kept[] = { SnapIndex( IdOf<Transform>() ), SnapIndex( IdOf<Velocity>() ),
+						 SnapIndex( IdOf<RagdollPose>() ) };
 	std::vector<uint8_t> bytes;
 	ecs_world_t* world = m_world.c_ptr();
 	for ( const EntityRef& r : m_entities )
