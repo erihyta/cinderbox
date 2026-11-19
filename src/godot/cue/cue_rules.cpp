@@ -468,6 +468,8 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 			why = verb + String( " <how much> ..." );
 			return false;
 		}
+		// (A part's "class" says what it is to the bake, sheet_motions.cpp: the names of the motion nodes
+		// it was baked through until M268.)
 		part["class"] = verb == "impulse" ? "CbImpulse" : "CbForce";
 		{
 			// (The words before the first option word, found above.)

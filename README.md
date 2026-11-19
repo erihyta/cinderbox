@@ -25,7 +25,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | [docs/looks.md](docs/looks.md) | reactions, predictions, the expression language, HUD nodes, the Cue Preview, client mods |
 | [docs/characters.md](docs/characters.md) | characters, what an animation tree bakes to, layers and stances, aiming, animation packs, bodies and possession, NPCs |
 | [docs/items.md](docs/items.md) | held items, sockets, the inventory, grips, items in the world |
-| [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: `CbMotion` and its parts (impulses, forces, probes, links); what players weigh |
+| [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: a rules sheet's motion blocks (impulses, forces, casts, links, launches); what players weigh |
 | [docs/rules-language.md](docs/rules-language.md) | the rules language's reference: every line a sheet may hold, where it may stand, what it reads |
 | [docs/maps.md](docs/maps.md) | maps, templates and components |
 | [docs/testing.md](docs/testing.md) | the tools, the determinism checks, CI |

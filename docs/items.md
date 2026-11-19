@@ -49,7 +49,7 @@ work for every player. Its items themselves:
 |---|---|---|
 | put away out of sight (in no socket) | no | no |
 | in a socket, doing nothing but look (meshes, markers, its body, motions, a sheet with no `on`, `while` or `predict`) | yes | its meshes alone, no node (`^^/RightHand/Item` finds nothing) |
-| in a socket, doing more (reactions, particles, lights, sounds, its own animation: the bat, the pistol) | yes | its scene, without the predictions (yours alone) and the motion nodes (the simulation's) |
+| in a socket, doing more (reactions, particles, lights, sounds, its own animation: the bat, the pistol) | yes | its scene, without the predictions (yours alone) |
 | lying in the world | yes | its scene |
 
 Your own items are all sent to you and all drawn as their scenes.
@@ -126,7 +126,7 @@ with a count, and one set of fields.
 | When | What happens |
 |---|---|
 | one is given or picked up | it goes onto a stack of its kind with room (the lowest slot's first), as many as fit; the rest is an item of its own in another slot |
-| one is thrown (a `CbLaunch` of the one carried) | one is split off the stack, with the stack's fields; the rest stays in the slot |
+| one is thrown (a sheet's `launch carried`) | one is split off the stack, with the stack's fields; the rest stays in the slot |
 | it is dropped, or its holder dies | the whole stack goes |
 
 - **The HUD** reads it as `slot.count` (the inventory's hotbar and screen show `x3` above one);
@@ -390,7 +390,7 @@ there is to say:
 | `fields` | **its own state**, a field of every copy (`{"gun.rounds": 12}`): declared by the scene, a new copy starts with the value, and keeps its own from then on (simulation state: predicted, rolled back, in a joiner's snapshot). The value's type is the field's (a whole number an Int, a decimal a Float, true / false a Bool). Server mods read and write it (`ctx.Get` / `ctx.Set` on the item); looks read the one in a player's hand as `hand.<field>` |
 | `animation_pack` | the pack it brings: its layers the character has while it is held (`gun.pistol_hold`), and its [overlay](characters.md#animation-packs) while it is carried at all (the boots' dash pose): a `CbAnimPack` scene of the same project |
 | `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
-| motion nodes under it (`CbProbe`, `CbLink`, `CbForce`, `CbImpulse`, `CbMove`), and its When used rules | [what using it does](motions.md#what-an-item-does): the boots' dash, the hook's line and rope |
+| its sheet's `use` rule and motion blocks, and its When used rules | [what using it does](motions.md#what-an-item-does): the boots' dash, the hook's line and rope |
 | `use_key` | its own key (`H`): uses the first one carried, wherever it is (the action `<kind>.use`); the player's own wins |
 
 What it looks and sounds like when it is used is in the scene too, on cues that do not name the

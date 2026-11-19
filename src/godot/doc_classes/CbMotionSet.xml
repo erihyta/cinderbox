@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="CbMotionSet" inherits="CbMotionPart" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<class name="CbMotionSet" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
-		A mod's motions: the [CbMotion] nodes under it, baked to one file the server reads.
+		A mod's motions: the motion blocks of the rules sheets under it, baked to one file the server reads.
 	</brief_description>
 	<description>
-		The root of a scene in the mod's project ([code]motion_sets/[/code]). Its [CbMotion] children, in the order of the scene tree, are baked to [code]res://motions/&lt;set_name&gt;.cfg[/code] when the scene is saved, by the Bake button, and when the mod is published. The server mod names the set with [code]declare.Motions( "dash.moves" )[/code]; the server reads the file from the mod's item and sends it to every client, and every simulation runs it.
+		The root of a scene in the mod's project ([code]motion_sets/[/code]). The motion blocks of the rules sheets under it ([CbRules], in the order of the scene tree) are baked to [code]res://motions/&lt;set_name&gt;.cfg[/code] when the scene is saved, by the Bake button, and when the mod is published. The server mod names the set with [code]declare.Motions( "dash.moves" )[/code]; the server reads the file from the mod's item and sends it to every client, and every simulation runs it.
 		A server runs as many motions as its mods' sets have, all together; a player carries 16 bytes for each. The scene itself is not shipped: the baked file is.
 	</description>
 	<tutorials>

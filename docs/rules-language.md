@@ -212,11 +212,11 @@ for`'s seconds, `follow ... over`, a force's `ramp`), counts (`uses`, `max`), di
 (`world (x, y, z)`, `turn`, `at`), and a cast's `range` and `speed`. They shape the motion, or are
 needed before anything is read.
 
-What a motion's expressions read, beyond what [conditions read](motions.md#cbmotion-the-trigger):
+What a motion's expressions read, beyond what [conditions read](motions.md#when-how-long-what-changes):
 
 | Word | |
 |---|---|
-| `curve(Name, x)` | the `CbCurve` named `Name` beside the sheet, read at x (baked into 64 values, read between two in a straight line, held past its ends) |
+| `curve(Name, x)` | refused in a sheet since M268: curves were drawn in `CbCurve` nodes beside it, deleted with the motion nodes (no shipped sheet used one). The simulation still reads a motions file's curves; curves as resources are [postponed](../ROADMAP.md) |
 | `time` | seconds since the current step started (0 while off) |
 | `distance` | in a find: metres from the player to what it found |
 | `reach` | in a find: how far out along the ground it is, 0 at the player, 1 at the shape's edge |
@@ -357,10 +357,10 @@ direction  := "look" | "move" | "facing" | "up" | "to" | "away" | "world" vec | 
 
 ## The nodes
 
-The motion nodes (`CbMotion`, `CbImpulse`, `CbForce`, `CbMove`, `CbLink`, `CbLaunch`, `CbProbe`)
-bake to the same file and are kept as they are, not maintained, until they are reworked with the
-other authoring nodes. No shipped mod uses them. What a sheet names stays a node: `CollisionShape3D`
-and `Area3D` (shapes), `Marker3D` (arrows and places), `Path3D` (paths), `CbCurve` (curves).
+A sheet is the one way to write a motion: the motion nodes (`CbMotion`, `CbImpulse`, `CbForce`,
+`CbMove`, `CbLink`, `CbLaunch`, `CbProbe`) and `CbCurve` were deleted in M268 (no shipped mod used
+them after M243). What a sheet names stays a node: `CollisionShape3D` and `Area3D` (shapes),
+`Marker3D` (arrows and places), `Path3D` (paths).
 
 ## Planned
 

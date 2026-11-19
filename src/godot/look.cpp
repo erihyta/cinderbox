@@ -30,7 +30,7 @@
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/marker3d.hpp>
 
-#include "cinderbox_motion.h" // CbMotionPart, CbCurve
+#include "cinderbox_motion.h" // CbMotionSet
 #include "cue_rules.h"
 
 #include <algorithm>
@@ -1462,8 +1462,8 @@ std::shared_ptr<ItemLook> ItemLook::FromScene( Node* root )
 			}
 		}
 		else if ( n == root || Object::cast_to<CollisionShape3D>( n ) != nullptr || Object::cast_to<Area3D>( n ) != nullptr ||
-				  Object::cast_to<Marker3D>( n ) != nullptr || Object::cast_to<CbMotionPart>( n ) != nullptr ||
-				  Object::cast_to<CbCurve>( n ) != nullptr || n->get_class() == String( "Node3D" ) || n->get_class() == String( "Node" ) )
+				  Object::cast_to<Marker3D>( n ) != nullptr || Object::cast_to<CbMotionSet>( n ) != nullptr ||
+				  n->get_class() == String( "Node3D" ) || n->get_class() == String( "Node" ) )
 		{
 			// (The simulation's: its body, its shapes, its motions; or places and groups.)
 		}

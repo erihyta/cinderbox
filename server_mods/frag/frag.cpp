@@ -4,7 +4,7 @@
 // What throwing is (a key, how hard, what leaves the hand, when, how long the fuse) is not in this
 // file: the grenade is an item (client/prefabs/frag.tscn, a CbItem) that goes to slot 6, whose own
 // key (H), or the use button with it selected, plays its throw on the left arm (its animation pack); the throw clip's marker,
-// frag.release, lets go of the grenade the player carries (a CbLaunch of the one carried), with
+// frag.release, lets go of the grenade the player carries (a sheet's launch carried), with
 // 2.5 s to live. It bounces and rolls as its body says. When its time is up the simulation sets it
 // off where it is, as its sheet says (client/prefabs/frag.rules: a motion the grenade owns): it says
 // frag.blast, blows a hole in a wall near it and throws what is loose; and it says

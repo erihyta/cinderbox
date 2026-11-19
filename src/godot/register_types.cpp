@@ -90,18 +90,8 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbItem );
 	GDREGISTER_CLASS( cb::gd::CbViewCamera );
 	GDREGISTER_CLASS( cb::gd::CbLinkLook );
-	// Motions: what a mod adds to how players move, baked for the simulation.
-	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbMotionPart );
+	// Motions: what a mod adds to how players move, a rules sheet's blocks baked for the simulation.
 	GDREGISTER_CLASS( cb::gd::CbMotionSet );
-	GDREGISTER_CLASS( cb::gd::CbCurve );
-	GDREGISTER_CLASS( cb::gd::CbMotion );
-	GDREGISTER_CLASS( cb::gd::CbProbe );
-	GDREGISTER_CLASS( cb::gd::CbMove );
-	GDREGISTER_CLASS( cb::gd::CbLaunch );
-	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbMotionEffect );
-	GDREGISTER_CLASS( cb::gd::CbImpulse );
-	GDREGISTER_CLASS( cb::gd::CbForce );
-	GDREGISTER_CLASS( cb::gd::CbLink );
 	// HUD nodes that read the mods' board.
 	GDREGISTER_CLASS( cb::gd::CbFieldLabel );
 	GDREGISTER_CLASS( cb::gd::CbFieldBinding );

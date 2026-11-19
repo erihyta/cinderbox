@@ -484,7 +484,7 @@ checks hold and do not: [Workshop items and packs](#workshop-items-and-packs)).
 | `CbRules` | a sheet (`.rules`) beside the scene: its rules become reactions, predictions and HUD lines when the scene is used; its motion blocks are baked ([docs/rules-language.md](docs/rules-language.md)) |
 | `CbItem` | the root of an item's scene: kind, name, mass, properties, first-person view, where the hands hold it (two markers); with the `CollisionShape3D` under it, baked to `items/<kind>.cfg` |
 | `CbLinkLook` | the scene a motion probe's line is drawn as, stretched from the player's socket to the line's end (`FrameEntity::linkEnd`) |
-| `CbMotionSet` | not a look: a mod's motions, as a sheet's motion blocks, baked to `motions/<set>.cfg` ([docs/motions.md](docs/motions.md)). The motion nodes (`CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`) still bake but no content uses them ([ROADMAP.md](ROADMAP.md#3c-groundwork) deletes them) |
+| `CbMotionSet` | not a look: a mod's motions, as a sheet's motion blocks, baked to `motions/<set>.cfg` ([docs/motions.md](docs/motions.md); the baking: `sheet_motions.cpp`). The motion nodes (`CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`) and `CbCurve` were deleted in M268 |
 | `CbFieldLabel`, `CbFieldBinding`, `CbPromptLabel` | HUD from fields, for their subject: the local player, or the entity of the list row they are in |
 | `CbList`, `CbKey` | a row per player, item, slot or event, copied from the row designed as its child, filtered and sorted by expressions (a scoreboard is a scene, not a node); a viewer key that holds a `ui.` value at 1 while on, freeing the cursor if it says so |
 | `CbClick` | what a click on a control does: sets `ui.` values (the viewer's own, unknown to any simulation) and sends an intent for the player's slots. With slots in the frame, a list of slots and a free cursor, an inventory screen is a scene |
@@ -560,7 +560,7 @@ knows where items are.
 |---|---|---|
 | Unit and scenario tests | `tests/test_main.cpp` (`cb_tests`) | map format, commands, movement, motions, events, state machines, poses, hitboxes, items, the frame codec, snapshots, rollback, the hybrid without a network |
 | Network tests | `tests/net_test.cpp` (`cb_net_tests`) | sessions over loopback and a lossy link, both models, mods end to end, sources, the crowd bench |
-| Headless Godot checks | `godot/addons/cinderbox_maps/check_*.gd` (29) | reactions, predictions, the scene guard, the pack validator, the track player, the pose winning over Godot animation, retargeting, movement, motion bakes, the menu |
+| Headless Godot checks | `godot/addons/cinderbox_maps/check_*.gd` (28) | reactions, predictions, the scene guard, the pack validator, the track player, the pose winning over Godot animation, retargeting, movement, motion bakes, the menu |
 | Tools | `cb_bot`, `cb_netsim`, `cb_replay` | bots (full ones run the real client), a UDP relay that degrades traffic, replay verification, view file summaries |
 
 **CI** (`.github/workflows/determinism.yml`), on every push:

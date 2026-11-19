@@ -200,10 +200,10 @@ const StringName& Lean()
 }
 
 // What only a holder makes sense of: a reaction about the one who holds it, a prediction (the
-// holder's press), the motion nodes (baked for the simulation; nothing in the game).
+// holder's press).
 bool AboutHolder( Node* node )
 {
-	if ( node->is_class( "CbPrediction" ) || node->is_class( "CbMotionPart" ) )
+	if ( node->is_class( "CbPrediction" ) )
 	{
 		return true;
 	}
@@ -309,7 +309,6 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 		{
 			node->set_meta( kForOthers, true );
 			TypedArray<Node> found = node->find_children( "*", "CbPrediction", true, false );
-			found.append_array( node->find_children( "*", "CbMotionPart", true, false ) );
 			for ( int64_t i = 0; i < found.size(); ++i )
 			{
 				if ( Node* n = Object::cast_to<Node>( found[i] ); n != nullptr && n->is_queued_for_deletion() == false )

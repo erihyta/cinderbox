@@ -3859,7 +3859,7 @@ void TestDash()
 
 // Thrown from the hand across the wire, behind 100 ms: the impact grenade (the grenade mod: off by
 // default, and tests run every mod) is an item the player carries (slot 7); its key plays the throw on the left arm, and the clip's marker lets go of the one
-// carried (a CbLaunch of the one carried). The client's own simulation throws it on the tick the
+// carried (a sheet's launch carried). The client's own simulation throws it on the tick the
 // server does, where and as the server has it, and it flies the same way in both: nothing about it
 // is corrected. What it does when it lands is the mod's C++ on the server: it goes off
 // (grenade.blast) and is gone; and the mod gives a new one a little after.
