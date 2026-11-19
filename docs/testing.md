@@ -137,6 +137,15 @@ every mod's and character's project. Not there: `check_menu` (a window and a ser
 first; Godot crashes as it quits after a project's first import with the extension loaded (found
 in M269, older than it; not after a later import), so that step's exit code is not asked.
 
+**Sanitizers** (M270): `.github/workflows/sanitizers.yml`, Linux, Clang, on the same pushes: every
+test built with AddressSanitizer and UndefinedBehaviorSanitizer (leaks found too; undefined
+behaviour stops the test), and the network tests built with ThreadSanitizer. `-DCB_SANITIZE=address,undefined`
+or `thread` builds any preset so (Clang or GCC, Linux or macOS). Both run with `CB_NO_TIMING_CHECKS=1`;
+the TSan job fails on a race reported, not on a session that ran too slowly under it (a few do). Left
+out on purpose: ENet's undefined-behaviour checks (it takes a field's offset through a null
+pointer), and ozz's and Box3D's copies of nothing from no buffer; flecs is built without its
+allocation counters (plain globals that its worlds on several threads raced on).
+
 Box3D is fetched with five local patches in `cmake/patches/` (each in DESIGN.md, Determinism):
 three keep its snapshots free of padding, stack bytes and addresses (`box3d-snapshot-padding`,
 `box3d-snapshot-free-contacts`, `box3d-mesh-cache-zero`), one makes ARM64's clamps return the zero

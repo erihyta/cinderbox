@@ -468,8 +468,8 @@ void Simulation::SaveState( std::vector<uint8_t>& out, bool compact, uint32_t on
 
 	ecs_world_t* world = m_world.c_ptr();
 	std::vector<uint8_t> description;
-	const int transformIndex = compact ? SnapIndex( m_world.component<Transform>().id() ) : -1;
-	const int velocityIndex = compact ? SnapIndex( m_world.component<Velocity>().id() ) : -1;
+	const int transformIndex = compact ? SnapIndex( IdOf<Transform>() ) : -1;
+	const int velocityIndex = compact ? SnapIndex( IdOf<Velocity>() ) : -1;
 	uint32_t count = 0;
 	for ( const EntityRef& ref : m_entities )
 	{
@@ -605,20 +605,17 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 
 	PhysicsArena::Scope scope( *m_arena );
 	m_followsServer = true;
-	m_world.component<StandIn>();
-	m_world.component<StateBody>();
-	m_world.component<PuppetState>();
-	const int physicsIndex = SnapIndex( m_world.component<PhysicsBody>().id() );
-	const int ragdollIndex = SnapIndex( m_world.component<RagdollBodies>().id() );
-	const int pusherIndex = SnapIndex( m_world.component<Pusher>().id() );
-	const int heldIndex = SnapIndex( m_world.component<HeldItem>().id() );
-	const int transformIndex = SnapIndex( m_world.component<Transform>().id() );
-	const int velocityIndex = SnapIndex( m_world.component<Velocity>().id() );
+	const int physicsIndex = SnapIndex( IdOf<PhysicsBody>() );
+	const int ragdollIndex = SnapIndex( IdOf<RagdollBodies>() );
+	const int pusherIndex = SnapIndex( IdOf<Pusher>() );
+	const int heldIndex = SnapIndex( IdOf<HeldItem>() );
+	const int transformIndex = SnapIndex( IdOf<Transform>() );
+	const int velocityIndex = SnapIndex( IdOf<Velocity>() );
 	// A puppet's (M253): what its client keeps of its own (PuppetView), by snapshot index.
 	uint32_t puppetLocal = 0;
-	for ( const flecs::entity_t id : { m_world.component<Transform>().id(), m_world.component<Velocity>().id(), m_world.component<Character>().id(),
-									   m_animId, m_motionId, m_world.component<MoveOverrides>().id(), m_world.component<MoveEffects>().id(),
-									   m_world.component<MoveValues>().id(), m_world.component<ModDriven>().id() } )
+	for ( const flecs::entity_t id : { IdOf<Transform>(), IdOf<Velocity>(), IdOf<Character>(),
+									   m_animId, m_motionId, IdOf<MoveOverrides>(), IdOf<MoveEffects>(),
+									   IdOf<MoveValues>(), IdOf<ModDriven>() } )
 	{
 		const int i = SnapIndex( id );
 		puppetLocal |= i >= 0 ? uint32_t( 1 ) << i : 0;

@@ -966,6 +966,7 @@ void TestCharacterItem()
 		size_t size = 0;
 		mz_zip_writer_finalize_heap_archive( &zip, &data, &size );
 		std::string bytes( static_cast<const char*>( data ), size );
+		mz_free( data ); // (the archive is the caller's once finalized: LeakSanitizer, M270)
 		mz_zip_writer_end( &zip );
 		return bytes;
 	};
@@ -6588,7 +6589,7 @@ void TestPhysicsAlone()
 	};
 	std::map<uint32_t, Bodies> bodies;
 	std::map<uint32_t, uint64_t> worlds; // its Box3D physics world's hash after that tick
-	size_t events[4] = {}, pushers = 0;
+	size_t events[256] = {}, pushers = 0; // (by PhysicsEventType: four of them counted here, M270: past them it wrote out of the array)
 	{
 		std::vector<std::unique_ptr<mods::ServerMod>> extra;
 		extra.push_back( std::make_unique<KillNowAndThenMod>() );

@@ -667,6 +667,14 @@ private:
 	void RegisterComponents();
 	template <typename T>
 	void RegisterSnapComponent();
+	// A component's id in this world, registered at construction (M270). world.component<T>()
+	// registers again on every call, writing flecs' statics for the type: two simulations doing it
+	// on two threads at once raced (ThreadSanitizer, the network tests' clients).
+	template <typename T>
+	flecs::entity_t IdOf() const
+	{
+		return flecs::_::type<T>::id( m_world.c_ptr() );
+	}
 
 	void BuildLevel();
 	// A new entity with the next NetId of its side (SimGlobals::nextNetId): the characters' for a

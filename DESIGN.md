@@ -577,8 +577,10 @@ knows where items are.
   with each of its builds and runs on to the reference's final hash.
 - **The Godot checks** (M269): `.github/workflows/godot.yml` builds the viewer extension on Windows
   and runs them headless (`scripts/godot_checks.sh`; not the menu, the packs or the item preview).
+- **Sanitizers** (M270): `.github/workflows/sanitizers.yml` runs every test under ASan and UBSan,
+  and the network tests under TSan (Linux, Clang; `CB_SANITIZE`).
 - **Not covered by CI**: Linux ARM64; the extensions on Linux and macOS; a Godot client
-  against a server built by another compiler; sanitizers. Every line of `cb_tests`' and
+  against a server built by another compiler. Every line of `cb_tests`' and
   `cb_net_tests`' tables is registered (M263). Details:
   [docs/testing.md](docs/testing.md).
 

@@ -1,0 +1,60 @@
+# Every test under AddressSanitizer and UndefinedBehaviorSanitizer, and the network tests under
+# ThreadSanitizer (the server's state threads, the clients' threads in the tests). Linux, Clang.
+# Sanitized code is 2 to 15 times slower: the network tests' late-input limits are off
+# (CB_NO_TIMING_CHECKS), as on the shared macOS runner.
+name: sanitizers
+
+on:
+  push:
+    paths-ignore: ['**.md']
+  pull_request:
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitize:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: asan-ubsan, sanitize: 'address,undefined' }
+          - { name: tsan-net, sanitize: thread }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake --preset unix-clang-release -B build/san -DCB_BUILD_GODOT=OFF -DCB_SANITIZE=${{ matrix.sanitize }}
+          cmake --build build/san
+
+      - name: Test
+        shell: bash
+        env:
+          CB_NO_TIMING_CHECKS: '1'
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          if [[ "${{ matrix.name }}" == tsan-net ]]; then
+            # Under TSan the network sessions run 5 to 15 times slower: a few of their checks of how
+            # far a client got in so many seconds fail there with no race. This job is for races:
+            # it fails on a report of one (TSan stops the test with it), not on a slow session.
+            ctest --test-dir build/san --output-on-failure --timeout 1800 -R '^net_' > ctest.txt 2>&1 || true
+            tail -n 40 ctest.txt
+            if grep -q "WARNING: ThreadSanitizer" ctest.txt; then
+              grep -A 40 "WARNING: ThreadSanitizer" ctest.txt | head -n 400
+              exit 1
+            fi
+          else
+            ctest --test-dir build/san --output-on-failure --timeout 1800
+          fi

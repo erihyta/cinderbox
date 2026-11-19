@@ -115,6 +115,20 @@ unset(CMAKE_POLICY_VERSION_MINIMUM)
 # on x64 and NEON on ARM64, which do not round alike. Found by the pose hash on macOS (M62).
 target_compile_definitions(ozz_base PUBLIC OZZ_BUILD_SIMD_REF)
 
+# flecs counts its allocations in plain globals, which worlds on several threads (the tests'
+# clients) raced on (ThreadSanitizer, M270); nothing here reads the counts.
+target_compile_definitions(flecs_static PRIVATE FLECS_DISABLE_COUNTERS)
+
+# Under UBSan (CB_SANITIZE, M270): the dependencies' idioms that are undefined only on paper, left
+# alone: ENet takes a field's offset through a null pointer (its whole UBSan is off: leaving out
+# the null check alone did not quiet it), ozz and Box3D copy nothing from no buffer. Our own code
+# is held to all of it.
+if(CB_SANITIZE MATCHES "undefined")
+	target_compile_options(enet PRIVATE -fno-sanitize=undefined)
+	target_compile_options(ozz_base PRIVATE -fno-sanitize=nonnull-attribute)
+	target_compile_options(box3d PRIVATE -fno-sanitize=nonnull-attribute)
+endif()
+
 # ozz builds with warnings-as-errors; a newer compiler must not break our build.
 foreach(t ozz_base ozz_animation ozz_animation_offline ozz_options ozz_geometry)
 	if(TARGET ${t})
