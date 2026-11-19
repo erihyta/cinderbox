@@ -4,8 +4,12 @@
 name: determinism
 
 on:
+  # A push that changes only Markdown builds and tests nothing new (no test or build step reads
+  # a .md file): skipped. Run it by hand (workflow_dispatch) when wanted.
   push:
+    paths-ignore: ['**.md']
   pull_request:
+    paths-ignore: ['**.md']
   workflow_dispatch:
 
 concurrency:

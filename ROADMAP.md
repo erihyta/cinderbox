@@ -76,7 +76,7 @@ Which steps launch needs: [the road](#the-road).
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
-| 3c | [Groundwork](#3c-groundwork) | **in progress**: the pack check (M262) and the tests' registration (M263) done; about a day each | yes, first: every later step leans on it |
+| 3c | [Groundwork](#3c-groundwork) | **in progress**: the pack check (M262), the tests' registration (M263), CI skipping docs (M264) done; about a day each | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **next**: an arena brawler | yes: the test of everything else |
 | 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
@@ -208,7 +208,7 @@ Each is about a day or less.
 | Two Linux CI jobs: ASan and UBSan running every test; TSan running the `net_*` tests (with `CB_NO_TIMING_CHECKS=1`: TSan is 5 to 15 times slower, too slow for the late-input limits) | thread safety rests on comments: a new thread for each state (`GameServer::m_making`), `FinishStates( true )` in seven places, `ItemsOf` rebuilding a `mutable` index inside a const method |
 | Reading a snapshot or a server's image fails with an error, never `std::abort()` | a malformed welcome aborts the client (`Simulation::LoadPortable` through `Reader::Take` and `DeserializeEcs`); `bytes.h`'s `ByteReader` already fails softly, `simulation.cpp` has a second reader that aborts |
 | Lag compensation capped by the client's measured round trip | `seenBack` is capped at the server's 500 ms only (`game_server.cpp:1334`, `Simulation::SeenAt`), so any client may always claim the full 500 ms |
-| CI skips pushes that change only Markdown | M261.5 to M261.8 each started two runs of six jobs, about 20 minutes each, for docs alone |
+| **Done (M264)**: CI skips pushes that change only Markdown (`paths-ignore: ['**.md']`; run by hand with `workflow_dispatch`) | M261.5 to M261.8 each started two runs of six jobs, about 20 minutes each, for docs alone |
 | Find out why lag compensation disagrees with the attacker's screen when the game stalls | M261.10: with the whole process frozen about 150 ms every second or so (a busy machine), `net_brawl_lag_compensation` still fails 2 runs in 6: jabs whose input came on time and within the 500 ms the server keeps, judged against what the attacker's game showed, hit what it saw out of reach or miss what it saw in reach. Either the test measures the screen wrongly during a catch-up, or a player whose game hitches gets judged against the wrong past. Never seen without stalls, nor yet on CI |
 | A `.clang-format` and a `.clang-tidy` (the `bugprone-*` checks); `-Werror` for our own targets in CI | lower value than it looked: `clang-tidy`'s `bugprone`, `performance` and `concurrency` checks on ten core files found about 60 things, none that matter (the byte comparisons are of structs asserted free of padding) |
 | Delete the motion nodes (`CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`) and `CbCurve`, after moving `BakeSheetMotion` to a file of its own | no shipped content uses them; `BakeSheetMotion` (the sheet's bake) lives beside them in `cinderbox_motion.cpp` |
