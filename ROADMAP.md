@@ -12,7 +12,8 @@ people outside the project ([the goal](#the-goal)); the plan names no version nu
 
 Rewritten after M261 (M261.6), an outside review's findings added (M261.7), shortened (M261.8); a
 second review, the pack check's hole and the owner's decisions on cooked items added (M261.9);
-the macOS test's run made steady (M261.10); the repository moved out of OneDrive (M261.11).
+the macOS test's run made steady (M261.10); the repository moved out of OneDrive (M261.11); the pack
+check tightened (M262).
 Statements about what exists were checked against the code at `3d67daf` (M261.8's merge); what is
 planned says so. Detail of finished steps is in the history.
 
@@ -23,11 +24,11 @@ planned says so. Detail of finished steps is in the history.
 | The simulation | flecs and Box3D, deterministic on six builds (Windows: Clang, GCC, MSVC; Linux: GCC, Clang; macOS arm64: Clang); CI compares snapshots and the pose hash across all of them |
 | Netcode | an authoritative server, two network models (the server's choice). **Hybrid** (the default since 2026-11-01): every client steps the physics from the server's events, never sent as state; other characters are puppets of a few bytes; your own is predicted; lag compensation. **Inputs**: every client simulates everything from everyone's inputs. Replays, view files, bots, a network simulator, a chaos test |
 | Scale | 1023 players a server; 255 fighting in one crowd hold 60 Hz on the server and draw at 47 frames a second; 1023 in one crowd run below 60 Hz ([docs/scaling.md](docs/scaling.md)) |
-| The client | Godot 4.7 with the engine as a GDExtension; draws whatever a source hands it (a server, a replay, a view file) and is meant to run no mod's code (a script hidden in a pack runs today: Looks, below); every body drawn one way, through the RenderingServer (M260) |
+| The client | Godot 4.7 with the engine as a GDExtension; draws whatever a source hands it (a server, a replay, a view file) and runs no mod's code (packs are checked before Godot loads them: Looks, below); every body drawn one way, through the RenderingServer (M260) |
 | Bodies | a character per body, any skeleton, possession of a body or a prop, NPCs a mod drives on the server's navigation mesh |
 | Animation | Godot AnimationTrees baked to a deterministic subset (blend spaces, TimeScale, crossfade curves, OneShot, Add2, nested machines) that the simulation runs; packs and overlays items bring; far bodies posed less often (M259) |
 | Rules | 24 server mods in C++, compiled into the server, 18 on by default. What moves bodies is in sheets every simulation runs, so it is predicted: brawl, dash, flight, grapple, frag, grenade, cannon. The bat and the guns are still C++ with hand-written predictions |
-| Looks | reactions, predictions and HUD lines in sheets; workshop items are Godot packs, checked by a pack validator and a scene guard. **The validator can be bypassed** (M261.9): a script in a pack runs when Godot loads it, before the guard sees it ([3c](#3c-groundwork), [6b](#6b-cooked-items)) |
+| Looks | reactions, predictions and HUD lines in sheets; workshop items are Godot packs, checked by a pack validator and a scene guard. The validator was bypassed by an escaped script name (found in M261.9); tightened in M262. Godot's parsers still read strangers' files until [6b](#6b-cooked-items) |
 | The world | props, destructible walls, items, containers; maps baked from Godot scenes |
 | Modding | a Godot project per mod, made from the SDK; Test mod (build, publish, play in one step); a look published again is taken up live; workshop items found by hash, never sent over the game connection; the store is a folder; the editor knows a mod's names after a server build |
 | Tests | 174 tests in `ctest`, all passing, and 29 Godot checks (`check_*.gd`); the determinism CI after every push (M261.8's merge went red on macOS: `net_brawl_lag_compensation` short of strikes there, made steady in M261.10). Four tests in `cb_tests`' table are not registered (they pass when run: 2026-11-17) |
@@ -75,7 +76,7 @@ Which steps launch needs: [the road](#the-road).
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
-| 3c | [Groundwork](#3c-groundwork) | **next**: about a day each | yes, first: every later step leans on it |
+| 3c | [Groundwork](#3c-groundwork) | **in progress**: the pack check done (M262); about a day each | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **next**: an arena brawler | yes: the test of everything else |
 | 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
@@ -90,8 +91,8 @@ Which steps launch needs: [the road](#the-road).
 | | [Before launch](#before-launch) | open | yes |
 | | [A thousand in one crowd](#a-thousand-in-one-crowd) | later | no: 255 in one fight hold 60 Hz today |
 
-- **Groundwork first**: the pack check can be bypassed, four tests never ran, a malformed welcome
-  aborts the client, and thread safety rests on comments. Each fix is about a day, and every later
+- **Groundwork first**: the pack check could be bypassed (tightened: M262), four tests never ran, a
+  malformed welcome aborts the client, and thread safety rests on comments. Each fix is about a day, and every later
   step leans on them.
 - **Cooked items before anyone else's items**: a Godot pack from a stranger can run code today
   (M261.9). Until 6b, the alpha loads official items only.
@@ -127,7 +128,7 @@ Which steps launch needs: [the road](#the-road).
 | **Nodes never grow with players** (2026-11-17) | every visual that comes with an entity is drawn through the RenderingServer; nodes are a fixed set (the HUD's frame, menus, the camera) and fixed pools (sound voices); lists make only the rows in view | [step 6b](#6b-cooked-items), DESIGN.md |
 | **Not on Steam** (2026-11-17, the working assumption) | no Steam Workshop: the store is Cinderbox's own | [step 6b](#6b-cooked-items), [parked](#parked) |
 | **The repository out of OneDrive** (2026-11-19) | moved to a plain folder (`C:\Cinderbox_Dev\cinderbox`, a fresh clone of `main`), GitHub the backup; the paid assets copied beside it, still outside git. Every text file is LF in the working copy whatever `core.autocrlf` says (`.gitattributes`): a clone with CRLF published every item under another hash | M261.11 |
-| **GDScript stays in the shipped game, for now** (2026-11-17) | taking it out (export templates built without it, the game's own scripts moved into the extension) is postponed: once no mod content is a Godot pack, content cannot reach a script engine. Until then the tightened pack check ([3c](#3c-groundwork)) is the only guard | [3c](#3c-groundwork), [6b](#6b-cooked-items) |
+| **GDScript stays in the shipped game, for now** (2026-11-17) | taking it out (export templates built without it, the game's own scripts moved into the extension) is postponed: once no mod content is a Godot pack, content cannot reach a script engine. Until then the tightened pack check (M262) is the only guard | [3c](#3c-groundwork), [6b](#6b-cooked-items) |
 
 **Open:**
 
@@ -201,7 +202,7 @@ Each is about a day or less.
 
 | What | Why |
 |---|---|
-| **The pack check tightened** (the stopgap until [6b](#6b-cooked-items)): text resources refused in packs (exports already write binary `.scn`); any backslash refused in `.remap` and `.import` files; any pack file refused whose `res://` path already exists outside the moddable folders, Godot's converted copies (`.godot/exported`, `.godot/imported`) included. `check_mod_validator.gd` builds each case as a hostile pack | **found in M261.9**: `boot.gd`'s `check_mod` searches raw bytes for script names, but Godot decodes `\u` escapes in text resources first, so an escaped `GDScript` type passes, and its `_init` runs inside `ResourceLoader.load`, before the scene guard (reproduced in the game: a player's mod replacing `ui/hud.tscn` ran code at startup). An escaped `res://` in a `.remap` passes too and redirects to any file of the game. The validator also accepts any file under `.godot/exported` and `.godot/imported`, where the base game's own converted files live (read in the code, not run) |
+| **Done (M262): the pack check tightened** (the stopgap until [6b](#6b-cooked-items)): text resources refused (exports write binary ones); a redirect may hold no backslash, no key an export does not write and no value that builds an object, and points only at a converted file of the pack named by the MD5 of its own file's path; every converted file must be named by one; a binary resource's header and external resources read (no script class; each external resource a typed file in the moddable folders, and not by another file's id, which Godot follows first); a binary sample or font checked as a resource. `check_mod_validator.gd` builds each case as a hostile pack (15 new) | **found in M261.9**: an escaped `GDScript` type in a text resource passed the search of the bytes and ran inside `ResourceLoader.load`; an escaped `res://` redirected anywhere; any file under `.godot/exported` and `.godot/imported` was accepted. **Changed from the plan**: not "any file whose path exists in the game": a player's restyle replaces the game's own converted copy of a moddable file (`example_neon`'s `prefabs/prop_box.tscn`), so a converted file is tied to its redirect's file instead |
 | Register the four tests that never ran (`motion_order`, `motion_regular`, `motion_amounts`, `motion_inspector`), and make CMake's list from the C++ table so the two cannot drift | they are in `test_main.cpp`'s table but not in `tests/CMakeLists.txt`: `ctest` and CI never ran them. All four pass when run (2026-11-17) |
 | The viewer extension built and the 29 Godot checks run in CI (Windows, headless) | the client's half has no CI; Godot runs headless here without trouble |
 | Two Linux CI jobs: ASan and UBSan running every test; TSan running the `net_*` tests (with `CB_NO_TIMING_CHECKS=1`: TSan is 5 to 15 times slower, too slow for the late-input limits) | thread safety rests on comments: a new thread for each state (`GameServer::m_making`), `FinishStates( true )` in seven places, `ItemsOf` rebuilding a `mutable` index inside a const method |
@@ -255,7 +256,7 @@ Strangers play the slice on one official server, every week. Steps 9 to 11 come 
 | **Updates**: a build players download, and a way to get the next one (not Steam: 2026-11-17) | the server refuses any other protocol version (`kProtocolVersion`) or build: every protocol change locks out the old game |
 | The official server's address handed out (a link, or typed) | how players find servers is decided later; one server needs no list |
 | The alpha's build joins only the official server's address | a stranger's server is not safe to join until [before launch](#before-launch)'s decoders are fuzzed; a rule players are asked to keep is not a defence |
-| Official items only, and the pack check tightened ([3c](#3c-groundwork)) | a stranger's Godot pack can run code until [6b](#6b-cooked-items); players' own mods stay a risk they take ("install only what you trust") |
+| Official items only (the pack check tightened: M262) | a stranger's Godot pack is read by Godot's parsers until [6b](#6b-cooked-items), and no check makes them safe against a malformed file; players' own mods stay a risk they take ("install only what you trust") |
 | A place to hear back from players | what they run into is the next milestone |
 | Proposed by the second review (2026-11-17): crash reports from the game and the server; every official session recorded (`--record`); the server restarted and logged by itself; a refusal that says "update required" with where to download; third-party licence notices in the build | an invariant that fails calls `abort()` and nobody hears of it; a recording replays any bug; the licences of Box3D, flecs, ozz, ENet, Recast, godot-cpp and Godot (MIT and zlib) ask for their notices in what is shipped, and none are today |
 
@@ -311,7 +312,7 @@ its format's version, and the compiler reads older ones, so words can still be a
 |---|---|
 | **First: the sheet compiler as a plain C++ library**, with no Godot types, like `src/expr`; the first part of the single cooker ([6b](#6b-cooked-items)). Today a sheet is read twice: `ParseRules` (1,198 lines, `cue_rules.cpp`) into Godot Dictionaries in the editor, then `BakeSheetMotion` (`cinderbox_motion.cpp`) writes a second text format that every simulation parses (`CompileMotionSet`, 957 lines, `motions.cpp`) | the server then reads sheets (and their names) itself; sheet tests run headless; the formatter and errors as you type share the one parser. The language's words are kept by hand in step across the parsers: the list of directions is written three times (`motions.cpp:151`, `cinderbox_motion.cpp:116`, `cue_rules.cpp:391`) |
 | **A resource on its node**: `CbSheet`, plain text in a `.cbsheet` file, read and written by the extension's own loader and saver (as `.gd` and `.gdshader` are); a property on the node (`CbItem.sheet`, `CbMotionSet.sheet`, the world reactions root, the HUD root), which says which blocks it allows; may be saved inside the scene. **`CbRules` goes** | `CbRules.file` is a plain string: no UID, a rename breaks it, Godot does not see the dependency |
-| **Not Godot's script slot** | "every script is refused" is the security story (today's check has a hole, [3c](#3c-groundwork); cooked items end it, [6b](#6b-cooked-items)); a script language through GDExtension is a large, fragile API for two features |
+| **Not Godot's script slot** | "every script is refused" is the security story (the check, tightened in M262, still lets Godot parse strangers' files; cooked items end that, [6b](#6b-cooked-items)); a script language through GDExtension is a large, fragile API for two features |
 | **Where each block runs, marked**: simulated blocks and the viewer's in separate sections (or files); one indentation rule (it counts) | today four languages share a file: `motion` and `use` (simulated, indentation counts), `on` and `while` (reactions), `predict`, and `show` / `text` / `bind` (HUD) |
 | **Names in the sheet**: `field brawl.combo int`, `event brawl.jab.hit`; the server reads them from the pack | the editor waits for a server build |
 | **Parameters**: `param damage 8`, shown in the inspector, read by the server's rules | numbers written twice (the bat) |
@@ -616,7 +617,7 @@ Test locally would open.
 
 | What | Why | State |
 |---|---|---|
-| **The cooked-item reader fuzzed, files limited in size** | after [6b](#6b-cooked-items) an item is read by our reader alone (and the Ogg Vorbis and ozz readers behind it). Until then workshop items are Godot files on every player's machine: the validator has a hole ([3c](#3c-groundwork)), and neither it nor the guard makes Godot's parsers safe | not started (the pack check tightened: [3c](#3c-groundwork)) |
+| **The cooked-item reader fuzzed, files limited in size** | after [6b](#6b-cooked-items) an item is read by our reader alone (and the Ogg Vorbis and ozz readers behind it). Until then workshop items are Godot files on every player's machine: neither the validator (tightened: M262) nor the guard makes Godot's parsers safe | not started |
 | **Everything a client reads from a server fuzzed** | a client loads the server's whole world on join: the simulation's image (the ECS state, and Box3D's own world bytes through `b3DeserializeIntoShell`), the schema, the map, the sheets' text; then states and frames. Every decoder fuzzed, handles checked after loading. Or the game joins only official or listed servers at launch ([step 0](#0-decisions)) | not started (errors instead of aborts: [3c](#3c-groundwork)) |
 | **Terms for modders, a licence for mods** | `LICENSE` is "all rights reserved": nothing lets a modder use the SDK or says what becomes of uploads (avatars included) | not started |
 | **Updates** | | needed for [the alpha](#4b-the-alpha), described there |

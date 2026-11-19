@@ -443,9 +443,9 @@ Joining a server from the menu:
    file against its hash, then joins.
 4. Items load after the base game and **before your own mods**, which load again last, so you can
    still restyle what an item ships. Their `ui/hud_<mod>.tscn` is laid over the game's HUD.
-   Each is checked first (`boot.gd`), a check that can be bypassed today: until mod content is
-   cooked items ([ROADMAP.md](../ROADMAP.md#6b-cooked-items)), a server's items must come from people
-   you trust.
+   Each is checked first (`boot.gd`, tightened in M262); the check cannot make Godot's parsers safe
+   against a malformed file, so until mod content is cooked items
+   ([ROADMAP.md](../ROADMAP.md#6b-cooked-items)) a server's items must come from people you trust.
 
 Joining without the menu (`--host`, a link later) fetches from the store the same way; an item the
 store has not got ends the attempt, naming it.

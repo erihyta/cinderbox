@@ -43,7 +43,7 @@ looks (workshop items, no scripts) <── viewer (Godot) <── ViewFrame <─
 | Pathfinding | Recast & Detour 1.6.0, server only (a navigation mesh built at start; not part of the simulation) |
 | Client | Godot 4.7 through two GDExtensions (godot-cpp 4.5 API): a viewer and a peer |
 | Game rules | C++ server mods compiled into `cb_server` (`server_mods/`); they change the world only through commands |
-| Looks | Godot scenes in resource packs; scripts are refused by two checks, which can be bypassed today ([Workshop items and packs](#workshop-items-and-packs)) |
+| Looks | Godot scenes in resource packs; scripts are refused by two checks (the first tightened in M262: [Workshop items and packs](#workshop-items-and-packs)) |
 | Build output | `%LOCALAPPDATA%/cinderbox-build/<project folder>/<preset>`: outside OneDrive, one per checkout |
 
 | Library | Holds | Links |
@@ -376,7 +376,7 @@ cb_server announces "gun <sha256>" in the schema; a client without that exact it
 
 | Defence | When | What |
 |---|---|---|
-| The pack validator | before a pack is loaded | an allowlist: known kinds of files in known folders, redirects that stay inside, no scripts, native libraries, nested packs or script types in resources |
+| The pack validator | before a pack is loaded | an allowlist: known kinds of files in known folders; binary resources only (no text resource: Godot decodes escapes in them); redirects with no escape and no object, each to a converted file of the pack named for its own file; every converted file named by one; no scripts, native libraries, nested packs, script types or script classes in resources; a resource's external resources plain files in the moddable folders, by path and by id |
 | The scene guard (`cue_guard.*`) | before a scene is instantiated | listed node classes only, no scripts, no signal connections, node paths that stay in the scene, animations and reactions that call only listed methods, advance expressions cleared |
 | Baked files | at pack time | `pack_mod.ps1` bakes item bodies and characters from the scenes that ship, so an item is never stale |
 
@@ -385,15 +385,17 @@ cb_server announces "gun <sha256>" in the schema; a client without that exact it
 - **Load order**: base game, the server's items, then the player's own mods (which have the last word).
   Every pack is loaded with `replace_files`: an item may replace the base game's files in the moddable
   folders, and another item's.
-- **The validator can be bypassed** (found in M261.9, reproduced in the game): it searches a
-  resource's raw bytes for script names, but Godot decodes `\u` escapes in text resources first, so
-  an escaped `GDScript` type passes, and its code runs inside `ResourceLoader.load`. The scene guard
-  comes after the load (`game.gd`'s HUD, `presentation.gd`'s reactions, `cinderbox_client.cpp`'s
-  prefabs all load first), so it never sees it. An escaped `res://` in a `.remap` passes the redirect
-  check too, and the validator accepts any file under `.godot/exported` and `.godot/imported`, where
-  the base game's own converted files live (read in the code). Packs are safe only from people you
-  trust. Fixes: the check tightened ([ROADMAP.md](ROADMAP.md#3c-groundwork)); cooked items, which no
-  Godot loader reads ([ROADMAP.md](ROADMAP.md#6b-cooked-items)).
+- **The validator decides before anything loads**: the scene guard comes after the load
+  (`game.gd`'s HUD, `presentation.gd`'s reactions, `cinderbox_client.cpp`'s prefabs all load first),
+  and Godot runs a built-in script inside `ResourceLoader.load`. Until M262 an escaped `GDScript`
+  type in a text resource passed the validator's search of the bytes (found in M261.9), an escaped
+  `res://` passed its redirect check, and any file under `.godot/exported` and `.godot/imported` was
+  accepted. Since M262 it refuses text resources and escapes, reads a binary resource's external
+  resources (Godot follows an id before a path), and ties each converted file to the redirect of the
+  file it is a copy of (named by the MD5 of that file's path), so a pack replaces only what it may
+  replace anyway. What no byte check can promise is that Godot's parsers are safe against a
+  malformed binary file: cooked items, which no Godot loader reads, end that
+  ([ROADMAP.md](ROADMAP.md#6b-cooked-items)).
 - **What the guard does hold**: a scene with no script still cannot act (no `HTTPRequest`, `Timer`
   or wired signal is instantiated): every scene the game shows is instantiated through it
   (`cue::Instantiate`). The editor's item preview instantiates the mod's own reactions without it.
@@ -574,8 +576,7 @@ knows where items are.
   with each of its builds and runs on to the reference's final hash.
 - **Not covered by CI**: Linux ARM64; the Godot extensions and the Godot checks; a Godot client
   against a server built by another compiler; sanitizers; tests in `cb_tests`' table that
-  `tests/CMakeLists.txt` does not register (they pass when run, 2026-11-17); the escaped names and
-  redirects that pass the pack validator ([ROADMAP.md](ROADMAP.md#3c-groundwork)). Details:
+  `tests/CMakeLists.txt` does not register (they pass when run, 2026-11-17). Details:
   [docs/testing.md](docs/testing.md).
 
 ## Source layout
@@ -615,7 +616,7 @@ knows where items are.
 | Aiming | no marker when the shot is blocked by something the camera sees past (cover in third person); the first-person camera does not lower when crouching (crouching is an animation); the bat's strike is rays along the look from the chest, not the bat's path; bots always use the camera behind |
 | First-person body | the world is the third-person one; first person only shows copies: the body casts its shadow without being drawn, legs and arms copies are made for the eye (three poses of one skeleton), and the arms and held item are drawn by a second camera (the sun's shadow map drawn once more). Legs slide back when looking down; the view's pose is the standing upper body; most items need a `view_offset` and `view_rotation`; fingers are the clip's; a held item's shadow is of its meshes at rest; what is stowed on the body is not drawn |
 | Items | two kinds sharing a holster socket overlap |
-| Packs and servers | the pack validator can be bypassed, so a pack's script can run when Godot loads it, and a pack can replace the base game's converted files ([Workshop items and packs](#workshop-items-and-packs)); neither the checks nor the client make Godot's, ozz's or the network decoders safe against malformed files or a malicious server ([ROADMAP.md](ROADMAP.md#before-launch)) |
+| Packs and servers | the pack validator reads bytes and Godot's binary format's start, not every resource Godot would build ([Workshop items and packs](#workshop-items-and-packs)); neither the checks nor the client make Godot's, ozz's or the network decoders safe against malformed files or a malicious server ([ROADMAP.md](ROADMAP.md#before-launch)) |
 | Menu | no server browser |
 | Large files | `simulation.cpp` about 7,000 lines; `cinderbox_client.cpp` in five parts, the largest 2,150; `tests/test_main.cpp` about 13,800 ([ROADMAP.md](ROADMAP.md#housekeeping)) |
 

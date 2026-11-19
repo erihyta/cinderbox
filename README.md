@@ -9,7 +9,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | Netcode | an authoritative server, client prediction and rollback, recordings that replay |
 | Rules | C++ server mods that change the world only through commands: `inventory`, `combat`, `gun`, `melee`, `brawl`, `pickup`, `deathmatch`, `waves`, ... |
 | The rules language | what moves on screen (an item's use, a dash, a hook, a skill) is a sheet the simulation runs, so it is predicted: [docs/rules-language.md](docs/rules-language.md) |
-| Looks | Godot scenes with no scripts (reactions, predictions, HUD nodes), shipped as workshop items. The check that refuses scripts can be bypassed today: install only packs you trust ([ROADMAP.md](ROADMAP.md#3c-groundwork)) |
+| Looks | Godot scenes with no scripts (reactions, predictions, HUD nodes), shipped as workshop items. Checked for scripts before they load; Godot's parsers are not safe against malformed files, so install only packs you trust ([ROADMAP.md](ROADMAP.md#6b-cooked-items)) |
 | Bodies | a player drives a body: its own character, another character's, or a loose prop; a mod drives bodies too (NPCs), which walk the server's navigation mesh |
 | The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
 | Authoring | maps, characters, their animation trees, items and motions are made in the Godot editor and baked for the server |
