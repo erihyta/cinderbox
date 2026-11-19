@@ -126,6 +126,16 @@ Each build job (`scripts/ci_check.sh <preset> <name> <out-dir>`, also usable loc
 - uploads its hash dump, a portable snapshot and `cb_tests` for the cross-load jobs
   (`scripts/ci_cross.sh`), which also check that all dumps and snapshots are byte-identical.
 
+**The Godot checks** run in a workflow of their own, `.github/workflows/godot.yml` (M269), on the
+same pushes: Windows, the viewer extension built (`clang-release`, no tests) with the server, Godot
+downloaded from its release (checked against its SHA-512), then `scripts/godot_checks.sh <godot>
+<build dir>` (also usable locally): every check that needs no running game, in folders of its own
+(the keys page, the workshop), the viewer reading a view file the server records, and the names of
+every mod's and character's project. Not there: `check_menu` (a window and a server), `check_pack`
+(packs `pack_mod.ps1` makes), `check_item_preview` (a picture). A fresh checkout imports each project
+first; Godot crashes as it quits after a project's first import with the extension loaded (found
+in M269, older than it; not after a later import), so that step's exit code is not asked.
+
 Box3D is fetched with five local patches in `cmake/patches/` (each in DESIGN.md, Determinism):
 three keep its snapshots free of padding, stack bytes and addresses (`box3d-snapshot-padding`,
 `box3d-snapshot-free-contacts`, `box3d-mesh-cache-zero`), one makes ARM64's clamps return the zero

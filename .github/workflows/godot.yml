@@ -1,0 +1,52 @@
+# Builds the viewer extension (the Godot client's half) and runs the Godot checks headless against
+# it: the bakes, the sheets, the pack validator, the workshop, the names of every mod's project
+# (scripts/godot_checks.sh says which, and which not). Windows only: the extension is the same code
+# everywhere, and the game ships on Windows first.
+name: godot
+
+on:
+  # (As the determinism workflow: a push of Markdown alone is skipped; run it by hand when wanted.)
+  push:
+    paths-ignore: ['**.md']
+  pull_request:
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2-stable
+
+jobs:
+  checks:
+    name: godot checks (windows)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Godot
+        shell: bash
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/$GODOT_VERSION"
+          zip="Godot_v${GODOT_VERSION}_win64.exe.zip"
+          curl -fsSL -o "$zip" "$base/$zip"
+          curl -fsSL -o sums.txt "$base/SHA512-SUMS.txt"
+          grep " $zip\$" sums.txt | sha512sum -c -
+          mkdir -p "$RUNNER_TEMP/godot"
+          unzip -q "$zip" -d "$RUNNER_TEMP/godot"
+          echo "GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_VERSION}_win64_console.exe" >> "$GITHUB_ENV"
+
+      - name: Build the extension and the server
+        shell: bash
+        run: |
+          cmake --preset clang-release -B build/godot -DCB_BUILD_TESTS=OFF
+          cmake --build build/godot --target cinderbox_gd cinderbox_peer_gd cb_server
+
+      - name: Godot checks
+        shell: bash
+        run: scripts/godot_checks.sh "$GODOT" build/godot

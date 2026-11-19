@@ -575,7 +575,9 @@ knows where items are.
   motions) with `tests/reference_hashes.txt`, and its pose hash with `tests/reference_anim_hash.txt`.
 - **Cross-load**: the six portable snapshots must be byte-identical, and each OS loads each of them
   with each of its builds and runs on to the reference's final hash.
-- **Not covered by CI**: Linux ARM64; the Godot extensions and the Godot checks; a Godot client
+- **The Godot checks** (M269): `.github/workflows/godot.yml` builds the viewer extension on Windows
+  and runs them headless (`scripts/godot_checks.sh`; not the menu, the packs or the item preview).
+- **Not covered by CI**: Linux ARM64; the extensions on Linux and macOS; a Godot client
   against a server built by another compiler; sanitizers. Every line of `cb_tests`' and
   `cb_net_tests`' tables is registered (M263). Details:
   [docs/testing.md](docs/testing.md).
