@@ -46,7 +46,7 @@ from the server, and whether a player's own packs may override a server's look.
 | Text and lists | the server can put any text or rows on screen | fields are numbers (Int, Float, Bool); a mod can say lines of text on a channel (`ctx.Say`, shown by a `CbTextLog`); lists are of players, items, slots, a container's slots, events | Hytale |
 | Getting content | the server sends its assets when you join; a mod browser since Update 6 | workshop items by SHA-256, never over the game connection; the store is a folder (to be Cinderbox's own, with cooked items: 2026-11-17) | Cinderbox in design, Hytale in what exists |
 | A player's own packs | none: "one community, one client" | load last and may replace any file of a look: maps, characters, effects, HUDs | open (point 1) |
-| Trust | plugins are unrestricted Java; the client runs no mod code | looks are checked for scripts, a check that can be bypassed (M261.9; shaders pass: point 7); rules to be sandboxed Luau | the server: Cinderbox, in design. The client: Hytale, today |
+| Trust | plugins are unrestricted Java; the client runs no mod code | looks are checked for scripts (bypassed until M262 by an escaped name, M261.9; shaders pass: point 7); rules to be sandboxed Luau | the server: Cinderbox, in design. The client: Hytale, today |
 
 ### How a sheet is predicted, by network model
 

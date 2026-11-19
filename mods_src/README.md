@@ -18,15 +18,21 @@ The game checks each pack before it loads it, against an allowlist. A pack is re
   `items/`, `motions/` or Godot's converted copies (`.godot/exported`, `.godot/imported`), or a
   kind of file not on the list: scenes, resources, textures, samples, audio, fonts, rules sheets
   (`.rules`), and in the last four folders baked data (`.ozz`, `.cfg`);
-- a `.remap` or `.import` points anywhere but the pack's own converted files;
-- a resource is compressed (its contents could not be checked);
-- a resource names a script type (`GDScript`, `Script`, `GDExtension`, ...) or a script file (`.gd`, `.cs`).
+- it holds a text resource (`.tscn`, `.tres`): Godot's export writes binary ones, and Godot decodes
+  escapes in text before it reads a name, so a script could hide in one (M261.9);
+- a `.remap` or `.import` has a backslash, a key an export does not write, a value that builds an
+  object, or points anywhere but a converted file of the pack named for its own file (Godot names
+  them by the MD5 of the source path: a converted file can only replace the copy of a file the pack
+  may replace anyway);
+- a converted file is not named by one of the pack's redirects;
+- a resource is compressed (its contents could not be checked), is not Godot's binary format, has a
+  script class, or names a script type (`GDScript`, `Script`, `GDExtension`, ...) or a script file
+  (`.gd`, `.cs`);
+- a resource's external resource has no type, lies outside the folders above, or has the id of
+  another file of the game (Godot follows the id first).
 
-This check can be bypassed today (M261.9): it reads a resource's bytes as they are, while Godot
-decodes escapes in text resources first, so a script can hide from it and runs while Godot loads
-the resource. Converted copies are accepted at any path under `.godot/exported` and
-`.godot/imported`, so a pack can also replace the game's own converted files. Install packs only
-from people you trust; the fix is in [ROADMAP.md](../ROADMAP.md#3c-groundwork).
+No check makes Godot's own parsers safe against a deliberately malformed file: install packs only
+from people you trust. Cooked items end that ([ROADMAP.md](../ROADMAP.md#6b-cooked-items)).
 
 A scene is checked again before the game uses it, and is not used if it has:
 - a node of a class that is not listed (the list is in `src/godot/cue/cue_guard.cpp`: meshes,

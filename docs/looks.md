@@ -578,20 +578,20 @@ Two checks:
 
 | When | What | Checked by |
 |---|---|---|
-| Before a pack loads | only known kinds of files in these folders (and Godot's converted copies of them), redirects that stay inside the pack, no compressed resources, no resource that names a script type or a script file | `boot.gd`; `check_mod_validator.gd` runs it on real packs and hostile ones |
+| Before a pack loads | only known kinds of files in these folders (and Godot's converted copies of them, each named by the redirect of the file it is a copy of); binary resources only, never compressed, naming no script type, script file or script class, their external resources plain files in these folders; redirects with no escape (`\`) and no object | `boot.gd`; `check_mod_validator.gd` runs it on real packs and hostile ones |
 | Before a scene is used | only listed node classes (meshes, particles, lights, sounds, animation, UI controls, an `Area3D` a sheet's find reads, the `Cb*` nodes: never an `HTTPRequest`, a `Window`, a `Timer`, a viewport; a `Camera3D` is accepted and taken out of the instance, so a look never takes the view), no script, no signal wired to a method, no node path that leaves the scene, animations that call only listed methods | the scene guard (`src/godot/cue/cue_guard.h`); `check_guard.gd` |
 
 A scene the guard refuses is not instantiated (a warning says what it found); the game draws its
 plain stand-in instead. Gameplay stays in the simulation and in the server's mods, so a pack cannot
 change it.
 
-**The first check can be bypassed today** (found in M261.9): it searches a resource's bytes for
-script names, but Godot decodes escapes in text resources before it reads them, so a script can be
-hidden from it, and Godot runs that script while it loads the resource, before the scene guard sees
-anything. A pack can also replace the base game's own converted files (`.godot/exported`,
-`.godot/imported`). Until the check is tightened and mod content becomes cooked items
-([ROADMAP.md](../ROADMAP.md#6b-cooked-items)), install packs only from people you trust. No check
-promises either that Godot's own parsers are safe against a deliberately malformed file.
+**Why text resources are refused** (M262): Godot decodes escapes in a text resource before it
+reads it, so a script type spelled with an escape passed the first check's search of the bytes
+(found in M261.9), and Godot runs a built-in script while it loads the resource, before the scene
+guard sees anything. Godot's export writes binary resources, so a packed look has none. No check
+promises that Godot's own parsers are safe against a deliberately malformed binary file: until mod
+content becomes cooked items ([ROADMAP.md](../ROADMAP.md#6b-cooked-items)), install packs only from
+people you trust.
 
 1. Create a Godot project under `mods_src/<name>`. Copy `mods_src/example_neon` as a starting point.
 2. Put your files at the same paths the game uses, for example `vfx/prop_spawn.tscn`.
