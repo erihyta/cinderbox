@@ -97,6 +97,10 @@ Any change to simulation code or tuning legitimately changes them. Regenerate th
   a reference not regenerated), so the cross-load job was skipped and no build was compared with
   another for 25 milestones. They all agreed (M162 checked the dumps), but nothing said so.
 - **Tests run without the licensed assets** in CI: count what a life starts with, don't assume it.
+- **A test is its line in its runner's table** (`const Test tests[]` in `tests/test_main.cpp` and
+  `tests/net_test.cpp`): `tests/CMakeLists.txt` reads the tables and registers every line (the net
+  ones as `net_<name>`), so nothing else is edited; a line not of the shape
+  `{ "name", TestFunction },` stops the configure instead of going unregistered (M263).
 - **Net tests run every mod that runs by default.** A disabled one (the impact grenade, flight,
   sneak) only when the test names it: the mod option `test.mods` (`grenade`). The brawler's kit runs by
   default but takes the hotbar's first slots, where the tests expect the weapons: named too.
