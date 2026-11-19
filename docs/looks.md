@@ -39,7 +39,7 @@ What a world reaction adds to the [reaction fields](#reactions):
 | `shake`, `shake_time`, `flash_color`, `flash_time` | camera shake and a full-screen flash: the viewer's, so pair them with `is_local` or subject `local` |
 | a `scene` a reaction adds | is an effect: nothing in it casts a shadow, whatever its scene says. Its lights light the world as usual |
 | a reaction inside an item's scene whose subject is the holder (`^^`) | hears only while the item is in use. Put away (on the hip, on the back), it is silent: every item can answer the same cue (`item.use`) and only the one in the hand does. A reaction about the item itself (subject `^`, the default) is heard wherever the item is |
-| a copy of an item lying in the world | is its look, its body and its reactions about itself (subject `^`): what is about a holder (a reaction whose subject starts with `^^`, a prediction, the motion nodes) is taken out while nobody has it, and put back from its scene when somebody picks it up. Twenty items on the floor cost their meshes, not their reactions |
+| a copy of an item lying in the world | is its look, its body and its reactions about itself (subject `^`): what is about a holder (a reaction whose subject starts with `^^`, a prediction) is taken out while nobody has it, and put back from its scene when somebody picks it up. Twenty items on the floor cost their meshes, not their reactions |
 
 Footsteps and impacts come from the simulation, not from the renderer guessing:
 - A **footstep** is a stride, counted by distance walked, so the rate follows the speed on its own.
@@ -171,7 +171,7 @@ read: a reaction, a prediction, a HUD node, a character's state machine.
 | `motion.Hook`, `motion.grapple.hook.Use` | that motion of the player's is on (the node's name alone when it is the only one of that name) |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | a comparison: 1 or 0 (`true` / `false` are 1 / 0) |
 | `+ - * /`, `-x`, `( )` | arithmetic; dividing by 0 gives 0 |
-| `curve(Name, x)` | a curve's value at x: a motion's (a `CbCurve` beside its sheet, [rules-language.md](rules-language.md#numbers)); elsewhere 0 |
+| `curve(Name, x)` | 0 here; refused in a motion's sheet since M268 ([rules-language.md](rules-language.md#numbers)) |
 | `and` / `&&`, `or` / `\|\|` | both, either |
 | a field against a field | `combat.health <= combat.max_health / 4` |
 

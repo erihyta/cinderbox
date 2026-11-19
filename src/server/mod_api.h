@@ -178,8 +178,8 @@ struct CharacterHandle
 	}
 };
 
-// A set of motions the mod ships (sim/motions.h: CbMotion nodes baked into its item as
-// motions/<name>.cfg).
+// A set of motions the mod ships (sim/motions.h: a rules sheet's motion blocks baked into its item
+// as motions/<name>.cfg).
 struct MotionsHandle
 {
 	int index = -1;
@@ -797,7 +797,7 @@ public:
 	// Its kind (an invalid handle when it is not an item), and who holds it (0: it lies in the world).
 	ItemKindHandle ItemKindOf( uint32_t netId ) const;
 	uint32_t ItemHolder( uint32_t netId ) const;
-	// Who threw it, for an item a motion launched (a CbLaunch): the player's NetId, or 0 (nobody
+	// Who threw it, for an item a motion launched (a sheet's launch): the player's NetId, or 0 (nobody
 	// did, or it was picked up since).
 	uint32_t ThrownBy( uint32_t item ) const;
 	// What items of a kind ran into on the tick before this one: each with the item, what it hit

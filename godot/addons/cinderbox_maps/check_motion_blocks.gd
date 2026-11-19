@@ -3,9 +3,9 @@ extends SceneTree
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_motion_blocks.gd
 ##
-## A motion block in a sheet under a CbMotionSet, or under a CbItem, bakes into the same motions
-## file as the CbMotion nodes, in its version 3: steps (then when, after, a timeout), guards (if,
-## else: as conditions written into the file), ends, a move's seconds, an edge (when). The reactions
+## A motion block in a sheet under a CbMotionSet, or under a CbItem, bakes into a motions file of
+## version 3: steps (then when, after, a timeout), guards (if, else: as conditions written into the
+## file), ends, a move's seconds, an edge (when). The reactions
 ## of the same sheet are still made into nodes; the motion blocks are not. A block that cannot run
 ## refuses the bake and says its file and line. Exit code 0 when everything held.
 
@@ -16,7 +16,7 @@ var _failures := 0
 
 
 func _initialize() -> void:
-	root.add_child(_set_with(SHEET, true))
+	root.add_child(_set_with(SHEET))
 
 
 func _check(what: String, ok: bool, detail: String = "") -> void:
@@ -25,15 +25,10 @@ func _check(what: String, ok: bool, detail: String = "") -> void:
 		_failures += 1
 
 
-func _set_with(file: String, with_node: bool) -> CbMotionSet:
+func _set_with(file: String) -> CbMotionSet:
 	var set := CbMotionSet.new()
 	set.name = "Moves"
 	set.set_name = "test.moves"
-	if with_node:
-		var dash := CbMotion.new()
-		dash.name = "Dash"
-		dash.action = "dash"
-		set.add_child(dash)
 	var rules := CbRules.new()
 	rules.name = "Rules"
 	rules.file = file
@@ -47,9 +42,9 @@ func _scratch(text: String) -> void:
 	f.close()
 
 
-func _refused(what: String, text: String, says: String, with_node: bool = false) -> void:
+func _refused(what: String, text: String, says: String) -> void:
 	_scratch(text)
-	var set := _set_with(SCRATCH, with_node)
+	var set := _set_with(SCRATCH)
 	var baked: Dictionary = set.bake()
 	var error := String(baked["error"])
 	_check(what, String(baked["text"]).is_empty() and error.contains(says), error)
@@ -75,7 +70,7 @@ func _run() -> void:
 	var text := String(baked["text"])
 	_check("the set bakes", text.is_empty() == false, String(baked["error"]))
 	_check("as a file of version 3", text.begins_with("cinderbox_motions\t3\n"))
-	_check("the node's motion and the sheet's three", int(baked["motions"]) == 4, str(baked["motions"]))
+	_check("the sheet's three motions", int(baked["motions"]) == 3, str(baked["motions"]))
 	var slam := "motion\tSlam\nwhen\tpress\tslam\nif\t( not grounded )\ncooldown\t2\nduration\t3\nemit\tslam.started\n" + \
 		"impulse\tself\t25\tworld\tvertical\t0\t-1\t0\nparam\tgravity\t30\n" + \
 		"step\t0\t2\tgrounded\nemit\tslam.landed\n" + \
@@ -117,7 +112,7 @@ func _run() -> void:
 		"\t\tmove for 1 walk_speed 0\n\t\temit wave.hit\n" +
 		"motion Poke on press poke\n\tfind Cone players max 1 along look\n\t\temit poke.hit\n" +
 		"motion Near on press near\n\tif not grounded\n\t\tfind sphere 2 self\n\t\t\timpulse 3 on self along up\n\temit near.done\n")
-	var finds := _set_with(SCRATCH, false)
+	var finds := _set_with(SCRATCH)
 	var region := Area3D.new()
 	region.name = "Wave"
 	var ball := CollisionShape3D.new()
@@ -165,7 +160,7 @@ func _run() -> void:
 	_scratch("motion Grab on press grab if not linked\n\tuntil pressed.grab\n\temit grab.thrown\n" +
 		"\tcast sphere 0.5 range 10 speed 30 holds bodies players\n\t\temit grab.held\n\t\tlink length 2\n\t\timpulse 3 along up\n" +
 		"motion Swipe on press swipe\n\tcast Blade range 3\n\t\timpulse 6 along look\n")
-	var casts := _set_with(SCRATCH, false)
+	var casts := _set_with(SCRATCH)
 	var blade := CollisionShape3D.new()
 	blade.name = "Blade"
 	var flat := BoxShape3D.new()
@@ -188,38 +183,24 @@ func _run() -> void:
 	_refused("two events when it holds", "motion A on press a\n\tcast ray range 5\n\t\temit x\n\t\temit y\n", "line 4: a cast says one event")
 	_refused("a cast with no range", "motion A on press a\n\tcast ray\n", "line 2: cast SHAPE range R")
 
-	# Numbers that are expressions, and a curve drawn in a CbCurve beside the sheet.
-	_scratch("motion Wave on press wave\n\tfind sphere 6\n\t\timpulse 9 * curve(Falloff, reach) along away\n" +
+	# Numbers that are expressions. (A curve was drawn in a CbCurve beside the sheet until M268: a sheet
+	# has none now.)
+	_scratch("motion Wave on press wave\n\tfind sphere 6\n\t\timpulse 9 * wave.power along away\n" +
 		"\tforce 2 * dash.power along up\n")
-	var curves := _set_with(SCRATCH, false)
-	var falloff := CbCurve.new()
-	falloff.name = "Falloff"
-	var line := Curve.new()
-	line.add_point(Vector2(0, 1), 0, -1, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
-	line.add_point(Vector2(1, 0), -1, 0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
-	falloff.curve = line
-	curves.add_child(falloff)
-	var curve_baked: Dictionary = curves.bake()
-	var curve_text := String(curve_baked["text"])
-	_check("curves bake", curve_text.is_empty() == false, String(curve_baked["error"]))
-	var curve_line := ""
-	for each in curve_text.split("\n"):
-		if each.begins_with("curve\tFalloff\t"):
-			curve_line = each
-	var values := curve_line.split("\t")
-	_check("the curve: its domain, then 64 values from 1 to 0", values.size() == 68 and values[2] == "0" and values[3] == "1" and
-		values[4] == "1" and values[67] == "0" and absf(float(values[35]) - 0.507937) < 0.001, curve_line.substr(0, 120))
-	_check("written right after the motion's name (before what reads it)", curve_text.contains("motion\tWave\ncurve\tFalloff\t"))
+	var amounts := _set_with(SCRATCH)
+	var amount_baked: Dictionary = amounts.bake()
+	var amount_text := String(amount_baked["text"])
+	_check("expressions bake", amount_text.is_empty() == false, String(amount_baked["error"]))
 	_check("an expression where an impulse's speed is, and a force's strength",
-		curve_text.contains("impulse\tfound\t9 * curve(Falloff, reach)\taway\tnone\n") and curve_text.contains("force\tself\tup\taccel\t2 * dash.power\t0\t0\t0\n"), curve_text)
-	curves.free()
-	_refused("a curve no CbCurve has", "motion A on press a\n\timpulse curve(Nope, 1) along up\n", "line 1: curve(Nope, ...): no CbCurve named Nope")
+		amount_text.contains("impulse\tfound\t9 * wave.power\taway\tnone\n") and amount_text.contains("force\tself\tup\taccel\t2 * dash.power\t0\t0\t0\n"), amount_text)
+	amounts.free()
+	_refused("a curve", "motion A on press a\n\timpulse curve(Falloff, 1) along up\n", "line 1: curve(Falloff, ...): a sheet has no curves")
 
 	# Markers and paths drawn in the scene: a muzzle tilted 30 degrees up, an arc 4 m ahead.
 	_scratch("motion Shoot on press shoot\n\tlaunch new test.ball speed (2 * power.x) along Muzzle from Muzzle\n" +
 		"motion Sidestep on press sidestep\n\timpulse 10 along look turn (90, 0)\n" +
 		"motion Leap on press leap\n\tlasts 1\n\tmove gravity 0\n\tfollow Arc over 1\n")
-	var drawn := _set_with(SCRATCH, false)
+	var drawn := _set_with(SCRATCH)
 	var muzzle := Marker3D.new()
 	muzzle.name = "Muzzle"
 	muzzle.position = Vector3(0.3, 1.5, -0.5)
@@ -281,7 +262,7 @@ func _run() -> void:
 	# A repeat (every), and an impulse of momentum.
 	_scratch("motion Flame on press flame\n\tlasts 1\n\temit flame.on\n\tevery 0.1\n\tfind sphere 3 players\n\t\timpulse 0.6 along away\n" +
 		"\timpulse 400 along up kind momentum\n")
-	var flame := _set_with(SCRATCH, false)
+	var flame := _set_with(SCRATCH)
 	var flame_baked: Dictionary = flame.bake()
 	var flame_text := String(flame_baked["text"])
 	_check("every: what follows repeats; an impulse of momentum", flame_text.contains("emit\tflame.on\nevery\t0.1\nfind\tplayers\t0\t16\tfacing\n" +
@@ -293,7 +274,7 @@ func _run() -> void:
 	# The SDK's starter sheet (a new mod's motions) bakes, its name filled in.
 	var starter := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://").path_join("../sdk/starters/motion_set.rules"))
 	_scratch(starter.replace("MODNAME", "demo"))
-	var demo := _set_with(SCRATCH, false)
+	var demo := _set_with(SCRATCH)
 	var demo_baked: Dictionary = demo.bake()
 	_check("the SDK's starter sheet bakes", starter.is_empty() == false and String(demo_baked["text"]).contains("motion\tUse\nwhen\tpress\tdemo_use\n" +
 		"if\t( demo.charges > 0 )\ncooldown\t0.5\nchange\tdemo.charges\t-=\t1\nemit\tdemo.moved\nimpulse\tself\t10\tmove\thorizontal\nparam\tfriction\t0\t0.2\n"),
@@ -317,7 +298,7 @@ func _run() -> void:
 	_refused("a setting after a step", "motion A on press a\n\tthen when grounded\n\tcooldown 1\n", "line 3: \"cooldown\" is the motion's: before")
 	_refused("a while with steps", "motion A while flying\n\tafter 1\n\temit x\n", "a while motion has no steps")
 	_refused("on use in a motion set", "motion A on use\n\temit x\n", "line 1: on use is for an item's sheet")
-	_refused("a name a node has", "motion Dash on press a\n\temit x\n", "named Dash already", true)
+	_refused("two motions of one name", "motion A on press a\n\temit x\nmotion A on press b\n\temit y\n", "line 3: there is a motion named A already")
 	_refused("a line no motion has", "motion A on press a\n\tfly 3\n", "line 2: \"fly\" is not a line of a motion")
 	_refused("a timeout of nothing", "motion A on press a\n\temit x\n\ttimeout\n", "line 3: a timeout comes right after")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SCRATCH))
@@ -345,7 +326,7 @@ func _item_bake(text: String, kind: String, use: int = 1) -> String:
 # What a motion set's sheet bakes to (its text, or its error).
 func _set_bake(text: String) -> String:
 	_scratch(text)
-	var set := _set_with(SCRATCH, false)
+	var set := _set_with(SCRATCH)
 	var baked: Dictionary = set.bake()
 	set.free()
 	return String(baked["text"]) if String(baked["text"]).is_empty() == false else "ERROR " + String(baked["error"])

@@ -10,7 +10,7 @@
 // (tools/pack_mod.ps1), so a published item is never stale.
 //
 // A scene whose root is a CbMotionSet is baked the same way (cinderbox_motion.h), and the plugin
-// gives the motion nodes their inspector help.
+// gives it its inspector help.
 //
 // It also puts the Cinderbox nodes a mod is made of into the Favorites of the editor's Create New
 // Node dialog, so they are one list on its left instead of a search each: once per project and

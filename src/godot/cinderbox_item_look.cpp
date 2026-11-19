@@ -2,7 +2,7 @@
 
 #include "anim_graph.h"
 #include "anim_set.h"
-#include "cinderbox_motion.h"
+#include "sheet_motions.h"
 #include "cinderbox_skeleton.h"
 #include "joint_math.h"
 #include "cue_director.h"
@@ -1236,7 +1236,7 @@ Dictionary CbItem::bake() const
 		text += "hud " + m_hud + "\n";
 		text += String( "hudshows " ) + ( m_hudShows == HUD_CARRIED ? "carried" : "hand" ) + "\n";
 	}
-	// Its own motions (CbMotion nodes under it): a set named like the kind, baked beside the item.
+	// Its own motions (its sheets' motion blocks): a set named like the kind, baked beside the item.
 	{
 		String motionError;
 		if ( BakeMotions( motionError ).empty() == false )
@@ -1313,56 +1313,18 @@ Dictionary CbItem::bake_motions() const
 
 std::string CbItem::BakeMotions( String& error ) const
 {
+	// The motion blocks of its rules sheets (its use, a block "on use", takes the When used fields).
+	// (The header's words are those of the files baked before M268, when the motion nodes under an
+	// item baked here too: unchanged, so no published item's file changes.)
 	String kind = m_kind.strip_edges();
-	std::string text = "cinderbox_motions\t2\n# Baked from the CbMotion nodes of the CbItem " + std::string( kind.utf8().get_data() ) +
+	std::string text = "cinderbox_motions\t3\n# Baked from the CbMotion nodes of the CbItem " + std::string( kind.utf8().get_data() ) +
 					   ". Edit the item's scene and bake again.\n";
-	int count = 0;
-	// What using it does, made of the helper nodes under it: one motion ("Use"), with the When used
-	// fields. A rules sheet's "use" is a motion block named Use (baked below with the sheet's others),
-	// which takes the When used fields the same way.
-	std::string use = BakeItemUse( this, kind, m_use, m_useConditions, m_useChanges, m_useCooldown, m_useEmits, error );
-	if ( use.empty() && error.is_empty() == false )
-	{
-		return std::string();
-	}
-	text += use;
-	count += use.empty() ? 0 : 1;
-	// (The names of its motions: a sheet's may not take one of them.)
 	std::vector<std::string> names;
-	if ( use.empty() == false )
-	{
-		names.push_back( "Use" );
-	}
-	for ( int i = 0; i < get_child_count(); ++i )
-	{
-		auto* motion = Object::cast_to<CbMotion>( get_child( i ) );
-		if ( motion == nullptr )
-		{
-			continue;
-		}
-		std::string lines = motion->BakeWith( error, motion->ItemCondition( kind ) );
-		if ( lines.empty() )
-		{
-			return std::string();
-		}
-		text += lines;
-		count += 1;
-		names.push_back( std::string( String( motion->get_name() ).utf8().get_data() ) );
-	}
-	// The motion blocks of its rules sheets: a file of version 3 (steps, ifs, an edge).
-	std::string sheetLines;
-	size_t before = names.size();
-	if ( BakeSheetMotions( this, kind, sheetLines, names, error ) == false )
+	if ( BakeSheetMotions( this, kind, text, names, error ) == false )
 	{
 		return std::string();
 	}
-	if ( sheetLines.empty() == false )
-	{
-		text.replace( 0, std::string( "cinderbox_motions	2" ).size(), "cinderbox_motions	3" );
-		text += sheetLines;
-		count += int( names.size() - before );
-	}
-	return count > 0 ? text : std::string();
+	return names.empty() ? std::string() : text;
 }
 
 void CbItem::bake_to_project()

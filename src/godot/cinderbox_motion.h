@@ -1,478 +1,47 @@
 #pragma once
 
-// Authoring a mod's motions: what its players can do besides walking and jumping, with no code.
+// A mod's motions: what its players can do besides walking and jumping, with no code. A motion is a
+// block of a rules sheet (docs/rules-language.md); a CbMotionSet is the scene a mod's sets of them
+// live in, with its sheets under it:
 //
-// A CbReaction says: on a cue, or while conditions hold, do this to the look. A CbMotion says: on
-// a press, on a cue, or while conditions hold, do this to the mover. Same shape, same expression
-// language. The difference is where it runs: a reaction runs in the viewer; a motion is baked to
-// text, read by the server from the mod's item, sent to every client, and run by every simulation
-// (sim/motions.h). So a player's own dash starts on the tick of the press, in its own prediction,
-// and a rollback replays it.
-//
-// A motion is a trigger, and its children are what it does:
-//
-//   Moves               CbMotionSet   set_name "grapple.moves"       (motion_sets/grapple_moves.tscn)
-//   ├── Dash            CbMotion      action "dash"   conditions dash.charges > 0   changes dash.charges -= 1
-//   │   └── Push        CbImpulse     11 m/s along the move input, replacing the horizontal velocity
-//   └── Hook            CbMotion      action "grapple"   conditions not linked   until pressed.grapple
-//       ├── Line        CbProbe       40 m along the look, flying at 60 m/s: the motion happens if it finds something
-//       ├── Pull        CbForce       on the player, toward what the line found: 1900 N, ramped in, reacting
-//       └── Rope        CbLink        to what the line found: a rope, reeled in at 4 m/s
-//
-// One family: every node here is a CbMotionPart (it bakes to lines of the set's file, and says what
-// is wrong with it). The effects (CbImpulse, CbForce, CbLink) are CbMotionEffects: they share who
-// they act on (the player, what the probe found, the entity a field names) and along what.
-//
-// Under an item, the same nodes are what using it does, with no CbMotion: the item is the trigger
-// (its use and its "When used" rules), and nesting says what lives while what holds:
-//
-//   Hook                CbItem        use: its slot key (a press)   use_emits grapple.fired
-//   └── Throw           CbProbe       flies at 80 m/s; let go by using the hook again or a jump
-//       └── Rope        CbLink        to what the line found, reeled in at 4 m/s
-//           ├── Pull    CbForce       on the player, toward it
-//           └── Hanging CbMove        while it holds: gravity 0, air control 0.6
-//
-// They bake with the item into one motion named "Use" (motions/<kind>.cfg: "motion.<kind>.Use" in
-// a condition). BakeItemUse below.
+//   Moves               CbMotionSet   set_name "dash.moves"       (motion_sets/dash_moves.tscn)
+//   └── Rules           CbRules       file "res://motion_sets/dash_moves.rules"
 //
 // The set bakes to res://motions/<set_name>.cfg when its scene is saved (and when the mod is
-// published); the server mod names it: declare.Motions( "dash.moves" ). The rules stay the mod's:
-// it declares the action, the fields and the events, and decides who may (a field a condition
-// reads). In the game these nodes do nothing.
+// published); the server mod names it: declare.Motions( "dash.moves" ). The file is read by the
+// server from the mod's item, sent to every client, and run by every simulation (sim/motions.h),
+// so a player's own dash starts on the tick of the press, in its own prediction, and a rollback
+// replays it. An item's own motions are the blocks of the sheets under its CbItem, baked with it.
+//
+// Until M268 a motion could also be a tree of nodes (CbMotion, CbProbe, CbImpulse, CbForce,
+// CbLink, CbMove, CbLaunch, and CbCurve beside a sheet): withdrawn in M243, deleted in M268.
+// The baking itself: sheet_motions.h.
 
 #include <godot_cpp/classes/editor_inspector_plugin.hpp>
-#include <godot_cpp/classes/curve.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
-#include <godot_cpp/variant/vector3.hpp>
 
 #include <string>
-#include <vector>
 
 namespace cb::gd
 {
 
-// What every motion node is: something that bakes to lines of its set's file.
-class CbMotionPart;
-
-// Under a CbMotion, or anywhere under a CbItem (what using the item does).
-bool InMotion( const godot::Node* node );
-
-// What the motion-part nodes under an item (its probe, effects, CbMove nodes, at any depth, not
-// under a CbMotion) do when it is used, as one motion's lines ("motion\tUse" ...). "" with no error:
-// it has none. `use` is the item's (CbItem::Use); the rest its "When used" rules.
-std::string BakeItemUse( const godot::Node* item, const godot::String& kind, int use, const godot::PackedStringArray& conditions,
-						 const godot::PackedStringArray& changes, double cooldown, const godot::String& emits, godot::String& error );
-
-// A motion block of a rules sheet (cue_rules.h: its properties) as one motion's lines of a motions
-// file of version 3. `kind`: the item whose sheet it is (its "on use", and who may run it: whoever has
-// the item out, or carries it), empty in a motion set's. "" with `error` when it cannot be baked.
-// `from`: the node the sheet's CbRules is under (a find's node path starts there); `root`: the item
-// or the motion set being baked (a find's shape is placed in its frame).
-std::string BakeSheetMotion( const godot::Dictionary& motion, const godot::String& kind, const godot::Node* from, const godot::Node* root,
-							 godot::String& error );
-
-// A find's shape (a sheet's "find SHAPE": its properties) as "shape" lines of a motions file: the
-// convex pieces of a node of the scene (an Area3D's CollisionShape3D children, or one), in the
-// player's frame; or one written in the line, around the player's middle.
-bool FindShapeLines( const godot::Dictionary& shape, const godot::Node* from, const godot::Node* root, std::string& out, godot::String& why );
-
-// The motion blocks of the rules sheets under `node` (a CbRules at any depth), baked: their lines,
-// and their names. False with `error` ("<file> line N: why").
-bool BakeSheetMotions( const godot::Node* node, const godot::String& kind, std::string& lines, std::vector<std::string>& names,
-					   godot::String& error );
-
-class CbMotionPart : public godot::Node
-{
-	GDCLASS( CbMotionPart, godot::Node )
-
-public:
-	// This node's lines (its children's included), or "" with `error` when it cannot be baked.
-	virtual std::string Bake( godot::String& error ) const;
-	godot::PackedStringArray _get_configuration_warnings() const override;
-	// A property that holds one name (an action, an event, an item kind) offers the names there
-	// are (cue_names.h).
-	void _validate_property( godot::PropertyInfo& property ) const;
-
-protected:
-	static void _bind_methods()
-	{
-	}
-	// What is not wrong, but worth saying (a motion that does nothing yet).
-	virtual void Advice( godot::PackedStringArray& ) const
-	{
-	}
-	// Tells the editor to ask this node, and the ones above it, for their warnings again.
-	void Changed();
-	godot::String Fail( godot::String& error, const godot::String& why ) const;
-};
-
-#define CB_MOTION_FIELD( Type, name, member )                                                                                    \
-	void set_##name( const Type& v )                                                                                             \
-	{                                                                                                                            \
-		member = v;                                                                                                              \
-		Changed();                                                                                                               \
-	}                                                                                                                            \
-	Type get_##name() const                                                                                                      \
-	{                                                                                                                            \
-		return member;                                                                                                           \
-	}
-
-// The trigger: when it happens, for how long it is on, and what that changes about the player
-// itself. Its children are its probe and its effects.
-class CbMotion : public CbMotionPart
-{
-	GDCLASS( CbMotion, CbMotionPart )
-
-public:
-	enum When
-	{
-		WHEN_PRESS = 0,
-		WHEN_WHILE = 1,
-		WHEN_EVENT = 2,
-	};
-	enum Refill
-	{
-		REFILL_ON_GROUND = 0,
-		REFILL_AFTER_SECONDS = 1,
-	};
-	// Under a CbItem: who the motion is for.
-	enum With
-	{
-		WITH_IN_HAND = 0, // whoever has the item out
-		WITH_CARRIED = 1, // whoever has it, in the hand or put away
-	};
-
-	std::string Bake( godot::String& error ) const override;
-	// The same with one more condition (an item's motion: only for who has the item).
-	std::string BakeWith( godot::String& error, const godot::String& alsoIf ) const;
-	// For an item's motion: the condition that says who has the item of `kind`.
-	godot::String ItemCondition( const godot::String& kind ) const;
-
-	CB_MOTION_FIELD( int, when, m_when )
-	CB_MOTION_FIELD( godot::String, action, m_action )
-	CB_MOTION_FIELD( godot::String, event, m_event )
-	CB_MOTION_FIELD( godot::PackedStringArray, conditions, m_conditions )
-	CB_MOTION_FIELD( int, with_item, m_withItem )
-	CB_MOTION_FIELD( double, cooldown, m_cooldown )
-	CB_MOTION_FIELD( int, uses, m_uses )
-	CB_MOTION_FIELD( int, refill, m_refill )
-	CB_MOTION_FIELD( double, refill_seconds, m_refillSeconds )
-	CB_MOTION_FIELD( double, duration, m_duration )
-	CB_MOTION_FIELD( godot::PackedStringArray, until, m_until )
-	CB_MOTION_FIELD( godot::Dictionary, parameters, m_parameters )
-	CB_MOTION_FIELD( godot::PackedStringArray, changes, m_changes )
-	CB_MOTION_FIELD( godot::String, emits, m_emits )
-
-protected:
-	static void _bind_methods();
-	void Advice( godot::PackedStringArray& advice ) const override;
-
-private:
-	int m_when = WHEN_PRESS;
-	godot::String m_action;
-	godot::String m_event;
-	godot::PackedStringArray m_conditions;
-	int m_withItem = WITH_IN_HAND;
-	double m_cooldown = 0.0;
-	int m_uses = 0;
-	int m_refill = REFILL_ON_GROUND;
-	double m_refillSeconds = 1.0;
-	double m_duration = 0.0;
-	godot::PackedStringArray m_until;
-	godot::Dictionary m_parameters;
-	godot::PackedStringArray m_changes;
-	godot::String m_emits;
-};
-
-// A line thrown along the look at what is under the crosshair. One that flies is a projectile: it
-// meets what is in its way on the way, holds that, and the motion is on from then until that is
-// gone; at nothing, it flies out its range and is gone. One that does not fly holds at once, or
-// its motion does not happen.
-class CbProbe : public CbMotionPart
-{
-	GDCLASS( CbProbe, CbMotionPart )
-
-public:
-	std::string Bake( godot::String& error ) const override;
-
-	CB_MOTION_FIELD( double, range, m_range )
-	CB_MOTION_FIELD( double, travel, m_travel )
-	// What it may hold on to, a bit each: the level, bodies, players. Anything else stops it.
-	enum Holds
-	{
-		HOLDS_LEVEL = 1,
-		HOLDS_BODIES = 2,
-		HOLDS_PLAYERS = 4,
-	};
-	CB_MOTION_FIELD( int, holds, m_holds )
-	// Under an item: what lets it go (a bit each: using the item again, a jump), and how long it
-	// holds at most (0: until it is let go). Under a CbMotion, its until and duration say it.
-	enum Release
-	{
-		RELEASE_USE_AGAIN = 1,
-		RELEASE_JUMP = 2,
-	};
-	CB_MOTION_FIELD( int, release, m_release )
-	CB_MOTION_FIELD( double, hold_seconds, m_holdSeconds )
-	// The event said where and when it takes hold (the player, and what it holds): a puff where
-	// the hook lands.
-	CB_MOTION_FIELD( godot::String, hold_emits, m_holdEmits )
-
-protected:
-	static void _bind_methods();
-
-private:
-	double m_range = 40.0;
-	double m_travel = 60.0;
-	int m_holds = HOLDS_LEVEL | HOLDS_BODIES | HOLDS_PLAYERS;
-	int m_release = RELEASE_USE_AGAIN | RELEASE_JUMP;
-	double m_holdSeconds = 0.0;
-	godot::String m_holdEmits;
-};
-
-// Once, when the motion starts: an item of a kind is thrown into the world, in every simulation
-// alike, so the thrower sees it leave on the tick of the press. A grenade, a ball, a rocket.
-class CbLaunch : public CbMotionPart
-{
-	GDCLASS( CbLaunch, CbMotionPart )
-
-public:
-	enum Frame
-	{
-		FRAME_LOOK = 0,
-		FRAME_MOVE = 1,
-		FRAME_FACING = 2,
-		FRAME_UP = 3,
-		FRAME_WORLD = 4,
-	};
-	// What it throws: a new one of item_kind, or the one the player carries (the copy itself, its
-	// fields and all: what was held is what is thrown). Under a CbItem, item_kind may be left empty
-	// for that item's own kind.
-	enum What
-	{
-		WHAT_NEW = 0,
-		WHAT_CARRIED = 1,
-	};
-
-	std::string Bake( godot::String& error ) const override;
-
-	CB_MOTION_FIELD( int, what, m_what )
-	CB_MOTION_FIELD( godot::String, item_kind, m_itemKind )
-	CB_MOTION_FIELD( double, speed, m_speed )
-	CB_MOTION_FIELD( double, lift, m_lift )
-	CB_MOTION_FIELD( int, frame, m_frame )
-	CB_MOTION_FIELD( godot::Vector3, direction, m_direction )
-	CB_MOTION_FIELD( double, ahead, m_ahead )
-	CB_MOTION_FIELD( double, seconds, m_seconds )
-
-protected:
-	static void _bind_methods();
-
-private:
-	int m_what = WHAT_NEW;
-	godot::String m_itemKind;
-	double m_speed = 15.0;
-	double m_lift = 0.0;
-	int m_frame = FRAME_LOOK;
-	godot::Vector3 m_direction = godot::Vector3( 0, 1, 0 );
-	double m_ahead = 0.7;
-	double m_seconds = 5.0;
-};
-
-// How the player moves while it is on: movement parameters (friction 0, gravity 0). Under a probe or
-// a link, while that holds; directly under an item, for `duration` seconds from the use (a dash's
-// slide). The parameters win over the server's, the character's and a mod's for that long.
-class CbMove : public CbMotionPart
-{
-	GDCLASS( CbMove, CbMotionPart )
-
-public:
-	std::string Bake( godot::String& error ) const override;
-
-	CB_MOTION_FIELD( godot::Dictionary, parameters, m_parameters )
-	CB_MOTION_FIELD( double, duration, m_duration )
-
-protected:
-	static void _bind_methods();
-
-private:
-	godot::Dictionary m_parameters;
-	double m_duration = 0.0;
-};
-
-// What a motion does to something: who it acts on, and along what. The base of the effects.
-class CbMotionEffect : public CbMotionPart
-{
-	GDCLASS( CbMotionEffect, CbMotionPart )
-
-public:
-	enum Target
-	{
-		TARGET_SELF = 0,
-		TARGET_HIT = 1,
-		TARGET_FIELD = 2,
-		TARGET_FOUND = 3, // inside a sheet's find: each thing it found
-	};
-	enum Frame
-	{
-		FRAME_LOOK = 0,
-		FRAME_MOVE = 1,
-		FRAME_FACING = 2,
-		FRAME_UP = 3,
-		FRAME_WORLD = 4,
-		FRAME_TO = 5,
-		FRAME_AWAY = 6, // inside a sheet's find: from the player out to what it found, along the ground
-	};
-
-	CB_MOTION_FIELD( int, target, m_target )
-	CB_MOTION_FIELD( godot::String, target_field, m_targetField )
-	CB_MOTION_FIELD( int, frame, m_frame )
-	CB_MOTION_FIELD( godot::Vector3, direction, m_direction )
-
-protected:
-	static void _bind_methods();
-	// "self", "hit" or "@field": "" with `error` when it is a field without a name.
-	std::string TargetWord( godot::String& error ) const;
-	// The frame's word, and for a world frame its direction to end the line with.
-	std::string FrameWord() const;
-	std::string WorldWords() const;
-
-	int m_target = TARGET_SELF;
-	godot::String m_targetField;
-	int m_frame = FRAME_MOVE;
-	godot::Vector3 m_direction = godot::Vector3( 0, 1, 0 );
-};
-
-// Once, when the motion starts: a change of the target's velocity. A dash, a jump, a launch.
-class CbImpulse : public CbMotionEffect
-{
-	GDCLASS( CbImpulse, CbMotionEffect )
-
-public:
-	enum Replace
-	{
-		REPLACE_NOTHING = 0,
-		REPLACE_VERTICAL = 1,
-		REPLACE_HORIZONTAL = 2,
-		REPLACE_ALL = 3,
-	};
-
-	std::string Bake( godot::String& error ) const override;
-
-	CB_MOTION_FIELD( double, speed, m_speed )
-	CB_MOTION_FIELD( int, replace, m_replace )
-
-protected:
-	static void _bind_methods();
-
-private:
-	double m_speed = 0.0;
-	int m_replace = REPLACE_NOTHING;
-};
-
-// For as long as the motion is on: a push on the target, ramped in. A thrust, a pull, a current.
-class CbForce : public CbMotionEffect
-{
-	GDCLASS( CbForce, CbMotionEffect )
-
-public:
-	enum Kind
-	{
-		KIND_ACCELERATION = 0,
-		KIND_FORCE = 1,
-		KIND_VELOCITY = 2,
-	};
-
-	std::string Bake( godot::String& error ) const override;
-
-	CB_MOTION_FIELD( int, kind, m_kind )
-	CB_MOTION_FIELD( double, strength, m_strength )
-	CB_MOTION_FIELD( double, speed, m_speed )
-	CB_MOTION_FIELD( double, ramp_in, m_ramp )
-	CB_MOTION_FIELD( bool, react, m_react )
-
-protected:
-	static void _bind_methods();
-
-private:
-	int m_kind = KIND_ACCELERATION;
-	double m_strength = 0.0;
-	double m_speed = 0.0;
-	double m_ramp = 0.0;
-	bool m_react = false;
-};
-
-// For as long as the motion is on: a rope between the player and the target.
-class CbLink : public CbMotionEffect
-{
-	GDCLASS( CbLink, CbMotionEffect )
-
-public:
-	CbLink()
-	{
-		m_target = TARGET_HIT;
-	}
-	std::string Bake( godot::String& error ) const override;
-	void _validate_property( godot::PropertyInfo& property ) const;
-
-	CB_MOTION_FIELD( double, length, m_length )
-	CB_MOTION_FIELD( double, reel, m_reel )
-	// Off: the rope acts on the player alone, never moving what it holds.
-	CB_MOTION_FIELD( bool, react, m_react )
-
-protected:
-	static void _bind_methods();
-
-private:
-	double m_length = 0.0;
-	double m_reel = 0.0;
-	bool m_react = true;
-};
-
-// A curve a rules sheet's motion reads by this node's name ("curve(Falloff, reach)"): drawn in the
-// inspector's curve editor, baked into the motions file as values at even steps over its domain.
-class CbCurve : public godot::Node
-{
-	GDCLASS( CbCurve, godot::Node )
-
-public:
-	void set_curve( const godot::Ref<godot::Curve>& v )
-	{
-		m_curve = v;
-	}
-	godot::Ref<godot::Curve> get_curve() const
-	{
-		return m_curve;
-	}
-	godot::PackedStringArray _get_configuration_warnings() const override;
-
-protected:
-	static void _bind_methods();
-
-private:
-	godot::Ref<godot::Curve> m_curve;
-};
-
-// How many values a curve is baked into.
-inline constexpr int kCurveSamples = 64;
-// How many points a path a motion follows is baked into.
-inline constexpr int kPathSamples = 32;
-
 // The root: a mod's motions, baked to one file.
-class CbMotionSet : public CbMotionPart
+class CbMotionSet : public godot::Node
 {
-	GDCLASS( CbMotionSet, CbMotionPart )
+	GDCLASS( CbMotionSet, godot::Node )
 
 public:
-	// The whole file: its header, then every CbMotion under it in tree order.
-	std::string Bake( godot::String& error ) const override;
+	// The whole file: its header, then the motion blocks of every rules sheet under it, in tree
+	// order. "" with `error` when it cannot be baked.
+	std::string Bake( godot::String& error ) const;
+	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	void set_set_name( const godot::String& v )
 	{
 		m_name = v;
-		Changed();
+		update_configuration_warnings();
 	}
 	godot::String get_set_name() const
 	{
@@ -493,9 +62,7 @@ private:
 	godot::String m_name;
 };
 
-#undef CB_MOTION_FIELD
-
-// An info row at the top of the motion nodes' inspector groups, like a reaction's.
+// An info row at the top of a motion set's inspector, like a reaction's.
 class CbMotionInspector : public godot::EditorInspectorPlugin
 {
 	GDCLASS( CbMotionInspector, godot::EditorInspectorPlugin )
@@ -503,7 +70,6 @@ class CbMotionInspector : public godot::EditorInspectorPlugin
 public:
 	bool _can_handle( godot::Object* object ) const override;
 	void _parse_begin( godot::Object* object ) override;
-	void _parse_group( godot::Object* object, const godot::String& group ) override;
 
 protected:
 	static void _bind_methods()
@@ -512,12 +78,3 @@ protected:
 };
 
 } // namespace cb::gd
-
-VARIANT_ENUM_CAST( cb::gd::CbMotion::When );
-VARIANT_ENUM_CAST( cb::gd::CbMotion::Refill );
-VARIANT_ENUM_CAST( cb::gd::CbLaunch::Frame );
-VARIANT_ENUM_CAST( cb::gd::CbLaunch::What );
-VARIANT_ENUM_CAST( cb::gd::CbMotionEffect::Target );
-VARIANT_ENUM_CAST( cb::gd::CbMotionEffect::Frame );
-VARIANT_ENUM_CAST( cb::gd::CbImpulse::Replace );
-VARIANT_ENUM_CAST( cb::gd::CbForce::Kind );

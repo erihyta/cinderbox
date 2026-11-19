@@ -474,8 +474,8 @@ public:
 	// no error when it has none.
 	godot::Dictionary bake_motions() const;
 	// The inspector's button, and what saving the scene does: writes res://items/<kind>.cfg.
-	// The CbMotion nodes under the item, as a motion set named like the kind (motions/<kind>.cfg):
-	// each with the condition that its player has the item. Empty with no error: it has none.
+	// The motion blocks of the rules sheets under the item, as a motion set named like the kind
+	// (motions/<kind>.cfg): each for whoever has the item. Empty with no error: it has none.
 	std::string BakeMotions( godot::String& error ) const;
 	void BakeMotionsToProject() const;
 	void bake_to_project();

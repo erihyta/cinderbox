@@ -22,14 +22,14 @@ namespace
 constexpr int kIconSize = 128;
 constexpr int kIconFrames = 3; // frames the viewport renders before its picture is kept
 
-// What reacts to the game (reactions, predictions, the motion nodes): not in a picture.
+// What reacts to the game (reactions, predictions, a motion set): not in a picture.
 void Strip( Node* node )
 {
 	for ( int i = node->get_child_count() - 1; i >= 0; --i )
 	{
 		Node* child = node->get_child( i );
-		if ( child->is_class( "CbReaction" ) || child->is_class( "CbPrediction" ) || child->is_class( "CbMotionPart" ) ||
-			 child->is_class( "CbMotion" ) || child->is_class( "CollisionShape3D" ) )
+		if ( child->is_class( "CbReaction" ) || child->is_class( "CbPrediction" ) || child->is_class( "CbMotionSet" ) ||
+			 child->is_class( "CollisionShape3D" ) )
 		{
 			node->remove_child( child );
 			memdelete( child );

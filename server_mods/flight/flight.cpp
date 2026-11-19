@@ -1,7 +1,7 @@
 // Flying, a jetpack and a glide: the example of motions that hold while conditions do
 // (sim/motions.h).
 //
-// None of the three is in this file. They are CbMotion nodes in the mod's client project
+// None of the three is in this file. They are motion blocks of a rules sheet in the mod's client project
 // (server_mods/flight/client/motion_sets/flight_moves.tscn), baked to motions/flight.moves.cfg and
 // run by every simulation from the player's own input:
 //

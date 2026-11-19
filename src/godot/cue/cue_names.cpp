@@ -297,13 +297,6 @@ const Entry kTable[] = {
 	{ "CbPrediction", "cue", Holds::Event },
 	{ "CbPrediction", "conditions", Holds::Expressions },
 	{ "CbPrediction", "changes", Holds::Changes },
-	{ "CbMotion", "action", Holds::Action },
-	{ "CbMotion", "event", Holds::Event },
-	{ "CbMotion", "emits", Holds::Event },
-	{ "CbMotion", "conditions", Holds::Expressions },
-	{ "CbMotion", "until", Holds::Expressions },
-	{ "CbMotion", "changes", Holds::Changes },
-	{ "CbLaunch", "item_kind", Holds::Item },
 	{ "CbFieldLabel", "text_format", Holds::Format },
 	{ "CbFieldLabel", "conditions", Holds::Expressions },
 	{ "CbFieldLabel", "choice_field", Holds::Expression },
@@ -572,8 +565,7 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 		}
 		for ( const Entry& entry : kTable )
 		{
-			// (A use is read as the motion it is baked into.)
-			if ( String( entry.cls ) == ( rule.type == "use" ? String( "CbMotion" ) : rule.type ) && rule.properties.has( entry.property ) )
+			if ( String( entry.cls ) == rule.type && rule.properties.has( entry.property ) )
 			{
 				PackedStringArray found;
 				CheckValue( book, entry.holds, rule.properties[entry.property], entry.property, found );

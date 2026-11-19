@@ -1,7 +1,7 @@
 // Dashing, and a second jump in the air: the example of motions (sim/motions.h).
 //
 // What a dash is (a burst of speed along where you walk, a moment without friction) and what a
-// double jump is are not in this file: they are CbMotion nodes in the mod's client project, run by
+// double jump is are not in this file: they are motion blocks of rules sheets in the mod's client project, run by
 // every simulation from the player's own input. So a dash starts on the tick of the press on the
 // player's own screen, with no round trip, and this mod never sees the key.
 //   - The dash is an item's: the boots (client/prefabs/boots.tscn, kind dash.boots) carry the

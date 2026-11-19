@@ -1,11 +1,11 @@
-// The impact grenade: an item thrown from the hand (a CbLaunch of the one carried, sim/motions.h)
+// The impact grenade: an item thrown from the hand (a sheet's launch carried, sim/motions.h)
 // that goes off on the first hard hit. Switched off (the "disabled" file): the fused grenade is the
 // frag mod's. Start it by name (cb_server --mods ...,grenade).
 //
 // What throwing is (a key, how hard, what leaves the hand, when) is not in this file: the grenade
 // is an item (prefabs/shell.tscn, a CbItem) that goes to slot 7, whose own key (J), or the use
 // button with it selected, plays its throw on the left arm (its animation pack); the throw clip's marker, grenade.release, lets go of
-// the grenade the player carries (a CbLaunch under its Release motion). Every simulation runs that
+// the grenade the player carries (a launch carried in its Release motion). Every simulation runs that
 // from the player's own input, so the grenade leaves on the same tick on the thrower's own screen,
 // flies and bounces as its body says, and this mod never sees the key.
 //

@@ -15,13 +15,13 @@ A motion is to movement what a [`CbReaction`](looks.md#reactions) is to the look
 cue, or while conditions hold, do this to the player (and to what it reaches)*. It is authored in Godot, baked to text, sent in the schema
 and run by the simulation, the way a character's [state machine](characters.md#state-machines) is.
 
-**Every mod's motions are rules sheets now** (M211: motion blocks, [rules-language.md](rules-language.md)).
-The motion nodes below still work and bake to the same file, and the sheets' words map onto them;
-they get nothing new.
+**A motion is a block of a rules sheet** (M211: motion blocks; the grammar is
+[rules-language.md](rules-language.md)). Until M268 it could also be a tree of nodes (`CbMotion`,
+`CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`); no mod used them after M243, and
+they were deleted.
 
 ```
 a sheet's motion blocks ──bake──> motions/<set>.cfg ──> the server reads it from the mod's item
-(or CbMotion nodes)
                                                      │ the schema (welcome, recordings)
    your press ──> your simulation runs the motion ───┤
                   the server runs the same motion  ──┘   same input, same state, same result
@@ -36,7 +36,7 @@ players where your game showed them when it ran, up to `cb_server --lag-compensa
 | Half | Where | What |
 |---|---|---|
 | The rules | `server_mods/<mod>/<mod>.cpp` | declares the action, the fields and the events the motions name, names the set (`declare.Motions( "dash.moves" )`), and decides who may: a field a condition reads |
-| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with a `CbRules` sheet of motion blocks under it (or `CbMotion` children); saving the scene bakes `motions/<set_name>.cfg` |
+| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with a `CbRules` sheet of motion blocks under it; saving the scene bakes `motions/<set_name>.cfg` |
 
 ```cpp
 // server_mods/dash/dash.cpp: the names, and how many dashes a player has. Not the dash, not its key.
@@ -57,38 +57,26 @@ motion DoubleJump on press jump if not grounded and dash.double_jump_on
     impulse 6.5 along up replace vertical
 ```
 
-## The nodes
+## The parts
 
-A motion is a trigger with parts under it. The trigger says *when* and *for how long*; the parts say
-*what happens to whom*.
+A motion block has a trigger and settings on its first lines (*when*, *for how long*), and lines
+under them (*what happens to whom*): [rules-language.md](rules-language.md#a-motion-block).
 
-```
-CbMotionPart            what they share: each bakes to lines, and warns in the tree when it cannot
-├── CbMotionSet         the root: a mod's motions, one baked file
-├── CbMotion            the trigger: when, how long, parameters, changes, the event
-├── CbProbe             a line along the look (one that flies is thrown even at nothing)
-├── CbLaunch            an item thrown into the world, once: a new one, or the one carried
-└── CbMotionEffect      what it does to a body: on whom (target), in which direction (frame)
-    ├── CbImpulse       a change of velocity, once
-    ├── CbForce         a push for as long as the motion is on
-    └── CbLink          a rope to the target
-```
-
-| To make | Under the `CbMotion` |
+| To make | In the block |
 |---|---|
-| A dash, a double jump, a shove | a `CbImpulse` |
-| A jetpack, a wind, a conveyor, a brake | a `CbForce` (the motion a While, or with a `duration`) |
-| A grappling hook | a `CbProbe`, a `CbForce` toward what it found, a `CbLink` |
-| A grenade, a thrown ball, a rocket | a `CbLaunch` ([Things that fly](#things-that-fly-the-grenades)) |
-| A tractor beam on a prop, a winch | a `CbProbe` (holds: bodies), a `CbForce` whose target is what it found |
-| Two players bound together | a `CbLink` whose target is a field the server mod writes the partner into |
-| Flight, a glide, a slide | nothing: `parameters` on the motion are enough |
+| A dash, a double jump, a shove | an `impulse` |
+| A jetpack, a wind, a conveyor, a brake | a `force` (a `while` motion, or one that `lasts`) |
+| A grappling hook | a `cast`, and under it a `force` toward what it holds and a `link` |
+| A grenade, a thrown ball, a rocket | a `launch` ([Things that fly](#things-that-fly-the-grenades)) |
+| A tractor beam on a prop, a winch | a `cast` that holds bodies, a `force` on what it holds |
+| Two players bound together | a `link` on a field the server mod writes the partner into |
+| Flight, a glide, a slide | nothing but `move` lines (movement parameters while it is on) |
+| A shockwave, a punch that hits all in front | a `find` and what happens to each thing found |
 
 ## What an item does
 
-Under a `CbItem`, the motion nodes need no `CbMotion`: the item is the trigger, and nesting says what
-lives while what holds. Using the item (its own key, or the use button with it in the hand)
-does what the nodes under it say, if its **When used** rules allow:
+Under a `CbItem`, a sheet's `use` rule is what using the item does (its own key, or the use button
+with it in the hand), if its **When used** rules allow:
 
 The boots' sheet (`server_mods/dash/client/prefabs/boots.rules`, a `CbRules` under the item):
 
@@ -107,7 +95,7 @@ item's **When used** settings joined. An item used while its key is held has it 
 held.
 
 **A motion block** (`motion NAME ...`) in a sheet under an item or a `CbMotionSet` is a whole
-motion as text, with what nodes cannot say: steps that wait (`then when grounded`, `after 0.5`, a
+motion as text: steps that wait (`then when grounded`, `after 0.5`, a
 `timeout`), `if` / `else`, `end`, and a trigger that fires once as an expression turns true
 (`when`). The grammar: [rules-language.md](rules-language.md).
 
@@ -136,13 +124,10 @@ use if dash.charges > 0
 |---|---|
 | `use [if EXPRESSION]` | the When used conditions (added to the item's own) |
 | `change`, `cooldown`, `emit` | `use_changes` (one line each), `use_cooldown`, `use_emits` |
-| `impulse SPEED [on self\|hit\|FIELD] [along look\|move\|facing\|up\|world\|to] [direction (x,y,z)] [replace ...]` | a `CbImpulse` |
-| `force STRENGTH [kind acceleration\|force\|velocity] [top SPEED] [ramp S] [react] [on ...] [along ...]` | a `CbForce` |
-| `move [for S] PARAMETER VALUE ...` | a `CbMove` |
-| `launch new KIND`, `launch carried`, then `[speed] [lift] [ahead] [seconds] [along ...]` | a `CbLaunch` |
+| `impulse`, `force`, `move`, `launch`, `cast`, `find` ... | what a motion block's lines do ([effects](#effects-on-whom-in-which-direction), [rules-language.md](rules-language.md#lines)) |
 
-- **One `use` rule an item.** The baked file is the same as from the nodes: the boots, the slam,
-  the guard and the dash strike were converted and their `motions/*.cfg` compared.
+- **One `use` rule an item.** (The boots, the slam, the guard and the dash strike were nodes once;
+  converted to sheets, their `motions/*.cfg` came out the same.)
 
 | On the `CbItem` (When used) | Means |
 |---|---|
@@ -151,103 +136,98 @@ use if dash.charges > 0
 | `use_cooldown` | seconds between two uses |
 | `use_emits` | the event a use says (`dash.started`), for looks and state machines |
 
-| Node | Under the item |
-|---|---|
-| `CbProbe` | the line a use throws (as near as a punch: only a probe with a rope wants 1 m at least); its `hold_emits` is said when it takes hold, flying or not, with what it holds; with one, a use does something only if it finds something, and a use while a line of the player's is out does not throw another. `release`: using the item again, a jump (either lets it go); `hold_seconds`: the longest it holds (0: until let go) |
-| `CbLink`, `CbForce`, `CbImpulse`, `CbLaunch` | as under a motion; nested under the probe, they act on what it found, while it holds |
-| `CbMove` | how the player moves while it is on (`parameters`: friction, gravity, air control ...): under the probe or the link, while that holds; directly under the item, for `duration` seconds from the use |
-
 - **One motion**: they bake with the item into a motion named `Use` (`motions/<kind>.cfg`): in a
   condition `motion.<kind>.Use` (the boots' pose weighs by `motion.dash.boots.Use`), for a
   `CbLinkLook` `<kind>/Use`.
 - **When**: on `<kind>.used` (the press, or the use button's), or for an item used while held, for
   as long as it is (`using.<kind>`).
 - **For who has it only**: the use is the holder's own, so nothing else is asked.
-- **A `CbMotion` under an item** still works (a second, separate move of the item's); `CbMotion` is
-  for movement with no item: a set everyone has (the double jump, flight).
+- **Other blocks of an item's sheet** are for whoever has it out (`item carried`: whoever carries
+  it); movement with no item is a motion set's, which everyone has (the double jump, flight).
 
-## `CbMotion`: the trigger
+## When, how long, what changes
 
-| Group | Field | Meaning |
+| Group | In the block | Meaning |
 |---|---|---|
-| When | `when` | **On a press**: once, when `action` goes down (a dash). **While**: every tick its `conditions` hold (flight, a glide, a jetpack). **On a cue**: once, when the mod event `event` is recorded at the player (a stun a server mod starts) |
-| | `action` | On a press: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
-| | `event` | On a cue: the event. A server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
-| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held or `carried.<kind>`, a stance, another motion being on: `motion.<name>`), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), `linked` (a probe of the player's is out) and `link_distance` (metres from the player's chest to the point its probe holds; 0 with none) |
-| | `cooldown` | seconds between two uses; for a While, between its end and its next start |
-| Uses | `uses` | how many before a refill; 0: no limit. Not for a While |
-| | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |
-| While it lasts | `duration` | how long the motion is on after it starts (with a probe: after the probe takes hold). A While is on while its conditions hold |
-| | `until` | expressions, any of which ends it (`pressed.grapple`, `not held.grapple`). With one, or with a probe, and no `duration`, the motion is on until something ends it. Not for a While |
-| | `parameters` | [movement parameters](server-mods.md#movement-parameters) the player has while it is on (`friction` = 0). They win over the server's, the character's and a mod's `SetMove` for that long |
-| When it happens | `changes` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=` with a number), written like a [prediction's](looks.md#predictions). In a While, `-=` and `+=` are per second and need a Float field (`flight.fuel -= 30`), and `=` is set when it starts |
-| | `emits` | a mod event at the player; with a probe, at the point it will hold. A While emits it when it starts |
+| When | the trigger | **`on press ACTION`**: once, when the action goes down (a dash). **`while EXPRESSION`**: every tick it holds (flight, a glide, a jetpack). **`on EVENT`**: once, when the mod event is recorded at the player (a stun a server mod starts). **`when EXPRESSION`**: once, as it turns true |
+| | `ACTION` | one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
+| | `EVENT` | a server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
+| | `if EXPRESSION` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held or `carried.<kind>`, a stance, another motion being on: `motion.<name>`), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), `linked` (a probe of the player's is out) and `link_distance` (metres from the player's chest to the point its probe holds; 0 with none) |
+| | `cooldown S` | seconds between two uses; for a `while`, between its end and its next start |
+| Uses | `uses N` | how many before a refill. Not for a `while` |
+| | `refill ground`, `refill after S` | back when the player stands, or that long after the last use |
+| While it lasts | `lasts S` | how long the motion is on after it starts (with a cast: after it takes hold). A `while` is on while its expression holds |
+| | `until EXPRESSION` | any of which ends it (`pressed.grapple`, `not held.grapple`). With one, or with a cast, and no `lasts`, the motion is on until something ends it. Not for a `while` |
+| | `move PARAMETER VALUE` | [movement parameters](server-mods.md#movement-parameters) the player has while it is on (`friction 0`). They win over the server's, the character's and a mod's `SetMove` for that long |
+| When it happens | `change` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=`), written like a [prediction's](looks.md#predictions). In a `while`, `-=` and `+=` are per second and need a Float field (`flight.fuel -= 30`), and `=` is set when it starts |
+| | `emit EVENT` | a mod event at the player; under a cast, when it takes hold. A `while` emits it when it starts |
 
 - **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
 - **Conditions read the fields as the tick found them**: a motion that changes a field does not start another until the next tick. That is what makes a toggle of two motions (`FlyOn` if not `flight.on`, `FlyOff` if `flight.on`) one switch a press.
 - **A player's slot changes nothing** (M212): every player's motions run before anyone moves, so a `find` or a probe sees everyone where the tick found them, and a velocity read of another player is what it had then. What a motion does to another player (an impulse, a force, a rope's pull) lands after that player's own motions, on the same tick: a shove on a player who dashes this tick is added to the dash, not wiped out by it. Pushes from several players on one player add up, in slot order.
 - **A frozen or dead player** does none; a key held through a freeze is not a press when it ends.
 - **As many motions as the mods' sets have**, all together: a player carries 28 bytes for each.
-- **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A part that cannot run is a warning on its node, on its motion and on the set, and stops the bake.
+- **In the editor**: the sheet editor marks a line that cannot run, with why, as it is typed; a set that cannot bake says so on its `CbMotionSet`, and the bake stops.
 - **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
 
 ## Effects: on whom, in which direction
 
-Every `CbImpulse`, `CbForce` and `CbLink` has the same two questions (`CbMotionEffect`).
+Every `impulse`, `force` and `link` has the same two questions ([rules-language.md](rules-language.md#who-and-which-way)).
 
-| `target` | Acts on |
+| `on WHO` | Acts on |
 |---|---|
-| **The player** | whose motion it is |
-| **What the probe found** | a prop or a player, at the point the probe holds. The world takes nothing |
-| **The entity a field names** | `target_field`: a field of the player holding an entity's id (`bind.partner`), which the server mod writes. Names nothing: the effect does nothing |
+| `self` | the player whose motion it is |
+| `target` | what a cast holds (a prop or a player, at the point it holds; the world takes nothing), or what a find found |
+| `FIELD` | the entity a field of the player names (`bind.partner`), which the server mod writes. Names nothing: the effect does nothing |
 
-| `frame` | The direction |
+| `along DIRECTION` | The direction |
 |---|---|
-| **Look** | where the camera looks, pitch included |
-| **Move input** | WASD, relative to the camera; the facing when none is held |
-| **Facing**, **Up** | where the body faces; straight up |
-| **World direction** | `direction`, as given |
-| **Toward the target** | from the player to the target; for an effect on the player itself, to what its probe found. A pull |
+| `look` | where the camera looks, pitch included |
+| `move` | WASD, relative to the camera; the facing when none is held (the default) |
+| `facing`, `up` | where the body faces; straight up |
+| `world (x, y, z)` | as given |
+| `to` | from the player to the target; for an effect on the player itself, to what its cast holds. A pull |
 
 The direction is always the acting player's own: "look" on another player pushes it where *you* look.
 
-### `CbImpulse`
+### `impulse`
 
-Once, on the tick the motion starts (with a probe: when it takes hold).
+Once, when its step starts (under a cast: when it takes hold).
 
-| Field | Meaning |
+| Word | Meaning |
 |---|---|
-| `speed` | the change of velocity, m/s (up to 200), whatever the target weighs |
-| `replace` | what of the target's velocity is cleared first: **Nothing**, **Vertical speed**, **Horizontal velocity**, **All** |
+| `impulse VALUE` | the change of velocity, m/s (up to 200), whatever the target weighs (`kind momentum`: N·s, shared out by weight) |
+| `replace` | what of the target's velocity is cleared first: `nothing`, `vertical`, `horizontal`, `all` |
 
-### `CbForce`
+### `force`
 
-Every tick the motion is on.
+Every tick its step is on.
 
-| Field | Meaning |
+| Word | Meaning |
 |---|---|
-| `kind` | **Acceleration**: `strength` in m/s², the same for everything (a jetpack). **Force**: newtons, divided by what the target weighs (a hook's pull). **Velocity**: brings the target's speed along the direction to `speed`, by at most `strength` m/s per second (a conveyor, a brake) |
-| `strength` | how hard |
-| `speed` | Acceleration and Force: a top speed along the direction, past which it pushes no more (0: none). Velocity: the speed it goes to |
-| `ramp_in` | seconds over which it rises from nothing to its strength |
-| `react` | the other end takes the same momentum the other way: the player, when the force is on something else; what the probe found, when it is on the player. With Velocity, `speed` is then how fast the two close on each other, and each takes its share by weight |
+| `kind` | `acceleration` (the default): m/s², the same for everything (a jetpack). `force`: newtons, divided by what the target weighs (a hook's pull). `velocity`: brings the target's speed along the direction to `top`, by at most the strength in m/s per second (a conveyor, a brake) |
+| `force VALUE` | how hard |
+| `top S` | acceleration and force: a top speed along the direction, past which it pushes no more. Velocity: the speed it goes to |
+| `ramp S` | seconds over which it rises from nothing to its strength |
+| `react` | the other end takes the same momentum the other way: the player, when the force is on something else; what the cast holds, when it is on the player. With velocity, `top` is then how fast the two close on each other, and each takes its share by weight |
 
 - **A ramp hides latency.** Other players see your press a moment late; a force that takes 0.15 s to arrive is still weak when they catch up, so little has to be corrected. It is also what makes a pull feel heavy.
 - **A pull upward wants the Velocity kind.** A force toward a point that is above and far off has only its upward part against all of gravity: 24 m/s² at 18 degrees is 7.5 m/s² up, gravity is 18, and the player is dragged along the floor until the line is steep (0.97 s for a hook 2.5 m up and 8 m away). Velocity brings the speed along the line to its target whatever gravity takes meanwhile: the same hook lifts after 0.25 s. Its `strength` has to be well above gravity over the sine of the shallowest angle (120 here). Gravity still acts across the line, so the player still swings.
-- **A zip line turns gravity off.** With gravity on, the pull keeps the speed *along* the line and gravity keeps dragging the player *off* it: the line swings steeper before the climb is felt (a hook 6 m up and 8 m away: 0.5 m of rise after 0.68 s). `gravity` 0 in the motion's `parameters` makes the path the straight line to the point: the same hook lifts 0.5 m in 0.33 s, and the speed is the same at any angle. Gravity is back the tick the motion ends.
+- **A zip line turns gravity off.** With gravity on, the pull keeps the speed *along* the line and gravity keeps dragging the player *off* it: the line swings steeper before the climb is felt (a hook 6 m up and 8 m away: 0.5 m of rise after 0.68 s). `move gravity 0` makes the path the straight line to the point: the same hook lifts 0.5 m in 0.33 s, and the speed is the same at any angle. Gravity is back the tick the motion ends.
 - **`react` is what makes weight count**: hooked to a crate, the crate comes to you; hooked to something ten times your weight, you go to it.
 
-### `CbLink`
+### `link`
 
-A rope between the player and the target, every tick the motion is on. Slack, it does nothing. Taut,
+A rope between the player and the target, every tick its step is on. Slack, it does nothing. Taut,
 the two come back to its length, and what that takes is shared by what they weigh: the world gives
 nothing (you swing), a light crate trails behind you, of two players the lighter is dragged more.
 
-| Field | Meaning |
+| Word | Meaning |
 |---|---|
-| `target` | what the probe found (the default), or the entity a field names. Not the player itself |
-| `length` | metres. 0: as long as the two are apart when the probe takes hold (a motion without a probe has to give one) |
-| `reel` | with a length of 0: metres of rope taken in a second (never shorter than a metre) |
+| `on` | what the cast holds (the default), or the entity a field names. Not the player itself |
+| `length L` | metres. 0: as long as the two are apart when the cast takes hold (a motion without a cast has to give one) |
+| `reel S` | with a length of 0: metres of rope taken in a second (never shorter than a metre) |
+| `alone` | the rope moves the player only: what it holds is as the world |
 
 ## Weight
 
@@ -256,17 +236,17 @@ Players weigh something: `mass` is a [movement parameter](server-mods.md#movemen
 | Where it counts | How |
 |---|---|
 | Walking into a prop | none since M246: a solid prop stops you, one [pushed by characters](maps.md#who-pushes-what) is shoved by your pusher; a falling body pushes you out by its share of the two weights |
-| A `CbForce` of kind Force | newtons divided by the mass |
-| A `react`, a `CbLink` | shared by the two masses |
+| A `force` of kind `force` | newtons divided by the mass |
+| A `react`, a `link` | shared by the two masses |
 | A ragdoll | weighs what its player did |
 
-- **Who sets it**: like any parameter. The server (`--move mass=120`), the character, a mod (`ctx.SetMove( target, MoveParam::Mass, 300.0f )` for a suit of armour), a motion's `parameters` (heavy while it is on).
+- **Who sets it**: like any parameter. The server (`--move mass=120`), the character, a mod (`ctx.SetMove( target, MoveParam::Mass, 300.0f )` for a suit of armour), a motion's `move mass ...` (heavy while it is on).
 - **The controller stays kinematic**: a player is still moved by the mover, not by the solver; the mass decides what its contacts and effects exchange. A player is not knocked over by a prop.
 - **Props** weigh their shape's density times its volume (40 kg/m³ unless the map says otherwise: a 1 m crate is 40 kg).
 
 ## Probes, forces and links: the grapple mod
 
-A probe is a line a motion throws at what the player looks at: a node's `CbProbe`, or a sheet's
+A probe is a line a motion throws at what the player looks at: a sheet's
 [`cast`](rules-language.md#finding) (which can also sweep a shape: a ball, a blade).
 `server_mods/grapple` is an item whose sheet has the hook's motion, its pose, and a look. Its C++
 declares the two events; the scene and its sheet say the rest, a hook for every life among it.
@@ -295,29 +275,28 @@ motion Throwing on use if not linked
     lasts 0.45                                     # the arm's throw (its pose reads it)
 ```
 
-(Until M206 these were nodes: a `CbProbe` with a `CbLink`, a `CbForce` and a `CbMove` under it,
-and a `CbMotion`. They bake to the same lines; the motion's name is `Throw` now, not `Use`.)
+(Until M206 these were nodes; the motion's name is `Throw` now, not `Use`.)
 
-| `CbProbe` | Meaning |
+| `cast` | Meaning |
 |---|---|
-| `range` | how far the line reaches, in metres. The motion **happens only if the line finds something** |
-| `travel` | the speed it flies at: it takes hold after distance / speed. 0: at once |
-| `holds` | what it may hold on to: the level (anything static: map pieces, a static entity, a wall that breaks), bodies (props, items lying about, rubble, ragdolls), players. All three by default. Anything else in its way **stops it, holding nothing**: one that flies is gone where it hit (as a miss: `link_missed`), one that does not fly is not thrown |
+| `range R` | how far the line reaches, in metres. The motion **happens only if the line finds something** |
+| `speed V` | the speed it flies at: it takes hold after distance / speed. 0 (or none): at once |
+| `holds level bodies players` | what it may hold on to: the level (anything static: map pieces, a static entity, a wall that breaks), bodies (props, items lying about, rubble, ragdolls), players. All three by default. Anything else in its way **stops it, holding nothing**: one that flies is gone where it hit (as a miss: `link_missed`), one that does not fly is not thrown |
 
 | Step | What happens |
 |---|---|
-| The throw | aimed at what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), or as far as it reaches. **A line that flies (`travel`) is a projectile**: from the player toward that, each tick the stretch its tip covers is traced, and what it meets first it holds (something stepping into its way, not the wall behind); a body it holds it follows. At nothing, it flies out its whole range, holds nothing, moves nobody, and is gone when it gets there (its event and cooldown happen; looks see `link_missed`). **One that does not fly** holds at once on what is there (two traces: the crosshair's, then from the player), or nothing happens, not even the cooldown |
-| `hold_emits` | the event said where and when it takes hold, at the player, with what it holds as the other one: the grapple's puff where the hook lands (`grapple.hooked`) |
+| The throw | aimed at what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), or as far as it reaches. **A line that flies (`speed`) is a projectile**: from the player toward that, each tick the stretch its tip covers is traced, and what it meets first it holds (something stepping into its way, not the wall behind); a body it holds it follows. At nothing, it flies out its whole range, holds nothing, moves nobody, and is gone when it gets there (its event and cooldown happen; looks see `link_missed`). **One that does not fly** holds at once on what is there (two traces: the crosshair's, then from the player), or nothing happens, not even the cooldown |
+| `emit` under it | the event said where and when it takes hold, at the player, with what it holds as the other one: the grapple's puff where the hook lands (`grapple.hooked`) |
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
 | Flying | until `distance / travel` has passed, the motion is not on yet: no parameters, no effects; the look draws the line growing |
 | Holding | the motion is on. Its effects run every tick, before the mover: here the pull (up to 15 m/s along the line) and the rope. `react` shares the closing speed with what it holds, so a crate flies to the player. **The hook's pull and rope do not react**: it holds anything (a wall, a ball, a player) but moves only its own player, so what it holds is never pulled in; a winch or a claw is a motion of its own (its rope and pull reacting) |
-| While it holds | its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards. `gravity` = 0 makes it a zip line: straight to the point at one speed |
-| Its time | `duration` 2: it lets go by itself two seconds after it took hold, and the player keeps its speed; gravity is back on that tick. (`link_distance < 1.8` in `until` would let go on arrival instead) |
-| Letting go | `until` (the key again, or a jump: `pressed.jump`); the `duration`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
+| While it holds | the `move` lines under it hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards. `gravity` = 0 makes it a zip line: straight to the point at one speed |
+| Its time | `lasts 2`: it lets go by itself two seconds after it took hold, and the player keeps its speed; gravity is back on that tick. (`link_distance < 1.8` in `until` would let go on arrival instead) |
+| Letting go | `until` (the key again, or a jump: `pressed.jump`); `lasts`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
 
 - **Hold or toggle** is two lines of the motion:
 
-  | | `conditions` | `until` |
+  | | `if` | `until` |
   |---|---|---|
   | Use to throw, use again to let go (the grapple mod: an item) | `not linked` | `grapple.hook.used` |
   | A key of its own: press to throw, press again to let go | `not linked` | `pressed.grapple` |
@@ -354,8 +333,8 @@ is still the truth: a client that guessed wrong is corrected by rollback, like a
 
 ## Things that fly: the grenades
 
-A probe is a line: it has no body, nobody sees it coming, nothing can step out of its way. A
-`CbLaunch` throws a *thing*. Two grenade mods show it, each one item scene and a page of rules:
+A cast is a line: it has no body, nobody sees it coming, nothing can step out of its way. A
+`launch` throws a *thing*. Two grenade mods show it, each one item scene and a page of rules:
 
 | Mod | The grenade | Goes off | Slot, key | |
 |---|---|---|---|---|
@@ -406,14 +385,13 @@ the grenade's `frag.rules` says `frag.blast`, breaks the walls near it and throw
 that tick on every machine. The frag mod hears the event (`ctx.RecentEvents()`) and hurts who was
 near, and flings the bodies it killed.
 
-| `CbLaunch` | Meaning |
+| `launch` | Meaning |
 |---|---|
-| `what` | **A new one** of `item_kind`, or **the one the player carries** (`launch_carried`): that copy, its own fields and all, out of its slot; in a hand first, else the lowest slot's. None carried: nothing is thrown |
-| `item_kind` | what is thrown: an item kind a server mod declares and a [`CbItem`](items.md) bakes. Its [body](maps.md#a-body), its weight, how it bounces and its look are the item's. Under a `CbItem`, the one carried may leave it empty: that item's kind |
-| `speed`, `frame`, `direction` | how fast and where to: along the look (the default), the move input, the facing, up, or a world direction |
-| `lift` | metres per second upward added: an arc |
-| `ahead` | how far in front of where the look starts it begins (0.7 m): clear of the thrower's own body |
-| `seconds` | when it is removed again. 0: it stays, like anything dropped |
+| `new KIND`, `carried` | **a new one** of an item kind (one a server mod declares and a [`CbItem`](items.md) bakes: its [body](maps.md#a-body), weight, bounce and look are the item's), or **the one the player carries**: that copy, its own fields and all, out of its slot; in a hand first, else the lowest slot's. None carried: nothing is thrown |
+| `speed S`, `along DIRECTION` | how fast (15 m/s) and where to: along the look (the default), the move input, the facing, up, or a world direction |
+| `lift L` | metres per second upward added: an arc |
+| `ahead M` | how far in front of where the look starts it begins (0.7 m): clear of the thrower's own body; `from NODE` starts it at a marker instead |
+| `seconds S` | when it is removed again (5). 0: it stays, like anything dropped |
 
 | Step | What happens |
 |---|---|
@@ -431,7 +409,7 @@ near, and flings the bodies it killed.
 - **Other players' throws** are seen when their press arrives, like their dash: a moment into the flight, at the place the simulation has it by then.
 - **Not for a While**: a launch happens when a motion starts.
 - **On a marker**: a motion waiting for an event hears one said after the motions ran (a clip's
-  marker, another motion's `emits`) the tick after: the release is a tick after the marker.
+  marker, another motion's `emit`) the tick after: the release is a tick after the marker.
 - **From the hand, not the hand's place**: the simulation has no pose (that is the look's), so a
   thrown item starts `ahead` of where the look starts, as any launch.
 
@@ -501,7 +479,7 @@ Two things a state machine (the character's own, or an item's pack) can take a t
 
 | | What | For |
 |---|---|---|
-| The motion's event (`emits`) | one moment: the tick it starts | a pose that ends by itself (a dash: a state with a timed way out) |
+| The motion's event (`emit`) | one moment: the tick it starts | a pose that ends by itself (a dash: a state with a timed way out) |
 | `motion.<name>` | true for as long as the motion is on | a pose that lasts as long as it does (hanging on a line, flying): in, on `motion.Hook`; out, on `not motion.Hook`. Or the weight of [an item's overlay](characters.md#animation-packs): the pose is laid over the whole body while it is 1 (the boots' dash, the hook's hang) |
 
 - **The name**: the node's alone (`motion.Hook`) when no other motion of the server has it, else the
