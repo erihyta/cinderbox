@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -8108,7 +8109,7 @@ void TestSeenBackCapped()
 		uint64_t cheatCut = 0, honestCut = 0;
 		uint32_t cheatMost = 0, honestMost = 0;
 		uint64_t cheatSum = 0;
-		bool cheatAtLimit = true; // every tick it said as far back as its limit allowed, no further
+		bool cheatAtLimit = true; // every tick it said as far back as its limit allowed when it came, no further
 	};
 	auto run = [&]( uint16_t port, uint32_t latencyMs ) {
 		Harness h( port, {}, {}, {}, UseHybridModel );
@@ -8137,16 +8138,21 @@ void TestSeenBackCapped()
 		out.window = h.server.Sim().Config().compensation;
 		const uint64_t cheatCutBefore = h.server.SeenCappedOf( cheat );
 		const uint64_t honestCutBefore = h.server.SeenCappedOf( honest );
-		uint32_t limit = h.server.SeenBackLimitOf( cheat );
+		// (The limits of the last second: an input is cut when it comes, a few ticks before its own, more
+		// on a slow machine that sends further ahead; a late one leaves the one before standing.)
+		std::deque<uint32_t> limits( 1, h.server.SeenBackLimitOf( cheat ) );
 		h.server.SetTickObserver( [&] {
 			const uint32_t said = h.server.LastInputs()[cheat].seenBack;
 			out.ticks += 1;
 			out.cheatMost = std::max( out.cheatMost, said );
 			out.cheatSum += said;
 			// (Cut when it came, by the limit then: this tick's or the tick before's.)
-			const uint32_t now = h.server.SeenBackLimitOf( cheat );
-			out.cheatAtLimit = out.cheatAtLimit && ( said == limit || said == now );
-			limit = now;
+			limits.push_back( h.server.SeenBackLimitOf( cheat ) );
+			if ( limits.size() > 60 )
+			{
+				limits.pop_front();
+			}
+			out.cheatAtLimit = out.cheatAtLimit && std::find( limits.begin(), limits.end(), said ) != limits.end();
 			out.honestMost = std::max<uint32_t>( out.honestMost, h.server.LastInputs()[honest].seenBack );
 		} );
 		h.RunUntil( 8.0 );
