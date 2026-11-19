@@ -32,6 +32,26 @@ if(WIN32)
 	add_compile_definitions(_CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
+# Sanitizers (the CI's sanitizer jobs, docs/testing.md): "address,undefined" or "thread", on every
+# target and dependency alike. Clang or GCC on Linux or macOS. Off by default. A sanitizer adds no
+# floating-point transform, so the simulation computes what it does without one.
+set(CB_SANITIZE "" CACHE STRING "Sanitizers for every target: address,undefined or thread (empty: none)")
+if(CB_SANITIZE)
+	if(MSVC OR WIN32)
+		message(FATAL_ERROR "CB_SANITIZE is for Clang or GCC on Linux or macOS")
+	endif()
+	add_compile_options(-fsanitize=${CB_SANITIZE} -fno-omit-frame-pointer)
+	add_link_options(-fsanitize=${CB_SANITIZE})
+	if(CB_SANITIZE MATCHES "undefined")
+		# Undefined behaviour stops the test instead of being printed and passed over.
+		add_compile_options(-fno-sanitize-recover=undefined)
+		if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+			# (Calls through a function pointer cast to another type: flecs' callbacks are made so.)
+			add_compile_options(-fno-sanitize=function)
+		endif()
+	endif()
+endif()
+
 # Warnings for our own targets only.
 function(cb_target_warnings target)
 	if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
