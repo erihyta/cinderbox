@@ -107,7 +107,9 @@ Any change to simulation code or tuning legitimately changes them. Regenerate th
 
 ### Continuous integration
 
-Every push runs `.github/workflows/determinism.yml` on GitHub Actions:
+Every push and pull request runs `.github/workflows/determinism.yml` on GitHub Actions, except one
+that changes only Markdown (no test or build step reads a `.md` file; M264). It can also be run by
+hand (Actions, determinism, Run workflow):
 
 | Job | Runs |
 |---|---|
