@@ -316,8 +316,33 @@ struct Harness
 				onStep( now );
 			}
 			std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+			Stall();
 		}
 	}
+
+	// A machine that stalls (CB_TEST_STALL_MS=150): the whole session, server and clients, frozen that
+	// many milliseconds every second or so (0.7 to 1.3 s apart), as a busy machine freezes a process.
+	// Off unless asked: for looking into what a hitch does (M271: net_brawl_lag_compensation).
+	void Stall()
+	{
+		static const int ms = std::getenv( "CB_TEST_STALL_MS" ) != nullptr ? std::atoi( std::getenv( "CB_TEST_STALL_MS" ) ) : 0;
+		if ( ms <= 0 )
+		{
+			return;
+		}
+		if ( nextStall == 0.0 )
+		{
+			nextStall = Now() + 1.0;
+		}
+		if ( Now() >= nextStall )
+		{
+			std::this_thread::sleep_for( std::chrono::milliseconds( ms ) );
+			stallSeed = stallSeed * 1103515245u + 12345u;
+			nextStall = Now() + 0.7 + 0.6 * double( ( stallSeed >> 16 ) % 1000 ) / 1000.0;
+		}
+	}
+	double nextStall = 0.0;
+	uint32_t stallSeed = 2026;
 
 	// Every confirmed client state we can still look up must equal the server's.
 	int CompareWithServer( Bot& bot, int& compared )
@@ -7653,7 +7678,10 @@ void TestBrawlLagCompensation()
 		// round: 0.7 m. Clearly: 0.3 m inside, or 0.15 m outside. With lag compensation, a strike the
 		// server could not see as the attacker did is not judged: its input late, or saying further
 		// back than the server keeps the past or than the attacker's round trip explains (M265); the
-		// server strikes as the input before says, or as far back as it allows, by design. Seen only on a machine that stalls: none on one that keeps time.)
+		// server strikes as the input before says, or as far back as it allows, by design. Seen only
+		// on a machine that stalls: none on one that keeps time. What still disagrees after a stall
+		// (M271): its game showed the target from an update older than the state it placed (states
+		// by distance left it out of a few), and the server rewinds everyone to the state's tick.)
 		const uint32_t window = server.Config().compensation;
 		auto tally = [&] {
 			out.strikes = out.seenIn = out.hitIn = out.seenOut = out.hitOut = out.unjudged = 0;
