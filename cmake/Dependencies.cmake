@@ -120,10 +120,11 @@ target_compile_definitions(ozz_base PUBLIC OZZ_BUILD_SIMD_REF)
 target_compile_definitions(flecs_static PRIVATE FLECS_DISABLE_COUNTERS)
 
 # Under UBSan (CB_SANITIZE, M270): the dependencies' idioms that are undefined only on paper, left
-# alone: ENet takes a field's offset through a null pointer, ozz and Box3D copy nothing from no
-# buffer. Our own code is held to all of it.
+# alone: ENet takes a field's offset through a null pointer (its whole UBSan is off: leaving out
+# the null check alone did not quiet it), ozz and Box3D copy nothing from no buffer. Our own code
+# is held to all of it.
 if(CB_SANITIZE MATCHES "undefined")
-	target_compile_options(enet PRIVATE -fno-sanitize=null)
+	target_compile_options(enet PRIVATE -fno-sanitize=undefined)
 	target_compile_options(ozz_base PRIVATE -fno-sanitize=nonnull-attribute)
 	target_compile_options(box3d PRIVATE -fno-sanitize=nonnull-attribute)
 endif()

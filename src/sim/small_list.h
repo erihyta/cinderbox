@@ -129,7 +129,10 @@ public:
 		{
 			size_t capacity = m_capacity * 2 > n ? m_capacity * 2 : n;
 			T* grown = new T[capacity];
-			std::memcpy( static_cast<void*>( grown ), data(), m_size * sizeof( T ) );
+			if ( m_size > 0 )
+			{
+				std::memcpy( static_cast<void*>( grown ), data(), m_size * sizeof( T ) );
+			}
 			delete[] m_heap;
 			m_heap = grown;
 			m_capacity = capacity;
@@ -155,7 +158,7 @@ public:
 	void copy_to( T* out, size_t n ) const
 	{
 		size_t have = m_size < n ? m_size : n;
-		if ( have > 0 ) // (memcpy of nothing from no data is still undefined: UBSan, M270)
+		if ( have > 0 ) // (none from a null pointer: undefined even for nothing, UBSan, M270)
 		{
 			std::memcpy( static_cast<void*>( out ), data(), have * sizeof( T ) );
 		}
@@ -198,7 +201,10 @@ private:
 			m_heap = new T[n];
 			m_capacity = n;
 		}
-		std::memcpy( static_cast<void*>( data() ), values, n * sizeof( T ) );
+		if ( n > 0 ) // (none from a null pointer: undefined even for nothing, UBSan, M270)
+		{
+			std::memcpy( static_cast<void*>( data() ), values, n * sizeof( T ) );
+		}
 		m_size = n;
 	}
 
@@ -213,7 +219,10 @@ private:
 		}
 		else
 		{
-			std::memcpy( static_cast<void*>( m_inline ), other.m_inline, other.m_size * sizeof( T ) );
+			if ( other.m_size > 0 )
+			{
+				std::memcpy( static_cast<void*>( m_inline ), other.m_inline, other.m_size * sizeof( T ) );
+			}
 		}
 		m_size = other.m_size;
 		other.m_size = 0;

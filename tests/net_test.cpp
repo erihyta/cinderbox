@@ -966,6 +966,7 @@ void TestCharacterItem()
 		size_t size = 0;
 		mz_zip_writer_finalize_heap_archive( &zip, &data, &size );
 		std::string bytes( static_cast<const char*>( data ), size );
+		mz_free( data ); // (the archive is the caller's once finalized: LeakSanitizer, M270)
 		mz_zip_writer_end( &zip );
 		return bytes;
 	};
