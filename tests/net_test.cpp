@@ -7505,6 +7505,7 @@ void TestBrawlLagCompensation()
 		bool found = false;			 // the jab and its event, in the schema
 		int strayHits = 0;			 // hits on a tick without a strike
 		uint32_t seenBack = 0;		 // the attacker's inputs said, the most
+		int unjudged = 0;			 // strikes the server could not see as the attacker did (below)
 	};
 	auto run = [&]( uint16_t port, uint32_t ms ) {
 		std::vector<std::unique_ptr<mods::ServerMod>> mods;
@@ -7599,20 +7600,33 @@ void TestBrawlLagCompensation()
 			return in;
 		};
 		h.RunUntil( 4.0 );
-		// Each strike (the strike step ends, its finds run: the step after it starts), and what it hit.
-		std::set<uint32_t> strikes, hits;
+		// Each strike (the strike step ends, its finds run: the step after it starts), how far back
+		// the input of its tick said the attacker saw, whether that input came late (the server used
+		// the one before: not what the attacker saw on the tick), and what it hit.
+		struct Strike
+		{
+			uint32_t back = 0;
+			bool late = false;
+		};
+		std::map<uint32_t, Strike> strikes;
+		std::set<uint32_t> hits;
 		uint32_t counted = 0;
+		uint64_t late = h.server.GetStats().lateInputs;
 		h.server.SetTickObserver( [&] {
 			const uint32_t me = server.PlayerNetId( attacker.client->Slot() );
 			const flecs::entity e = server.FindEntity( me );
 			const uint32_t tick = server.Tick() - 1;
+			// (Either player's: the count is the server's.)
+			const bool lateNow = h.server.GetStats().lateInputs != late;
+			late = h.server.GetStats().lateInputs;
 			if ( e.is_valid() && server.HasMotionState( e ) )
 			{
-				out.seenBack = std::max<uint32_t>( out.seenBack, h.server.LastInputs()[attacker.client->Slot()].seenBack );
+				const uint32_t back = h.server.LastInputs()[attacker.client->Slot()].seenBack;
+				out.seenBack = std::max<uint32_t>( out.seenBack, back );
 				const MotionState state = server.GetMotionState( e );
 				if ( size_t( jab ) < state.slots.size() && state.slots[size_t( jab )].step == 2 && state.slots[size_t( jab )].stepTick == tick )
 				{
-					strikes.insert( tick );
+					strikes[tick] = { back, lateNow };
 				}
 			}
 			const SimGlobals& g = server.Globals();
@@ -7627,31 +7641,54 @@ void TestBrawlLagCompensation()
 			}
 		} );
 		counted = server.Globals().modEventCount;
-		h.RunUntil( 26.0 );
-		h.server.SetTickObserver( {} );
 		// (In reach: the target's centre within the fist's box, 0.4 m each side, and its own 0.3 m
-		// round: 0.7 m. Clearly: 0.3 m inside, or 0.15 m outside.)
-		for ( uint32_t tick : strikes )
+		// round: 0.7 m. Clearly: 0.3 m inside, or 0.15 m outside. With lag compensation, a strike the
+		// server could not see as the attacker did is not judged: its input late, or saying further
+		// back than the server keeps the past; the server strikes as the input before says, or as far
+		// back as it keeps, by design. Seen only on a machine that stalls: none on one that keeps time.)
+		const uint32_t window = server.Config().compensation;
+		auto tally = [&] {
+			out.strikes = out.seenIn = out.hitIn = out.seenOut = out.hitOut = out.unjudged = 0;
+			for ( const auto& [tick, strike] : strikes )
+			{
+				out.strikes += 1;
+				const auto seen = seenAcross.find( tick );
+				if ( seen == seenAcross.end() )
+				{
+					continue;
+				}
+				if ( window > 0 && ( strike.late || strike.back > window ) )
+				{
+					out.unjudged += 1;
+					continue;
+				}
+				const float across = std::fabs( seen->second );
+				const bool hit = hits.count( tick ) > 0;
+				if ( across < 0.4f )
+				{
+					out.seenIn += 1;
+					out.hitIn += hit ? 1 : 0;
+				}
+				else if ( across > 0.85f )
+				{
+					out.seenOut += 1;
+					out.hitOut += hit ? 1 : 0;
+				}
+			}
+		};
+		// To 26 s, enough on a machine that keeps time. One that does not (CI's shared macOS runner,
+		// M261.8: 2 strikes seen clearly in reach where 5 to 9 are usual) aims worse and strikes less
+		// often: the run goes on, to 56 s at most, until it has what the checks below need.
+		for ( double until = 26.0;; until += 5.0 )
 		{
-			out.strikes += 1;
-			const auto seen = seenAcross.find( tick );
-			if ( seen == seenAcross.end() )
+			h.RunUntil( until );
+			tally();
+			if ( ( out.strikes >= 8 && out.seenIn >= 3 ) || until >= 56.0 )
 			{
-				continue;
-			}
-			const float across = std::fabs( seen->second );
-			const bool hit = hits.count( tick ) > 0;
-			if ( across < 0.4f )
-			{
-				out.seenIn += 1;
-				out.hitIn += hit ? 1 : 0;
-			}
-			else if ( across > 0.85f )
-			{
-				out.seenOut += 1;
-				out.hitOut += hit ? 1 : 0;
+				break;
 			}
 		}
+		h.server.SetTickObserver( {} );
 		for ( uint32_t tick : hits )
 		{
 			out.strayHits += strikes.count( tick ) == 0 ? 1 : 0;
@@ -7666,10 +7703,10 @@ void TestBrawlLagCompensation()
 	const Result without = run( 48170, 0 );
 	CHECK( with.found && without.found );
 	CHECK( with.strayHits == 0 && without.strayHits == 0 ); // (every hit was on a strike)
-	std::printf( "    jabs at a running player (seen %u ticks back at most): %d strikes; seen in reach %d, hit %d; seen out of reach %d, hit %d. "
-				 "Without: %d strikes; in reach %d, hit %d; out %d, hit %d\n",
-				 with.seenBack, with.strikes, with.seenIn, with.hitIn, with.seenOut, with.hitOut, without.strikes, without.seenIn, without.hitIn,
-				 without.seenOut, without.hitOut );
+	std::printf( "    jabs at a running player (seen %u ticks back at most): %d strikes (%d not judged); seen in reach %d, hit %d; "
+				 "seen out of reach %d, hit %d. Without: %d strikes; in reach %d, hit %d; out %d, hit %d\n",
+				 with.seenBack, with.strikes, with.unjudged, with.seenIn, with.hitIn, with.seenOut, with.hitOut, without.strikes, without.seenIn,
+				 without.hitIn, without.seenOut, without.hitOut );
 	CHECK( with.strikes >= 8 && without.strikes >= 8 && with.seenBack >= 4 );
 	// With: every strike clearly in reach hits, none clearly out of it does.
 	CHECK( with.seenIn + with.seenOut >= 3 && with.hitIn == with.seenIn && with.hitOut == 0 );

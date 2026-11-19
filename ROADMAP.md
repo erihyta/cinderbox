@@ -11,7 +11,8 @@ people outside the project ([the goal](#the-goal)); the plan names no version nu
 | [docs/hytale-comparison.md](docs/hytale-comparison.md) | what Cinderbox could take from Hytale's mods and plugins ([what was taken](#from-the-hytale-comparison)) |
 
 Rewritten after M261 (M261.6), an outside review's findings added (M261.7), shortened (M261.8); a
-second review, the pack check's hole and the owner's decisions on cooked items added (M261.9).
+second review, the pack check's hole and the owner's decisions on cooked items added (M261.9);
+the macOS test's run made steady (M261.10).
 Statements about what exists were checked against the code at `3d67daf` (M261.8's merge); what is
 planned says so. Detail of finished steps is in the history.
 
@@ -29,7 +30,7 @@ planned says so. Detail of finished steps is in the history.
 | Looks | reactions, predictions and HUD lines in sheets; workshop items are Godot packs, checked by a pack validator and a scene guard. **The validator can be bypassed** (M261.9): a script in a pack runs when Godot loads it, before the guard sees it ([3c](#3c-groundwork), [6b](#6b-cooked-items)) |
 | The world | props, destructible walls, items, containers; maps baked from Godot scenes |
 | Modding | a Godot project per mod, made from the SDK; Test mod (build, publish, play in one step); a look published again is taken up live; workshop items found by hash, never sent over the game connection; the store is a folder; the editor knows a mod's names after a server build |
-| Tests | 174 tests in `ctest`, all passing, and 29 Godot checks (`check_*.gd`); the determinism CI after every push (M261.8's merge went red on macOS: a test that is not steady there, [3c](#3c-groundwork)). Four tests in `cb_tests`' table are not registered (they pass when run: 2026-11-17) |
+| Tests | 174 tests in `ctest`, all passing, and 29 Godot checks (`check_*.gd`); the determinism CI after every push (M261.8's merge went red on macOS: `net_brawl_lag_compensation` short of strikes there, made steady in M261.10). Four tests in `cb_tests`' table are not registered (they pass when run: 2026-11-17) |
 
 ## The goal
 
@@ -207,7 +208,7 @@ Each is about a day or less.
 | Reading a snapshot or a server's image fails with an error, never `std::abort()` | a malformed welcome aborts the client (`Simulation::LoadPortable` through `Reader::Take` and `DeserializeEcs`); `bytes.h`'s `ByteReader` already fails softly, `simulation.cpp` has a second reader that aborts |
 | Lag compensation capped by the client's measured round trip | `seenBack` is capped at the server's 500 ms only (`game_server.cpp:1334`, `Simulation::SeenAt`), so any client may always claim the full 500 ms |
 | CI skips pushes that change only Markdown | M261.5 to M261.8 each started two runs of six jobs, about 20 minutes each, for docs alone |
-| `net_brawl_lag_compensation` steady on a slow runner | M261.8's merge (docs only) went red on macOS: the test's run without compensation saw 2 jabs in reach where its check needs 3 (`net_test.cpp:7677`); the hashes all matched. More strikes, or the check left out under `CB_NO_TIMING_CHECKS`. (The branch's run lost its macOS cross-load: cancelled, the runners short) |
+| Find out why lag compensation disagrees with the attacker's screen when the game stalls | M261.10: with the whole process frozen about 150 ms every second or so (a busy machine), `net_brawl_lag_compensation` still fails 2 runs in 6: jabs whose input came on time and within the 500 ms the server keeps, judged against what the attacker's game showed, hit what it saw out of reach or miss what it saw in reach. Either the test measures the screen wrongly during a catch-up, or a player whose game hitches gets judged against the wrong past. Never seen without stalls, nor yet on CI |
 | A `.clang-format` and a `.clang-tidy` (the `bugprone-*` checks); `-Werror` for our own targets in CI | lower value than it looked: `clang-tidy`'s `bugprone`, `performance` and `concurrency` checks on ten core files found about 60 things, none that matter (the byte comparisons are of structs asserted free of padding) |
 | Delete the motion nodes (`CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`) and `CbCurve`, after moving `BakeSheetMotion` to a file of its own | no shipped content uses them; `BakeSheetMotion` (the sheet's bake) lives beside them in `cinderbox_motion.cpp` |
 | Move the protocol's changelog out of `protocol.h` (`kProtocolVersion`'s comment) into the history | the code says what is; the history says how it came to be (the comment is one line of about 6,000 characters) |
