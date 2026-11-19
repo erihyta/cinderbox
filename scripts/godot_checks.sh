@@ -7,7 +7,7 @@
 # The build dir is for cb_server: a view file for check_object_source. Every check that needs no
 # running game is run: the ones that take no arguments, the keys page and the workshop in folders of
 # their own, the pack validator's hostile packs, the viewer reading a view file, and the names of
-# every mod's project (written there by the server's build). Not here: check_menu (a window and a
+# every mod's and character's project (written there by the server's build). Not here: check_menu (a window and a
 # server), check_pack (packs pack_mod.ps1 makes), check_item_preview (a picture to look at).
 # Exit code 1 if any check failed; each failure's output is printed.
 
@@ -37,7 +37,9 @@ run() {
 	fi
 }
 
-# A fresh checkout has no import cache (.godot): the projects import what they hold first.
+# A fresh checkout has no import cache (.godot): the projects import what they hold first. (Godot
+# crashes as it quits after a project's first import with this extension loaded, M269, not after a
+# later one: the import is done by then, so its exit code is not asked.)
 for project in godot server_mods/*/client characters/*/client sdk; do
 	if [[ -f "$project/project.godot" ]]; then
 		timeout 900 "$godot" --headless --path "$project" --import > "$tmp/import.txt" 2>&1 || true
@@ -64,7 +66,8 @@ else
 	failed+=("object_source")
 fi
 
-for project in server_mods/*/client characters/*/client sdk; do
+# (Not the SDK's: its starters name MODNAME, which a new mod's name replaces.)
+for project in server_mods/*/client characters/*/client; do
 	if [[ -f "$project/project.godot" ]]; then
 		run "names-${project//\//-}" --path "$project" --script "$checks/check_names.gd"
 	fi
