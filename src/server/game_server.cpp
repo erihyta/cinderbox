@@ -973,13 +973,16 @@ void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 			double took = now - client.frameSentAt[( acked - 1 ) % 256];
 			if ( took >= 0.0 && took < 5.0 )
 			{
+				client.roundTripSpread += ( std::fabs( took - client.roundTrip ) - client.roundTripSpread ) * 0.1;
 				client.roundTrip += ( took - client.roundTrip ) * 0.1;
+				client.roundTrips += 1;
 			}
 		}
 		client.ackTick = acked;
 	}
 	uint32_t count = uint32_t( msg.inputs.size() );
 	uint32_t first = msg.newestTick + 1 - count;
+	const uint32_t seenLimit = SeenBackLimit( client );
 	for ( uint32_t i = 0; i < count; ++i )
 	{
 		uint32_t tick = first + i;
@@ -987,8 +990,58 @@ void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 		{
 			continue;
 		}
-		client.inputs[tick % kInputBuffer] = { tick, SanitizeInput( msg.inputs[i] ) };
+		PlayerInput in = SanitizeInput( msg.inputs[i] );
+		const bool capped = in.seenBack > seenLimit;
+		in.seenBack = uint8_t( std::min<uint32_t>( in.seenBack, seenLimit ) );
+		client.inputs[tick % kInputBuffer] = { tick, in, capped };
 	}
+}
+
+// How far back a client's input may say it saw the others (PlayerInput::seenBack: lag
+// compensation), at most: what its game shows at the round trip this server measures (M265).
+// Before, any client could say the whole lagCompensationMs every time. A hybrid game runs about
+// half a round trip and its jitter ahead of the server, and shows the others half a round trip
+// behind, its physics' buffer further (GameClient::Update: about two states' worth and twice the
+// jitter) and up to a state before that: the round trip and four times its spread, two states,
+// and a margin for what the round trip does not show (its own lead margin; a lost state, which
+// leaves the others where the one before put them a little longer). Measured over the network
+// tests (M265): with a margin of 150 ms only a link losing 3% each way said more, in under 1% of
+// its inputs; those are judged as the limit says, a little nearer the present than it saw. Until
+// a few answers are measured, the whole window. Not in the inputs model: nothing there looks back.
+uint32_t GameServer::SeenBackLimit( const Client& client ) const
+{
+	const uint32_t window = m_options.netModel == NetModel::Hybrid ? m_options.LagCompensationTicks() : 0;
+	if ( client.roundTrips < kRoundTripsToLimit )
+	{
+		return window;
+	}
+	const double seconds = client.roundTrip + 4.0 * client.roundTripSpread + kSeenBackMargin;
+	const double ticks = std::ceil( seconds * double( m_options.config.tickRate ) ) + 2.0 * double( m_options.stateEvery );
+	return uint32_t( std::min( ticks, double( window ) ) );
+}
+
+uint32_t GameServer::SeenBackLimitOf( PlayerSlot slot ) const
+{
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used && c.slot == slot )
+		{
+			return SeenBackLimit( c );
+		}
+	}
+	return 0;
+}
+
+uint64_t GameServer::SeenCappedOf( PlayerSlot slot ) const
+{
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used && c.slot == slot )
+		{
+			return c.seenCapped;
+		}
+	}
+	return 0;
 }
 
 void GameServer::SendSnapshots()
@@ -1084,6 +1137,8 @@ void GameServer::RunTick( double now )
 			if ( s.tick == tick )
 			{
 				c.lastInput = s.input;
+				m_stats.seenCapped += s.seenCapped ? 1 : 0;
+				c.seenCapped += s.seenCapped ? 1 : 0;
 			}
 			else
 			{
@@ -1325,7 +1380,7 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetTexts( &m_typed, &m_said );
 	// Each player's view of the others, as its input says it saw them (this tick's mods see the
 	// world as of Tick(): a view `seenBack` ticks before, kept by RecordPast), no further back
-	// than lagCompensationTicks.
+	// than lagCompensationTicks, nor than its round trip explains (HandleInput: SeenBackLimit).
 	m_seenBy.fill( nullptr );
 	if ( m_options.netModel == NetModel::Hybrid && m_past.empty() == false )
 	{

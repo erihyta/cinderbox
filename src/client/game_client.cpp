@@ -857,6 +857,10 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 			// What the others were as we saw them (the server's hit tests take them so: M250).
 			input.seenBack = uint8_t( std::min<uint32_t>( tick - m_hybrid->PlacedTick(), 255 ) );
 		}
+		if ( m_options.tamperInput )
+		{
+			m_options.tamperInput( input );
+		}
 		const bool advanced = m_session ? m_session->AdvanceOne( input ) : m_hybrid ? m_hybrid->Predict( input ) : true;
 		if ( m_session == nullptr && m_hybrid == nullptr )
 		{
