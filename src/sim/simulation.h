@@ -216,6 +216,7 @@ public:
 	// characters' past (lag compensation): no simulation that loads one moves the characters with it
 	// (a hybrid's clients follow the server's; an inputs server compensates nothing).
 	void SavePortable( std::vector<uint8_t>& out );
+	// False when the bytes are not an image this simulation can load (M266: never an abort).
 	bool LoadPortable( const std::vector<uint8_t>& in );
 
 	// The physics world's inputs (M246; ROADMAP step 3; physics_inputs.cpp). Characters read the
@@ -897,7 +898,11 @@ private:
 	void HandleOutOfBounds();
 
 	void SerializeEcs( std::vector<uint8_t>& out ) const;
-	void DeserializeEcs( const std::vector<uint8_t>& in );
+	// The ECS's part of a snapshot or an image: false, and nothing changed, when it does not fit
+	// (EcsImageFits: its magic, every entity's components whole and of known kinds, NetIds in order,
+	// nothing after them). The values in it are taken as they are.
+	bool DeserializeEcs( const std::vector<uint8_t>& in );
+	bool EcsImageFits( const uint8_t* data, size_t size ) const;
 
 	SimConfig m_config;
 	LevelLayout m_map;

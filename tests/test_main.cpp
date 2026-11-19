@@ -2337,6 +2337,79 @@ void TestPortableSnapshot()
 	}
 }
 
+// A server's image that is not one (M266): cut short anywhere, with a byte after it, with another
+// magic, an entity with a component of no known kind, NetIds out of order. Each is a false from
+// LoadPortable, never an abort (Simulation's reader aborted on a short one), and leaves a simulation
+// that still loads the whole image and runs on with the server.
+void TestPortableBroken()
+{
+	auto frames = test::MakeScenario( {} );
+	SimConfig config = TestConfig();
+	Simulation server( config );
+	for ( uint32_t t = 0; t < 300; ++t )
+	{
+		server.Step( frames[t] );
+	}
+	std::vector<uint8_t> image;
+	server.SavePortable( image );
+	Simulation client( config );
+	for ( uint32_t t = 0; t < 50; ++t )
+	{
+		client.Step( frames[t] );
+	}
+	int refused = 0, tried = 0;
+	auto refuses = [&]( const std::vector<uint8_t>& bytes ) {
+		tried += 1;
+		refused += client.LoadPortable( bytes ) ? 0 : 1;
+	};
+	// Cut short: the whole image, some hundreds of ways; the simulation's part at every length, its
+	// size saying so and the worlds after it.
+	uint32_t ecsSize = 0;
+	std::memcpy( &ecsSize, image.data(), 4 );
+	const size_t stride = std::max<size_t>( 1, image.size() / 400 );
+	for ( size_t n = 0; n < image.size(); n += stride )
+	{
+		refuses( std::vector<uint8_t>( image.begin(), image.begin() + std::ptrdiff_t( n ) ) );
+	}
+	refuses( std::vector<uint8_t>( image.begin(), image.end() - 1 ) );
+	for ( uint32_t n = 0; n < ecsSize; ++n )
+	{
+		std::vector<uint8_t> cut( 4 );
+		std::memcpy( cut.data(), &n, 4 );
+		cut.insert( cut.end(), image.begin() + 4, image.begin() + 4 + n );
+		cut.insert( cut.end(), image.begin() + 4 + ecsSize, image.end() );
+		refuses( cut );
+	}
+	std::vector<uint8_t> longer = image;
+	longer.push_back( 0 );
+	refuses( longer );
+	// (The simulation's part: its size, the magic, the globals, the global fields, the count; then each
+	// entity's NetId and mask.)
+	const size_t first = 4 + 4 + sizeof( SimGlobals ) + size_t( config.globalFields ) * 4 + 4;
+	uint32_t count = 0;
+	std::memcpy( &count, image.data() + first - 4, 4 );
+	CHECK( count >= 2 );
+	std::vector<uint8_t> magic = image;
+	magic[4] ^= 1;
+	refuses( magic );
+	std::vector<uint8_t> unknown = image;
+	unknown[first + 7] |= 0x80; // (its mask's bit 31: no such component)
+	refuses( unknown );
+	std::vector<uint8_t> order = image;
+	std::memset( order.data() + first, 0xFF, 4 ); // (the first NetId after every other)
+	refuses( order );
+	std::printf( "    a %zu-byte image broken %d ways: %d refused\n", image.size(), tried, refused );
+	CHECK( refused == tried && tried > int( ecsSize ) );
+
+	CHECK( client.LoadPortable( image ) && client.ComputeHash() == server.ComputeHash() );
+	for ( uint32_t t = 300; t < 400; ++t )
+	{
+		server.Step( frames[t] );
+		client.Step( frames[t] );
+	}
+	CHECK( client.ComputeHash() == server.ComputeHash() );
+}
+
 // Fills a stretch of the stack with a byte, so whatever a struct copy picks up from the stack differs
 // between two runs.
 #if defined( _MSC_VER )
@@ -13687,6 +13760,7 @@ int main( int argc, char** argv )
 		{ "snapshot_roundtrip", TestSnapshotRoundTrip },
 		{ "portable_snapshot", TestPortableSnapshot },
 		{ "portable_bytes", TestPortableBytes },
+		{ "portable_broken", TestPortableBroken },
 		{ "rollback", TestRollback },
 		{ "hybrid_model", TestHybridModel },
 		{ "toss", TestToss },

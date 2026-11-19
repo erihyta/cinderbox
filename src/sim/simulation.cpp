@@ -105,18 +105,21 @@ void AppendValue( std::vector<uint8_t>& out, const T& value )
 	AppendBytes( out, &value, sizeof( T ) );
 }
 
+// Reads a snapshot's or an image's bytes. Past their end it reads nothing (Take: null; Read: a
+// value of zeros) and is no longer ok (M266: it aborted; a server's image may be anything).
 struct Reader
 {
 	const uint8_t* data;
 	size_t size;
 	size_t cursor = 0;
+	bool ok = true;
 
 	const uint8_t* Take( size_t n )
 	{
-		if ( cursor + n > size )
+		if ( ok == false || n > size - cursor )
 		{
-			std::fprintf( stderr, "Simulation: truncated snapshot\n" );
-			std::abort();
+			ok = false;
+			return nullptr;
 		}
 		const uint8_t* p = data + cursor;
 		cursor += n;
@@ -126,8 +129,11 @@ struct Reader
 	template <typename T>
 	T Read()
 	{
-		T value;
-		std::memcpy( &value, Take( sizeof( T ) ), sizeof( T ) );
+		T value{};
+		if ( const uint8_t* p = Take( sizeof( T ) ) )
+		{
+			std::memcpy( &value, p, sizeof( T ) );
+		}
 		return value;
 	}
 };
@@ -3538,14 +3544,47 @@ void Simulation::SerializeEcs( std::vector<uint8_t>& out ) const
 	}
 }
 
-void Simulation::DeserializeEcs( const std::vector<uint8_t>& in )
+bool Simulation::EcsImageFits( const uint8_t* data, size_t size ) const
 {
-	Reader rd{ in.data(), in.size() };
+	Reader rd{ data, size };
 	if ( rd.Read<uint32_t>() != kSnapMagic )
 	{
-		std::fprintf( stderr, "Simulation: bad snapshot magic\n" );
-		std::abort();
+		return false;
 	}
+	rd.Take( sizeof( SimGlobals ) );
+	rd.Take( size_t( m_config.globalFields ) * 4 );
+	const uint32_t count = rd.Read<uint32_t>();
+	const uint32_t known = m_snapComponents.size() < 32 ? ( uint32_t( 1 ) << m_snapComponents.size() ) - 1 : ~uint32_t( 0 );
+	uint32_t last = 0;
+	for ( uint32_t n = 0; n < count && rd.ok; ++n )
+	{
+		const uint32_t netId = rd.Read<uint32_t>();
+		const uint32_t mask = rd.Read<uint32_t>();
+		if ( ( n > 0 && netId <= last ) || ( mask & ~known ) != 0 )
+		{
+			return false;
+		}
+		last = netId;
+		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
+		{
+			if ( ( mask & ( uint32_t( 1 ) << i ) ) && m_snapComponents[i].size > 0 )
+			{
+				rd.Take( m_snapComponents[i].size );
+			}
+		}
+	}
+	return rd.ok && rd.cursor == size;
+}
+
+bool Simulation::DeserializeEcs( const std::vector<uint8_t>& in )
+{
+	// (Read whole first: nothing changes unless all of it fits.)
+	if ( EcsImageFits( in.data(), in.size() ) == false )
+	{
+		return false;
+	}
+	Reader rd{ in.data(), in.size() };
+	rd.Read<uint32_t>();
 	m_globals = rd.Read<SimGlobals>();
 	m_globalBoard.assign( reinterpret_cast<const int32_t*>( rd.Take( size_t( m_config.globalFields ) * 4 ) ), m_config.globalFields );
 	uint32_t count = rd.Read<uint32_t>();
@@ -3609,6 +3648,7 @@ void Simulation::DeserializeEcs( const std::vector<uint8_t>& in )
 
 	m_entities = std::move( restored );
 	IndexesStale();
+	return true;
 }
 
 void Simulation::Save( Snapshot& out )
@@ -3629,7 +3669,12 @@ void Simulation::Save( Snapshot& out )
 
 void Simulation::Load( const Snapshot& snapshot )
 {
-	DeserializeEcs( snapshot.ecs );
+	// (A snapshot this simulation saved: one that does not fit is a fault here, not bad data.)
+	if ( DeserializeEcs( snapshot.ecs ) == false )
+	{
+		std::fprintf( stderr, "Simulation::Load: a snapshot of tick %u does not fit this simulation\n", snapshot.tick );
+		std::abort();
+	}
 
 	size_t worldBytes = cbx_WorldStructSize();
 	size_t arenaBytes = snapshot.physics.size() - 2 * worldBytes;
@@ -3748,9 +3793,15 @@ void Simulation::SavePortable( std::vector<uint8_t>& out )
 
 bool Simulation::LoadPortable( const std::vector<uint8_t>& in )
 {
+	// A server's image (a client's join): any bytes at all. What is wrong with them is a false here,
+	// never an abort (M266); the simulation's own part is read whole before anything changes.
 	Reader rd{ in.data(), in.size() };
 	uint32_t ecsSize = rd.Read<uint32_t>();
 	const uint8_t* ecs = rd.Take( ecsSize );
+	if ( ecs == nullptr || EcsImageFits( ecs, ecsSize ) == false )
+	{
+		return false;
+	}
 
 	PhysicsArena::Scope scope( *m_arena );
 	// A mesh's or height field's data the world will point at: kept by the simulation, 8-aligned.
@@ -3772,9 +3823,12 @@ bool Simulation::LoadPortable( const std::vector<uint8_t>& in )
 		}
 		rd.cursor += bytes;
 	}
+	if ( rd.cursor != in.size() )
+	{
+		return false;
+	}
 	m_hashScratch.assign( ecs, ecs + ecsSize );
-	DeserializeEcs( m_hashScratch );
-	return true;
+	return DeserializeEcs( m_hashScratch );
 }
 
 } // namespace cb
