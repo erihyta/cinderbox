@@ -52,6 +52,9 @@ struct ClientOptions
 	// false: "lite" client that keeps pace with the server and sends input without simulating
 	// (cheap load for stress tests).
 	bool simulate = true;
+	// Tests: changes each input after the game filled it in, as a modified game would send it
+	// (net_seen_back_capped: one saying it saw the others further back than it did).
+	std::function<void( PlayerInput& )> tamperInput;
 };
 
 enum class ClientState

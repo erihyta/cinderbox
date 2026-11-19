@@ -241,7 +241,7 @@ struct Harness
 		return std::chrono::duration<double>( Clock::now() - start ).count();
 	}
 
-	Bot& AddBot( uint32_t rollbackWindow = 8, const std::string& name = {} )
+	Bot& AddBot( uint32_t rollbackWindow = 8, const std::string& name = {}, const std::function<void( ClientOptions& )>& configure = {} )
 	{
 		Bot bot;
 		bot.client = std::make_unique<GameClient>();
@@ -259,6 +259,10 @@ struct Harness
 		if ( kTimingChecks == false )
 		{
 			options.leadMarginTicks = 6;
+		}
+		if ( configure )
+		{
+			configure( options );
 		}
 		bot.client->Start( options, Now() );
 		bots.push_back( std::move( bot ) );
@@ -7612,13 +7616,16 @@ void TestBrawlLagCompensation()
 		std::set<uint32_t> hits;
 		uint32_t counted = 0;
 		uint64_t late = h.server.GetStats().lateInputs;
+		uint64_t cut = h.server.SeenCappedOf( attacker.client->Slot() );
 		h.server.SetTickObserver( [&] {
 			const uint32_t me = server.PlayerNetId( attacker.client->Slot() );
 			const flecs::entity e = server.FindEntity( me );
 			const uint32_t tick = server.Tick() - 1;
-			// (Either player's: the count is the server's.)
-			const bool lateNow = h.server.GetStats().lateInputs != late;
+			// (Either player's: the count is the server's. Or it said further back than its round trip
+			// explains, M265: judged as the limit says.)
+			const bool lateNow = h.server.GetStats().lateInputs != late || h.server.SeenCappedOf( attacker.client->Slot() ) != cut;
 			late = h.server.GetStats().lateInputs;
+			cut = h.server.SeenCappedOf( attacker.client->Slot() );
 			if ( e.is_valid() && server.HasMotionState( e ) )
 			{
 				const uint32_t back = h.server.LastInputs()[attacker.client->Slot()].seenBack;
@@ -7644,8 +7651,8 @@ void TestBrawlLagCompensation()
 		// (In reach: the target's centre within the fist's box, 0.4 m each side, and its own 0.3 m
 		// round: 0.7 m. Clearly: 0.3 m inside, or 0.15 m outside. With lag compensation, a strike the
 		// server could not see as the attacker did is not judged: its input late, or saying further
-		// back than the server keeps the past; the server strikes as the input before says, or as far
-		// back as it keeps, by design. Seen only on a machine that stalls: none on one that keeps time.)
+		// back than the server keeps the past or than the attacker's round trip explains (M265); the
+		// server strikes as the input before says, or as far back as it allows, by design. Seen only on a machine that stalls: none on one that keeps time.)
 		const uint32_t window = server.Config().compensation;
 		auto tally = [&] {
 			out.strikes = out.seenIn = out.hitIn = out.seenOut = out.hitOut = out.unjudged = 0;
@@ -8086,6 +8093,92 @@ void TestLagCompensation()
 	CHECK( without.hits * 10 <= without.shots * 6 );
 }
 
+// Lag compensation's limit (M265, GameServer::SeenBackLimit): a player cannot say it saw the others
+// further back than its round trip explains. Before, every input could say the whole
+// lagCompensationMs (500 ms here) and have its hits judged against where the others were half a
+// second ago. Two players, one whose game says 255 ticks back in every input (a modified game), the
+// other as it saw them; on the server's own link, then 50 ms each way: the claim is cut to the
+// limit, which is further back on the longer link, and the honest player is never cut.
+void TestSeenBackCapped()
+{
+	struct Result
+	{
+		uint32_t window = 0;
+		int ticks = 0;
+		uint64_t cheatCut = 0, honestCut = 0;
+		uint32_t cheatMost = 0, honestMost = 0;
+		uint64_t cheatSum = 0;
+		bool cheatAtLimit = true; // every tick it said as far back as its limit allowed, no further
+	};
+	auto run = [&]( uint16_t port, uint32_t latencyMs ) {
+		Harness h( port, {}, {}, {}, UseHybridModel );
+		if ( latencyMs > 0 )
+		{
+			net::NetSimConfig link;
+			link.latencyMs = latencyMs;
+			h.AddNetSim( uint16_t( port + 1 ), link );
+		}
+		h.AddBot( 8, {}, []( ClientOptions& o ) { o.tamperInput = []( PlayerInput& in ) { in.seenBack = 255; }; } );
+		h.AddBot();
+		// Both walk about, so the honest one's game shows the other moving (its view behind).
+		for ( Bot& b : h.bots )
+		{
+			b.script = []( uint32_t tick ) {
+				PlayerInput in;
+				in.cameraYaw = uint16_t( tick * 200 );
+				in.moveForward = 127;
+				return in;
+			};
+		}
+		h.RunUntil( 3.0 );
+		const PlayerSlot cheat = h.bots[0].client->Slot();
+		const PlayerSlot honest = h.bots[1].client->Slot();
+		Result out;
+		out.window = h.server.Sim().Config().compensation;
+		const uint64_t cheatCutBefore = h.server.SeenCappedOf( cheat );
+		const uint64_t honestCutBefore = h.server.SeenCappedOf( honest );
+		uint32_t limit = h.server.SeenBackLimitOf( cheat );
+		h.server.SetTickObserver( [&] {
+			const uint32_t said = h.server.LastInputs()[cheat].seenBack;
+			out.ticks += 1;
+			out.cheatMost = std::max( out.cheatMost, said );
+			out.cheatSum += said;
+			// (Cut when it came, by the limit then: this tick's or the tick before's.)
+			const uint32_t now = h.server.SeenBackLimitOf( cheat );
+			out.cheatAtLimit = out.cheatAtLimit && ( said == limit || said == now );
+			limit = now;
+			out.honestMost = std::max<uint32_t>( out.honestMost, h.server.LastInputs()[honest].seenBack );
+		} );
+		h.RunUntil( 8.0 );
+		h.server.SetTickObserver( {} );
+		out.cheatCut = h.server.SeenCappedOf( cheat ) - cheatCutBefore;
+		out.honestCut = h.server.SeenCappedOf( honest ) - honestCutBefore;
+		for ( Bot& b : h.bots )
+		{
+			CheckHybridClient( *b.client );
+		}
+		return out;
+	};
+	const Result onSite = run( 48200, 0 );
+	const Result away = run( 48210, 50 );
+	for ( const Result* r : { &onSite, &away } )
+	{
+		std::printf( "    %s: a game saying 255 ticks back cut on %llu of %d ticks, to %.1f on average (%u at most; the window %u); "
+					 "the honest one saw %u back at most, cut on %llu\n",
+					 r == &onSite ? "the server's own link" : "50 ms each way", (unsigned long long)r->cheatCut, r->ticks,
+					 r->ticks > 0 ? double( r->cheatSum ) / r->ticks : 0.0, r->cheatMost, r->window, r->honestMost,
+					 (unsigned long long)r->honestCut );
+		CHECK( r->window == 30 && r->ticks >= 200 );
+		// Cut on nearly every tick (not on one whose input came late: the one before stands), always
+		// to the limit, and short of the window.
+		CHECK( r->cheatCut * 10 >= uint64_t( r->ticks ) * 9 && r->cheatAtLimit );
+		CHECK( r->honestCut == 0 && r->honestMost >= 2 );
+	}
+	CHECK( onSite.cheatMost < onSite.window );
+	// Further back on the longer link: the limit follows the round trip.
+	CHECK( double( away.cheatSum ) / away.ticks > double( onSite.cheatSum ) / onSite.ticks + 3.0 );
+}
+
 // The hybrid on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A lost
 // state costs nothing but itself (the next is a few ticks away, against a base the client has); a
 // lost frame comes again in the next packets, and the physics, behind, has waited for it rarely.
@@ -8354,6 +8447,7 @@ int main( int argc, char** argv )
 		{ "crowd_bench", TestCrowdBench },
 		{ "lag_compensation", TestLagCompensation },
 		{ "brawl_lag_compensation", TestBrawlLagCompensation },
+		{ "seen_back_capped", TestSeenBackCapped },
 		{ "hybrid_puppets", TestHybridPuppets },
 		{ "hybrid_own_fields", TestHybridOwnFields },
 		{ "hybrid_reconnect", TestHybridReconnect },

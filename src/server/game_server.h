@@ -54,7 +54,8 @@ struct ServerOptions
 	int stateThreads = 0;
 	// The hybrid: how far back a player's hits may take the others, as it saw them (lag
 	// compensation, M250), in milliseconds (0: as they are now). A hybrid game shows the others a
-	// round trip and its physics' buffer in the past: about 330 ms at a 100 ms round trip.
+	// round trip and its physics' buffer in the past: about 330 ms at a 100 ms round trip. Each
+	// player no further back than its own round trip explains (M265: SeenBackLimit).
 	uint32_t lagCompensationMs = 500;
 	uint32_t LagCompensationTicks() const
 	{
@@ -184,6 +185,7 @@ public:
 	struct Stats
 	{
 		uint64_t lateInputs = 0; // ticks where a connected player's input had not arrived
+		uint64_t seenCapped = 0; // ticks where a player's input said it saw further back than its round trip allows
 		uint64_t inputTicks = 0; // ticks where a connected player's input was expected
 		uint64_t snapshotsSent = 0; // welcomes: joins, reconnects and desync recoveries
 		uint64_t batchesSent = 0;
@@ -219,6 +221,10 @@ public:
 	{
 		return m_lastInputs;
 	}
+	// Lag compensation (M265): how far back a player's inputs may now say it saw the others (in
+	// ticks), and on how many ticks one said further (0 for a slot nobody plays).
+	uint32_t SeenBackLimitOf( PlayerSlot slot ) const;
+	uint64_t SeenCappedOf( PlayerSlot slot ) const;
 	const Stats& GetStats() const
 	{
 		return m_stats;
@@ -247,6 +253,10 @@ private:
 	static constexpr uint32_t kInputBuffer = 128;
 	static constexpr uint32_t kFrameHistory = 256; // frames kept for resending
 	static constexpr size_t kStateHistory = 64; // states kept as bases (the state model)
+	// SeenBackLimit: the answers measured before a client's round trip limits it, and the seconds
+	// over what that round trip explains.
+	static constexpr uint32_t kRoundTripsToLimit = 30;
+	static constexpr double kSeenBackMargin = 0.15;
 
 	struct Client
 	{
@@ -271,6 +281,9 @@ private:
 		// starts, so that a frame is in three packets however many ticks one packet brought.
 		uint32_t sentBefore[2] = {};
 		double roundTrip = 0.1;		// seconds from sending a frame to hearing it acknowledged
+		double roundTripSpread = 0.0; // how far one answer is from that, smoothed (seconds)
+		uint32_t roundTrips = 0;		// answers measured
+		uint64_t seenCapped = 0;		// ticks its input said it saw further back than SeenBackLimit
 		// Its input packets (M261): the last one's sequence, those that came and those that did
 		// not since the last count, the loss (in a thousand, smoothed) and when it was told it.
 		bool inputSeen = false;
@@ -337,6 +350,7 @@ private:
 		{
 			uint32_t tick = UINT32_MAX;
 			PlayerInput input{};
+			bool seenCapped = false; // it said it saw further back than SeenBackLimit
 		};
 		Slot inputs[kInputBuffer];
 		// A fake player (ServerOptions::fakePlayers): its inputs from a brain, what it is sent
@@ -356,6 +370,7 @@ private:
 	void HandleEvent( const net::NetEvent& ev, double now );
 	void HandleHello( net::PeerId peer, const net::MsgHello& hello, double now );
 	void HandleInput( Client& client, const net::MsgInput& msg, double now );
+	uint32_t SeenBackLimit( const Client& client ) const;
 	Client* FindByPeer( net::PeerId peer );
 	void Reject( net::PeerId peer, const std::string& reason );
 	void RunTick( double now );
