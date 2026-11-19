@@ -272,9 +272,10 @@ numbers are in [docs/scaling.md](docs/scaling.md).
   clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify`
   re-simulates headlessly.
-- **Versions**: `kProtocolVersion` in `src/net/protocol.h`, `kVersion` in `src/net/replay.h`. The
-  server refuses any other protocol version and any other build fingerprint. The code is the place
-  to read the numbers.
+- **Versions**: `kProtocolVersion` in `src/net/protocol.h`, `kVersion` in `src/net/replay.cpp` and
+  `src/present/view_file.cpp`. The server refuses any other protocol version and any other build
+  fingerprint. The code is the place to read the numbers; [docs/versions.md](docs/versions.md) says
+  what each version changed (a row added with each raise).
 
 ## The viewer protocol
 
