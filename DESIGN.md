@@ -575,8 +575,8 @@ knows where items are.
 - **Cross-load**: the six portable snapshots must be byte-identical, and each OS loads each of them
   with each of its builds and runs on to the reference's final hash.
 - **Not covered by CI**: Linux ARM64; the Godot extensions and the Godot checks; a Godot client
-  against a server built by another compiler; sanitizers; tests in `cb_tests`' table that
-  `tests/CMakeLists.txt` does not register (they pass when run, 2026-11-17). Details:
+  against a server built by another compiler; sanitizers. Every line of `cb_tests`' and
+  `cb_net_tests`' tables is registered (M263). Details:
   [docs/testing.md](docs/testing.md).
 
 ## Source layout
