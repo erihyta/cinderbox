@@ -1701,7 +1701,8 @@ void TestToss()
 			if ( out.ragdoll )
 			{
 				// How far the torso leads the legs: a body struck folds; one only thrown flies stiff.
-				const RagdollPose& pose = sim.FindEntity( rag ).get<RagdollPose>();
+				const flecs::entity body = sim.FindEntity( rag );
+				const RagdollPose& pose = body.get<RagdollPose>();
 				out.bend = b3Length( b3Sub( pose.linear[ragdoll::Torso], pose.linear[ragdoll::LeftLowerLeg] ) );
 			}
 		}
