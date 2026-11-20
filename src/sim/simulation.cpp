@@ -1577,7 +1577,7 @@ void Simulation::ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevB
 	}
 }
 
-void Simulation::StepSlots( const InputFrame& frame )
+void Simulation::StepSlots( const InputFrame& )
 {
 	m_usingScratch.clear();
 	m_usingItems.clear();

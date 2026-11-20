@@ -13,13 +13,12 @@ namespace cb
 namespace
 {
 
-// Default SSE control state: all exceptions masked, round to nearest, no flush-to-zero and no
-// denormals-are-zero. The simulation is only bit-exact under this environment.
-constexpr unsigned kDefaultMxcsr = 0x1F80;
-
 bool ResetFloatingPointEnvironment()
 {
 #if defined( __x86_64__ ) || defined( _M_X64 )
+	// Default SSE control state: all exceptions masked, round to nearest, no flush-to-zero and no
+	// denormals-are-zero. The simulation is only bit-exact under this environment.
+	constexpr unsigned kDefaultMxcsr = 0x1F80;
 	_mm_setcsr( kDefaultMxcsr );
 	return ( _mm_getcsr() & 0xFFC0 ) == ( kDefaultMxcsr & 0xFFC0 );
 #else

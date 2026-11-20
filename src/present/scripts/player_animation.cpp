@@ -52,10 +52,11 @@ void RegisterPlayerAnimation( flecs::world& world )
 	// player, and every player while the view is not known, every frame.
 	world.system<PlayerAnim, const Visual>( "EvaluatePlayerPose" ).each( []( flecs::iter& it, size_t row, PlayerAnim& a, const Visual& v ) {
 		const auto from = std::chrono::steady_clock::now();
-		const AnimLibrary& lib = it.world().get<AnimLibrary>();
+		const flecs::world world = it.world(); // (what the references below are into: no temporary)
+		const AnimLibrary& lib = world.get<AnimLibrary>();
 		const CharacterAnim& character = lib.Of( v.character );
-		const PoseView& view = it.world().get<PoseView>();
-		const FrameTiming& timing0 = it.world().get<FrameTiming>();
+		const PoseView& view = world.get<PoseView>();
+		const FrameTiming& timing0 = world.get<FrameTiming>();
 		a.sinceSeconds += it.delta_time();
 		const RenderPose* at = it.entity( row ).try_get<RenderPose>();
 		if ( view.known && at != nullptr && a.evaluator != nullptr && a.character == v.character && v.netId != timing0.localNetId )
@@ -85,9 +86,9 @@ void RegisterPlayerAnimation( flecs::world& world )
 			a.character = v.character;
 			a.catchUp = AnimCatchUp{};
 		}
-		const FrameTiming& timing = it.world().get<FrameTiming>();
+		const FrameTiming& timing = world.get<FrameTiming>();
 		a.shown = anim::InterpolateAnimState( a.previous, a.current, timing.tickAlpha );
-		const AnimLead& lead = it.world().get<AnimLead>();
+		const AnimLead& lead = world.get<AnimLead>();
 		if ( lead.netId != 0 && lead.netId == v.netId )
 		{
 			if ( character.graph )
@@ -101,7 +102,7 @@ void RegisterPlayerAnimation( flecs::world& world )
 			// lead is running this frame.)
 			a.shown = CatchUpAnimState( a.shown, *character.graph, lib.packs, a.catchUp, since, timing.tickSeconds );
 		}
-		const HandGrips& grips = it.world().get<HandGrips>();
+		const HandGrips& grips = world.get<HandGrips>();
 		auto grip = grips.byHolder.find( v.netId );
 		a.evaluator->Evaluate( a.shown, grip != grips.byHolder.end() ? &grip->second : nullptr );
 		PoseStats& stats = it.world().get_mut<PoseStats>();

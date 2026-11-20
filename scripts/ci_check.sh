@@ -19,7 +19,8 @@ echo "== toolchain"
 cmake --version | head -1
 ninja --version
 
-cmake --preset "$preset" -B "$build" -DCB_BUILD_GODOT=OFF
+# (Our own code warning-free on every compiler: a warning is an error here, M272.)
+cmake --preset "$preset" -B "$build" -DCB_BUILD_GODOT=OFF -DCB_WARNINGS_AS_ERRORS=ON
 grep -E "CMAKE_(C|CXX)_COMPILER(_ID|_VERSION)?:" "$build/CMakeCache.txt" || true
 cmake --build "$build"
 

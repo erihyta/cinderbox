@@ -453,7 +453,7 @@ void Simulation::SaveState( std::vector<uint8_t>& out, bool compact, uint32_t on
 		// What a client reads of the globals (ApplyState): whose the slots are. The rest (the event
 		// rings, the counters: ~1 KB) it has of its own, from the frames and its physics (M256).
 		SimGlobals read;
-		std::memset( &read, 0, sizeof( read ) );
+		std::memset( static_cast<void*>( &read ), 0, sizeof( read ) );
 		std::memcpy( read.playerNetIds, m_globals.playerNetIds, sizeof( read.playerNetIds ) );
 		Put( out, read );
 	}
