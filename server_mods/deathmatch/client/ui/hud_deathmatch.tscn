@@ -1,9 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
 ; The round HUD, laid over the game's when a server runs deathmatch. Fields and events only:
 ;   deathmatch.phase (0 playing, 1 between rounds), .seconds, .round, .kill_limit, .winner (a player),
 ;   deathmatch.score per player; deathmatch.ending, how the last round ended (0 none, 1 time ran
 ;   out, 2 flawless, 3 by a single point, 4 a clear win).
+;   TeamWinner      in teams: which team won (deathmatch.winning_team; 0 a draw), in place of
+;                   Winner and Nobody
 ;   Remark          the words for deathmatch.ending are here, not on the server: a CbFieldLabel
 ;                   whose choices are one line per number (line 0 empty: nothing to say). Reword
 ;                   or translate them freely.
@@ -11,6 +13,10 @@
 ;                   Tab is held and Shown (a CbFieldBinding) shows it while that holds; Header is plain Labels; Rows is a CbList of players whose child Row is one
 ;                   row as designed. In the game the list copies Row for every player, sorted, and
 ;                   the CbFieldLabels in a row read that player (is_local: the viewer's own row)
+;                   In teams (the teams mod: team.id, M277) the players are listed by team: RedTitle
+;                   and RedRows (where team.id == 1), BlueTitle and BlueRows (2), each title with its
+;                   team's score (deathmatch.team_score_N), shown when the viewer is in a team; Rows
+;                   lists those in none (a free-for-all: everyone). Teams are seen only here.
 
 [sub_resource type="LabelSettings" id="Timer"]
 font_size = 24
@@ -33,6 +39,18 @@ font_size = 20
 outline_size = 4
 outline_color = Color(0, 0, 0, 0.85)
 
+[sub_resource type="LabelSettings" id="Red"]
+font_size = 22
+font_color = Color(1, 0.4, 0.35, 1)
+outline_size = 5
+outline_color = Color(0, 0, 0, 0.85)
+
+[sub_resource type="LabelSettings" id="Blue"]
+font_size = 22
+font_color = Color(0.4, 0.65, 1, 1)
+outline_size = 5
+outline_color = Color(0, 0, 0, 0.85)
+
 [sub_resource type="LabelSettings" id="RowLocal"]
 font_size = 20
 font_color = Color(1, 0.85, 0.35, 1)
@@ -52,7 +70,20 @@ offset_bottom = 44.0
 label_settings = SubResource("Timer")
 horizontal_alignment = 1
 text_format = "ROUND {deathmatch.round}   {deathmatch.seconds}s   FIRST TO {deathmatch.kill_limit}"
-conditions = PackedStringArray("?deathmatch.phase", "deathmatch.phase == 0")
+conditions = PackedStringArray("?deathmatch.phase", "deathmatch.phase == 0", "not team.id")
+
+[node name="TeamRound" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 10.0
+offset_right = 300.0
+offset_bottom = 44.0
+label_settings = SubResource("Timer")
+horizontal_alignment = 1
+text_format = "ROUND {deathmatch.round}   {deathmatch.seconds}s   FIRST TEAM TO {deathmatch.team_kill_limit}"
+conditions = PackedStringArray("?deathmatch.phase", "deathmatch.phase == 0", "team.id")
 
 [node name="Score" type="CbFieldLabel" parent="."]
 anchors_preset = 5
@@ -78,7 +109,7 @@ offset_bottom = 170.0
 label_settings = SubResource("Banner")
 horizontal_alignment = 1
 text_format = "{name:deathmatch.winner} WINS ROUND {deathmatch.round}"
-conditions = PackedStringArray("deathmatch.phase == 1", "deathmatch.winner")
+conditions = PackedStringArray("deathmatch.phase == 1", "deathmatch.winner", "not team.id")
 
 [node name="Nobody" type="CbFieldLabel" parent="."]
 anchors_preset = 5
@@ -91,7 +122,21 @@ offset_bottom = 170.0
 label_settings = SubResource("Banner")
 horizontal_alignment = 1
 text = "NOBODY SCORED"
-conditions = PackedStringArray("deathmatch.phase == 1", "!deathmatch.winner")
+conditions = PackedStringArray("deathmatch.phase == 1", "!deathmatch.winner", "not team.id")
+
+[node name="TeamWinner" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -420.0
+offset_top = 110.0
+offset_right = 420.0
+offset_bottom = 170.0
+label_settings = SubResource("Banner")
+horizontal_alignment = 1
+conditions = PackedStringArray("deathmatch.phase == 1", "team.id")
+choice_field = "deathmatch.winning_team"
+choices = PackedStringArray("A DRAW", "RED WINS THE ROUND", "BLUE WINS THE ROUND")
 
 [node name="Next" type="CbFieldLabel" parent="."]
 anchors_preset = 5
@@ -158,8 +203,87 @@ custom_minimum_size = Vector2(110, 0)
 text = "Deaths"
 label_settings = SubResource("Row")
 
+[node name="RedTitle" type="CbFieldLabel" parent="Scores"]
+custom_minimum_size = Vector2(0, 34)
+label_settings = SubResource("Red")
+text_format = "RED   {deathmatch.team_score_1}"
+conditions = PackedStringArray("team.id")
+
+[node name="RedRows" type="CbList" parent="Scores"]
+sort_by = "deathmatch.score"
+where = PackedStringArray("team.id == 1")
+
+[node name="Row" type="HBoxContainer" parent="Scores/RedRows"]
+
+[node name="Name" type="CbFieldLabel" parent="Scores/RedRows/Row"]
+custom_minimum_size = Vector2(260, 0)
+label_settings = SubResource("Row")
+text_format = "{name}"
+conditions = PackedStringArray("not is_local")
+
+[node name="NameLocal" type="CbFieldLabel" parent="Scores/RedRows/Row"]
+custom_minimum_size = Vector2(260, 0)
+label_settings = SubResource("RowLocal")
+text_format = "{name}"
+conditions = PackedStringArray("is_local")
+
+[node name="Score" type="CbFieldLabel" parent="Scores/RedRows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{deathmatch.score}"
+
+[node name="Kills" type="CbFieldLabel" parent="Scores/RedRows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{combat.kills}"
+
+[node name="Deaths" type="CbFieldLabel" parent="Scores/RedRows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{combat.deaths}"
+
+[node name="BlueTitle" type="CbFieldLabel" parent="Scores"]
+custom_minimum_size = Vector2(0, 34)
+label_settings = SubResource("Blue")
+text_format = "BLUE   {deathmatch.team_score_2}"
+conditions = PackedStringArray("team.id")
+
+[node name="BlueRows" type="CbList" parent="Scores"]
+sort_by = "deathmatch.score"
+where = PackedStringArray("team.id == 2")
+
+[node name="Row" type="HBoxContainer" parent="Scores/BlueRows"]
+
+[node name="Name" type="CbFieldLabel" parent="Scores/BlueRows/Row"]
+custom_minimum_size = Vector2(260, 0)
+label_settings = SubResource("Row")
+text_format = "{name}"
+conditions = PackedStringArray("not is_local")
+
+[node name="NameLocal" type="CbFieldLabel" parent="Scores/BlueRows/Row"]
+custom_minimum_size = Vector2(260, 0)
+label_settings = SubResource("RowLocal")
+text_format = "{name}"
+conditions = PackedStringArray("is_local")
+
+[node name="Score" type="CbFieldLabel" parent="Scores/BlueRows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{deathmatch.score}"
+
+[node name="Kills" type="CbFieldLabel" parent="Scores/BlueRows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{combat.kills}"
+
+[node name="Deaths" type="CbFieldLabel" parent="Scores/BlueRows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{combat.deaths}"
+
 [node name="Rows" type="CbList" parent="Scores"]
 sort_by = "deathmatch.score"
+where = PackedStringArray("not team.id")
 
 [node name="Row" type="HBoxContainer" parent="Scores/Rows"]
 

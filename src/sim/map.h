@@ -41,6 +41,8 @@
 //   u32 instanceCount, per instance: u32 templateIndex, i32 position[3], i32 pitch, i32 yaw,
 //                        i32 roll                                                (version 6 on)
 //   u32 spawnTemplate (kNoTemplate for none)
+//   u32 bodyCount,    per body:   name, i32 feet[3], i32 yaw                     (version 12 on)
+//   u32 placeCount,   per place:  tag, i32 at[3], i32 yaw, i32 radius            (version 13 on)
 //
 // Component and field ids are name hashes (see reflect.h), so the registry can grow and be
 // reordered without invalidating baked maps: unknown entries are dropped when the map is read.
@@ -62,11 +64,13 @@
 namespace cb
 {
 
-// 12: characters' bodies the map places. 11: a breakable's glue. 10: which pieces of a breakable hold it up, and which touch (holes). 9: breakable templates (their pieces). 8: a prop's rolling and drag. 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
+// 13: places mods name (a CbSpawn's tag). 12: characters' bodies the map places. 11: a breakable's glue. 10: which pieces of a breakable hold it up, and which touch (holes). 9: breakable templates (their pieces). 8: a prop's rolling and drag. 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
 // instance's roll. 5: hulls. 4: a static's shape and roll. 3: a prop's body.
-inline constexpr uint32_t kMapVersion = 12;
+inline constexpr uint32_t kMapVersion = 13;
 // Characters' bodies a map may place.
 inline constexpr uint32_t kMapBodyLimit = 256;
+// Places a map may name.
+inline constexpr uint32_t kMapPlaceLimit = 256;
 // Pieces a breakable may come apart into, and pairs of them that touch.
 inline constexpr uint32_t kMapPieceLimit = 256;
 inline constexpr uint32_t kMapPieceLinkLimit = 4096;
