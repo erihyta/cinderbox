@@ -1,0 +1,85 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/skeleton.tscn" id="1_skeleton"]
+[ext_resource type="Animation" path="res://animation_packs/source/Sword_Idle.res" id="2_idle"]
+[ext_resource type="Animation" path="res://animation_packs/source/Sword_Attack.res" id="3_attack"]
+[ext_resource type="Animation" path="res://animation_packs/source/Sword_Block.res" id="4_block"]
+
+[sub_resource type="AnimationLibrary" id="Clips"]
+_data = {
+&"Sword_Attack": ExtResource("3_attack"),
+&"Sword_Block": ExtResource("4_block"),
+&"Sword_Idle": ExtResource("2_idle")
+}
+
+[sub_resource type="AnimationNodeAnimation" id="ReadyClip"]
+animation = &"Sword_Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="SwingClip"]
+animation = &"Sword_Attack"
+
+[sub_resource type="AnimationNodeAnimation" id="BlockClip"]
+animation = &"Sword_Block"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToReady"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="ReadyToSwing"]
+xfade_time = 0.05
+advance_mode = 2
+advance_expression = "sword.swing"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="SwingToReady"]
+xfade_time = 0.25
+advance_mode = 2
+advance_expression = "sword.done"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="ReadyToBlock"]
+xfade_time = 0.12
+advance_mode = 2
+advance_expression = "motion.sword.blade.Block"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="BlockToReady"]
+xfade_time = 0.15
+advance_mode = 2
+advance_expression = "not motion.sword.blade.Block"
+
+[sub_resource type="AnimationNodeStateMachine" id="UpperBody"]
+states/Ready/node = SubResource("ReadyClip")
+states/Ready/position = Vector2(300, 100)
+states/Swing/node = SubResource("SwingClip")
+states/Swing/position = Vector2(550, 100)
+states/Block/node = SubResource("BlockClip")
+states/Block/position = Vector2(300, 260)
+transitions = ["Start", "Ready", SubResource("StartToReady"), "Ready", "Swing", SubResource("ReadyToSwing"), "Swing", "Ready", SubResource("SwingToReady"), "Ready", "Block", SubResource("ReadyToBlock"), "Block", "Ready", SubResource("BlockToReady")]
+
+[sub_resource type="AnimationNodeBlendTree" id="Tree"]
+nodes/output/position = Vector2(608, 160)
+nodes/UpperBody/node = SubResource("UpperBody")
+nodes/UpperBody/position = Vector2(200, 100)
+node_connections = [&"output", 0, &"UpperBody"]
+
+[node name="SwordHoldPack" type="CbAnimPack"]
+character_name = "sword.hold"
+skeleton_path = NodePath("Skeleton3D")
+animation_player_path = NodePath("AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+look_chain = "Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2"
+editor_description = "How the sword is held, swung and held up to block: an animation pack for the upper body (M279).
+Its state machine replaces a character's \"UpperBody\" layer while a sword is in the hand (its CbItem's animation_pack).
+Ready is the idle. Swing starts on \"sword.swing\" (the sheet says it when a swing starts, on every machine: predicted) and goes back to Ready on the clip's own \"sword.done\" marker; Sword_Attack's \"sword.strike\" marker is the moment the sheet's find hits. Block is held while the sheet's Block motion is on (the right mouse button held).
+The clips are the mannequin's (CC0), as the bat's are, their markers renamed; Sword_Block is Sword_Attack held still at 0.9 s (the blade out in front), a placeholder until a block clip of its own. The look chain bends the upper body with the camera's pitch while the sword is out (the sword mod makes its holder face the camera).
+Skeleton3D is the SDK's placeholder skeleton, what they play on: leave it. Saving this scene bakes it into res://anim/sword.hold/."
+
+[node name="Skeleton3D" parent="." instance=ExtResource("1_skeleton")]
+unique_name_in_owner = true
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+root_node = NodePath("..")
+libraries/ = SubResource("Clips")
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+active = false
+root_node = NodePath("..")
+tree_root = SubResource("Tree")
+anim_player = NodePath("../AnimationPlayer")

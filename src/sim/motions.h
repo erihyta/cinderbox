@@ -204,6 +204,10 @@ inline constexpr int kMotionGuards = 16;
 // How many steps a motion may have.
 inline constexpr int kMotionSteps = 64;
 
+// Where a find's shape turned as the player looks (MotionFrame::Look) pitches about: a point this
+// far up from its origin, the chest, as a sheet draws a body (the fist's box is 1 m up).
+inline constexpr float kFindLookPivot = 1.0f;
+
 // A find (a sheet's "find SHAPE"): everything the shape overlaps when its step starts, each in turn,
 // nearest first. Its shape is in the player's frame (its feet, forward +Z), turned as `frame` says.
 struct MotionFind
