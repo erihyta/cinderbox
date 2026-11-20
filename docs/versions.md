@@ -12,6 +12,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 95 | A body that breaks a wall it strikes makes its hole around where it struck (from half a metre behind until now: a thick wall's pieces were mostly out of reach; M280) |
 | 94 | Maps of version 13: places a mod names (a `CbSpawn`'s tag: `team1`), after the bodies (M277) |
 | 93 | A toss's ragdoll is hit as a killed one's is (Toss: a, b the hit, c what it breaks; a ragdoll event's `breaking`), and a kill while down hits the ragdoll it keeps (M275) |
 | 92 | An input packet's acknowledgements as varints behind its newest tick, its first input with how far back the player saw the others (it went without, and read 0: M261) |

@@ -157,6 +157,28 @@ func _initialize() -> void:
 		piece.free()
 	big.free()
 
+	# A wall with a window (M280, the arena's): four boxes around it, a sill and a lintel as high as
+	# the wall is thick and more. Thin is judged on the wall: every chunk goes through it.
+	var framed := CbBreakable.new()
+	for part in [[Vector3(4, 1.0, 0.5), Vector3(0, -1.0, 0)], [Vector3(4, 0.8, 0.5), Vector3(0, 1.1, 0)],
+			[Vector3(1.5, 1.2, 0.5), Vector3(-1.25, 0.1, 0)], [Vector3(1.5, 1.2, 0.5), Vector3(1.25, 0.1, 0)]]:
+		var side := CollisionShape3D.new()
+		side.shape = _box(part[0])
+		side.position = part[1]
+		framed.add_child(side)
+	var framed_cut: Dictionary = Fracture.fracture(framed, 20, 3, 0.0)
+	var framed_volume := 0.0
+	var framed_through := true
+	for piece in framed_cut.pieces:
+		framed_volume += _volume(piece)
+		var box := _bounds(piece)
+		framed_through = framed_through and box.position.z < -0.249 and box.end.z > 0.249
+	_check("a wall with a window (four boxes, 5.4 m3) cut into 20 that fill it, each through it", framed_cut.error == "" and
+		framed_cut.pieces.size() == 20 and absf(framed_volume - 5.4) < 0.08 and framed_through, [framed_cut.pieces.size(), framed_volume, framed_through])
+	for piece in framed_cut.pieces:
+		piece.free()
+	framed.free()
+
 	# A convex wall: a wedge.
 	var wedge := ConvexPolygonShape3D.new()
 	wedge.points = PackedVector3Array([Vector3(-1, -1, -1), Vector3(1, -1, -1), Vector3(-1, -1, 1), Vector3(1, -1, 1), Vector3(-1, 1, -1), Vector3(1, 1, -1)])

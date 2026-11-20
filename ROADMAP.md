@@ -77,7 +77,7 @@ Which steps launch needs: [the road](#the-road).
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
-| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279) | yes: the test of everything else |
+| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280) | yes: the test of everything else |
 | 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
 | 6 | [Sheets improved](#6-sheets-improved) | after 5 | yes: the sheet's format settled, with a version |
@@ -238,10 +238,11 @@ inputs model is no longer worked on, kept for a while, maybe deleted later). Sta
 | 3 | Teams chosen, seen, spawned apart | the player picks Red or Blue on the team screen (M; the intent `teams.join`); teams are seen only on the scoreboard (the players listed by team, each team's score; the round's banner names the winning team); a map's places by name (a `CbSpawn`'s tag, map version 13), each team spawned within its own | the engine (map places); the teams mod and its look; deathmatch's HUD | **done (M277)** |
 | 4 | The arena | `arena`: a city block for 8 to 10 players, 140 m across, so they feel small: a park (trees, a fountain, benches), a ring road and four streets, two towers and two open garages (each design twice), brick walls and parapets that break, street lamps, a skyline all round; team spawns at the west and east streets' ends. Plain shapes, flat colours. First drafted by `tools/make_arena.py`; the owner edits it in Godot from here | a map | **done (M278)** |
 | 5 | The sword | left button a swing (a box where the player looks, pitch and all), right button held a block, a parry when the block went up within 0.2 s of the hit (the swinger reels). Out, the holder faces the camera and bends with the pitch; the fist does the same now (it could not hit above or below). Clips: the mannequin's sword clips (the block a placeholder: the swing held still) | the `sword` mod and its look; a find turned with the look pitches about the chest | **done (M279)** |
-| 6 | Teammates not shoved | a find skips what shares a field's value with its owner: `find ... not same team.id`. A shove is predicted, so it has to be the sheet's | a mechanism in the sheet language | **not for now** (the owner, 2026-11-20) |
-| 7 | Weapons and skills | the owner's ideas, animations and effects, each a sheet (step 5's way) | content | the owner brings them |
-| 8 | Bots that fight | bots with the kit, so a weekly alpha is not an empty server (proposed by the second review) | a mod or `cb_bot` | proposed |
-| 9 | Played by hand | every week, two games, at 150 ms and locally; what it runs into is the next milestone | | weekly |
+| 6 | The buildings break | the towers hollow (seven floors and a core behind walls with windows), every wall of them, the garages' parapets, rails and ramp walls, and the cover walls cut into irregular chunks by the fracture tool (not blocks of brick); each a wall design, a scene of its own placed many times. A body struck into a wall makes its hole where it struck | the arena (`godot/maps/arena_parts`), `fracture_scenes.gd`; the engine (the hole) | **done (M280)** |
+| 7 | Teammates not shoved | a find skips what shares a field's value with its owner: `find ... not same team.id`. A shove is predicted, so it has to be the sheet's | a mechanism in the sheet language | **not for now** (the owner, 2026-11-20) |
+| 8 | Weapons and skills | the owner's ideas, animations and effects, each a sheet (step 5's way) | content | the owner brings them |
+| 9 | Bots that fight | bots with the kit, so a weekly alpha is not an empty server (proposed by the second review) | a mod or `cb_bot` | proposed |
+| 10 | Played by hand | every week, two games, at 150 ms and locally; what it runs into is the next milestone | | weekly |
 
 - Built beside steps 5 to 8: each of those is done when the slice uses it.
 - **Decided (2026-11-20)**: teammates' shoves stay for now; teams chosen by the player (two),
@@ -264,6 +265,9 @@ inputs model is no longer worked on, kept for a while, maybe deleted later). Sta
 **The leaning**: the Great Wall's way for most of the arena's walls, glued for a few showpieces where
 the collapse is the point (a tower, a bridge). The glued look needs no shader: draw its whole mesh
 until its first weld breaks, as a breakable is drawn whole (later; not for the first build).
+**Done (M280)**: every wall of the arena the Great Wall's way (94 walls, 3424 chunks); no glued
+showpiece yet. Not done: what is broken stays broken all session (rubble a toss makes is never
+cleared; a round does not mend the walls).
 
 ### 4b. The alpha
 

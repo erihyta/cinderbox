@@ -1768,6 +1768,118 @@ void TestToss()
 	CHECK( fast.bend > 0.3f && slow.bend < 0.05f );
 }
 
+// The arena's walls (M280): the baked map (godot/maps/arena.cbmap) as the server loads it.
+// - Every wall that breaks has chunks the fracture tool cut, and some of them hold it up.
+// - A player thrown at 30 m/s into the SE tower's ground-floor wall (its west side) breaks a hole
+//   around where it struck: a few chunks fly, the rest of that wall stands, every other wall is
+//   whole; a simulation given only the physics events follows it.
+void TestArenaWalls()
+{
+	LevelLayout arena;
+	std::vector<uint8_t> bytes;
+	std::string error;
+	CHECK( LoadMapFile( std::string( CB_SOURCE_DIR ) + "/godot/maps/arena.cbmap", arena, bytes, error ) );
+	size_t walls = 0, chunks = 0, unheld = 0;
+	for ( const LevelInstance& at : arena.instances )
+	{
+		const EntityTemplate& t = arena.templates[at.templateIndex];
+		walls += t.pieces.empty() ? 0 : 1;
+		chunks += t.pieces.size();
+		unheld += t.pieces.empty() == false && std::none_of( t.pieces.begin(), t.pieces.end(), []( const TemplatePiece& p ) { return p.held; } ) ? 1 : 0;
+	}
+	std::printf( "    the arena: %zu walls that break, %zu chunks, %zu held by none (%zu bytes)\n", walls, chunks, unheld, bytes.size() );
+	CHECK( walls == 94 && chunks > 3000 && unheld == 0 );
+
+	// Thrown from 6 m west of the tower's wall (the tower stands at (53, -53), 18 m across).
+	arena.spawnCenter = { 38.0f, 1.2f, -53.0f };
+	arena.spawnRadius = 0.0f;
+	const auto started = std::chrono::steady_clock::now();
+	auto simulation = std::make_unique<Simulation>( TestConfig(), arena );
+	auto followerSim = std::make_unique<Simulation>( TestConfig(), arena );
+	const double loadMs = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - started ).count() / 2.0;
+	Simulation& sim = *simulation;
+	Simulation& follower = *followerSim;
+	follower.SetFollowsPhysics( true );
+	bool followed = true;
+	InputFrame f;
+	auto step = [&]() {
+		f.tick = sim.Tick();
+		sim.Step( f );
+		InputFrame given = f;
+		given.events.clear();
+		given.inputs = {};
+		given.pushers = sim.PhysicsMade().pushers;
+		given.physics = sim.PhysicsMade().physics;
+		follower.Step( given );
+		followed = followed && follower.PhysicsHash() == sim.PhysicsHash();
+		f.commands.clear();
+		f.events.clear();
+	};
+	// The wall it is thrown at: the whole one nearest its middle.
+	const b3Vec3 aim = { 44.25f, 1.67f, -53.0f };
+	uint32_t wall = 0, wallTemplate = 0;
+	float nearest = 1e9f;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		const TemplateRef* ref = e.try_get<TemplateRef>();
+		if ( ref != nullptr && ref->index < arena.templates.size() && arena.templates[ref->index].pieces.empty() == false &&
+			 b3Distance( e.get<Transform>().position, aim ) < nearest )
+		{
+			nearest = b3Distance( e.get<Transform>().position, aim );
+			wall = r.netId;
+			wallTemplate = ref->index;
+		}
+	}
+	CHECK( wall != 0 && nearest < 0.1f );
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	for ( int i = 0; i < 30; ++i )
+	{
+		step();
+	}
+	const uint32_t player = sim.PlayerNetId( 0 );
+	SimCommand push;
+	push.type = CommandType::Impulse;
+	push.target = player;
+	push.mode = ImpulseVelocity;
+	const b3Vec3 from = sim.EntityTransform( player )->position;
+	push.b = { 30.0f, 3.0f, 0.0f };
+	SimCommand toss;
+	toss.type = CommandType::Toss;
+	toss.target = player;
+	toss.c = { 8.0f, 1.2f, 0.0f }; // (the brawl finisher's: breaks at 8 m/s, a hole of 1.2 m)
+	f.commands = { push, toss };
+	const auto stepped = std::chrono::steady_clock::now();
+	for ( int i = 0; i < 3 * 60; ++i )
+	{
+		step();
+	}
+	const double stepMs = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - stepped ).count() / 2.0;
+
+	const size_t pieces = arena.templates[wallTemplate].pieces.size();
+	std::vector<uint32_t> pieceTemplates;
+	for ( const TemplatePiece& p : arena.templates[wallTemplate].pieces )
+	{
+		pieceTemplates.push_back( p.templateIndex );
+	}
+	size_t standing = 0, flown = 0, whole = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		const WallPiece* piece = e.try_get<WallPiece>();
+		const TemplateRef* ref = e.try_get<TemplateRef>();
+		standing += piece != nullptr && piece->wall == wall ? 1 : 0;
+		flown += piece == nullptr && ref != nullptr && std::find( pieceTemplates.begin(), pieceTemplates.end(), ref->index ) != pieceTemplates.end() ? 1 : 0;
+		whole += ref != nullptr && ref->index < arena.templates.size() && arena.templates[ref->index].pieces.empty() == false ? 1 : 0;
+	}
+	const b3Vec3 end = sim.EntityTransform( player )->position;
+	std::printf( "    thrown from x %.1f into the tower's wall (x 44 to 44.5): %zu of its %zu chunks flew, %zu stand; %zu other walls "
+				 "whole; up at x %.1f; followed %d (the map loaded in %.0f ms, 3 s of it in %.0f ms)\n",
+				 from.x, flown, pieces, standing, whole, end.x, int( followed ), loadMs, stepMs );
+	CHECK( flown >= 3 && flown <= pieces / 2 && standing + flown == pieces && whole == walls - 1 );
+	CHECK( followed );
+}
+
 // Glue (map version 11: a breakable's glue): its pieces are bodies from the start, welded where they
 // touch, the held ones static.
 // - A tower of four blocks, held at its foot, strongly glued: it stands still. A blast takes the
@@ -13860,6 +13972,7 @@ int main( int argc, char** argv )
 		{ "rollback", TestRollback },
 		{ "hybrid_model", TestHybridModel },
 		{ "toss", TestToss },
+		{ "arena_walls", TestArenaWalls },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },
