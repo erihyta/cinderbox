@@ -430,32 +430,38 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			break;
 		case PhysicsEventType::Ragdoll:
 		{
+			flecs::entity body;
 			if ( event.kind == 2 )
 			{
 				// A toss's ragdoll, the dead player's now (M249).
-				if ( flecs::entity body = FindEntity( event.made ); body.is_valid() && body.has<Ragdoll>() )
+				body = FindEntity( event.made );
+				if ( body.is_valid() == false || body.has<Ragdoll>() == false )
 				{
-					Ragdoll r = body.get<Ragdoll>();
-					r.despawnTick = event.ticks > 0 ? m_globals.tick + event.ticks : 0;
-					body.set<Ragdoll>( r );
-					body.remove<Tossed>();
-					EnforceRagdollCap( event.count );
+					break;
 				}
-				break;
+				Ragdoll r = body.get<Ragdoll>();
+				r.despawnTick = event.ticks > 0 ? m_globals.tick + event.ticks : 0;
+				body.set<Ragdoll>( r );
+				body.remove<Tossed>();
 			}
-			flecs::entity body = CreateRagdoll( event );
-			if ( event.kind == 1 )
+			else
 			{
-				// A toss (M249): its player is down, and says which is its ragdoll.
-				body.set<Tossed>( { event.netId, event.hitAt.x, event.hitAt.y } );
-				if ( flecs::entity player = FindEntity( event.netId ); player.is_valid() && player.has<Downed>() )
+				body = CreateRagdoll( event );
+				if ( event.kind == 1 )
 				{
-					Downed down = player.get<Downed>();
-					down.ragdoll = body.get<NetId>().value;
-					player.set<Downed>( down );
+					// A toss (M249): its player is down, and says which is its ragdoll.
+					body.set<Tossed>( { event.netId, event.breaking.x, event.breaking.y } );
+					if ( flecs::entity player = FindEntity( event.netId ); player.is_valid() && player.has<Downed>() )
+					{
+						Downed down = player.get<Downed>();
+						down.ragdoll = body.get<NetId>().value;
+						player.set<Downed>( down );
+					}
 				}
+				event.made = body.get<NetId>().value;
 			}
-			event.made = body.get<NetId>().value;
+			// The last hit, whichever made it fall (a kill's, a toss's, a kill while down: M275): the
+			// part nearest it takes it, and the joints pass it on.
 			SimCommand hit;
 			hit.type = CommandType::Impulse;
 			hit.mode = event.mode;

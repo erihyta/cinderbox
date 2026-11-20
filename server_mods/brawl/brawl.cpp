@@ -17,14 +17,20 @@
 //   - the slam's shockwave is its sheet's too (a motion block waits for the ground, then finds who
 //     is in its Shockwave region and throws them, predicted); this mod hurts each one it says
 //     (brawl.slam.hit, with who was found)
+//   - the last hit a ragdoll takes (M275): a hit that fells someone (the finisher's toss, a killing
+//     blow) strikes the ragdoll where it landed, as hard as the sheet shoves, so it folds there
+//   - a tossed body breaks walls it flies into (brawl.toss_break m/s and up, a hole of
+//     brawl.toss_hole m)
 //
 // It runs by default, beside the weapons; its skills then go to whatever slots are free (their
 // slots' keys use them wherever they are). Alone, with only what it needs:
 //   cb_server --mods inventory,combat,brawl
-// Server options: brawl.jab, brawl.finisher, brawl.dash, brawl.uppercut, brawl.slam (damage).
+// Server options: brawl.jab, brawl.finisher, brawl.dash, brawl.uppercut, brawl.slam (damage);
+// brawl.toss_break (8: m/s a tossed body breaks walls at; 0: never), brawl.toss_hole (1.2 m).
 
 #include "mod_api.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -36,6 +42,14 @@ namespace
 
 constexpr float kSlamPush = 9.0f; // m/s away, and half of it up: what the sheet throws (for a ragdoll)
 constexpr float kGuardShare = 0.25f;
+
+// What each hit's sheet shoves whoever it hits with (jab, finisher, dash strike, uppercut: their
+// impulses, m/s ahead and up): the last hit their ragdoll takes if it fells them.
+struct Shove
+{
+	float ahead, up;
+};
+constexpr Shove kShoves[4] = { { 4.0f, 0.0f }, { 14.0f, 5.0f }, { 10.0f, 0.0f }, { 0.0f, 12.0f } };
 
 class BrawlMod final : public ServerMod
 {
@@ -84,6 +98,8 @@ public:
 			m_amounts[size_t( i )] = int32_t( ctx.Option( names[i], defaults[i] ) );
 		}
 		m_slamDamage = int32_t( ctx.Option( "brawl.slam", 25.0 ) );
+		m_tossBreak = float( std::max( 0.0, ctx.Option( "brawl.toss_break", 8.0 ) ) );
+		m_tossHole = float( std::max( 0.1, ctx.Option( "brawl.toss_hole", 1.2 ) ) );
 		m_guard = ctx.Schema().FindItemKind( "brawl.guard" );
 	}
 
@@ -93,22 +109,23 @@ public:
 		{
 			for ( size_t i = 0; i < m_hits.size(); ++i )
 			{
-				if ( int( e.type ) == m_hits[i].index && Hurt( ctx, e.netIdA, e.netIdB, m_amounts[i], e.point, {} ) && i == 1 &&
-					 Guarding( ctx, e.netIdB ) == false && ctx.IsDown( e.netIdB ) == false )
+				if ( int( e.type ) != m_hits[i].index )
+				{
+					continue;
+				}
+				const b3Vec3 shove = b3Add( b3MulSV( kShoves[i].ahead, Away( ctx, e.netIdA, e.point ) ), b3Vec3{ 0.0f, kShoves[i].up, 0.0f } );
+				if ( Hurt( ctx, e.netIdA, e.netIdB, m_amounts[i], e.point, shove ) && i == 1 && Guarding( ctx, e.netIdB ) == false &&
+					 ctx.IsDown( e.netIdB ) == false )
 				{
 					// The finisher tosses: the sheet's shove (predicted) is already its velocity, which
-					// the ragdoll keeps.
-					ctx.Toss( e.netIdB, { 0.0f, 0.0f, 0.0f } );
+					// the ragdoll keeps; struck where the fist landed, it folds there.
+					ctx.Toss( e.netIdB, {}, e.point, shove, m_tossBreak, m_tossHole );
 				}
 			}
 			// Someone the slam's shockwave found (its sheet throws them): hurt, by the slam's damage.
 			if ( int( e.type ) == m_slamHit.index )
 			{
-				const Transform* from = ctx.EntityTransform( e.netIdA );
-				b3Vec3 away = from != nullptr ? b3Sub( e.point, from->position ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
-				away.y = 0.0f;
-				float length = b3Length( away );
-				away = length > 0.01f ? b3MulSV( 1.0f / length, away ) : away;
+				const b3Vec3 away = Away( ctx, e.netIdA, e.point );
 				Hurt( ctx, e.netIdA, e.netIdB, m_slamDamage, e.point, b3Add( b3MulSV( kSlamPush, away ), b3Vec3{ 0.0f, 0.5f * kSlamPush, 0.0f } ) );
 			}
 		}
@@ -134,6 +151,16 @@ public:
 		return true;
 	}
 
+	// Along the ground from the attacker out to the point (none: no direction).
+	static b3Vec3 Away( Context& ctx, uint32_t attacker, b3Vec3 point )
+	{
+		const Transform* from = ctx.EntityTransform( attacker );
+		b3Vec3 away = from != nullptr ? b3Sub( point, from->position ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+		away.y = 0.0f;
+		const float length = b3Length( away );
+		return length > 0.01f ? b3MulSV( 1.0f / length, away ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+	}
+
 	bool Guarding( Context& ctx, uint32_t victim ) const
 	{
 		const int slot = ctx.IsPlayer( victim ) ? ctx.SlotOf( victim ) : -1;
@@ -147,6 +174,8 @@ public:
 	EventHandle m_slamHit;
 	EventHandle m_damage;
 	int32_t m_slamDamage = 25;
+	float m_tossBreak = 8.0f;
+	float m_tossHole = 1.2f;
 	int m_guard = -1;
 };
 

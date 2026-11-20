@@ -891,7 +891,8 @@ enum PhysicsEventField : uint32_t
 	PeBoard = 1u << 15,
 	PeBody = 1u << 16,
 	PeCommand = 1u << 17,
-	PeLast = PeCommand,
+	PeBreaking = 1u << 18,
+	PeLast = PeBreaking,
 };
 constexpr uint32_t kMaxEventBoard = 4096;
 constexpr uint32_t kMaxEventBody = 1u << 20;
@@ -919,6 +920,7 @@ void WritePhysicsEvent( ByteWriter& w, const PhysicsEvent& e )
 	fields |= IsZero( e.vector ) ? 0u : uint32_t( PeVector );
 	fields |= IsZero( e.hitAt ) ? 0u : uint32_t( PeHitAt );
 	fields |= IsZero( e.hitVector ) ? 0u : uint32_t( PeHitVector );
+	fields |= IsZero( e.breaking ) ? 0u : uint32_t( PeBreaking );
 	fields |= identity ? 0u : uint32_t( PeTurn );
 	fields |= IsZeroFloat( e.yaw ) ? 0u : uint32_t( PeYaw );
 	fields |= IsZeroFloat( e.mass ) ? 0u : uint32_t( PeMass );
@@ -953,6 +955,8 @@ void WritePhysicsEvent( ByteWriter& w, const PhysicsEvent& e )
 		w.Write( e.hitAt );
 	if ( fields & PeHitVector )
 		w.Write( e.hitVector );
+	if ( fields & PeBreaking )
+		w.Write( e.breaking );
 	if ( fields & PeTurn )
 	{
 		for ( float f : e.turn )
@@ -1019,6 +1023,8 @@ bool ReadPhysicsEvent( ByteReader& r, PhysicsEvent& e )
 		e.hitAt = r.Read<Float3>();
 	if ( fields & PeHitVector )
 		e.hitVector = r.Read<Float3>();
+	if ( fields & PeBreaking )
+		e.breaking = r.Read<Float3>();
 	if ( fields & PeTurn )
 	{
 		for ( float& f : e.turn )

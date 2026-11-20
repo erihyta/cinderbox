@@ -4678,7 +4678,8 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 
 	if ( const Downed* down = e.try_get<Downed>() )
 	{
-		// Down: its ragdoll is already in the world. It stays, the dead player's, or goes.
+		// Down: its ragdoll is already in the world. It stays, the dead player's (and takes the
+		// killing hit, M275), or goes.
 		PhysicsEvent keep;
 		keep.type = command.mode == 1 ? PhysicsEventType::Ragdoll : PhysicsEventType::Remove;
 		keep.kind = 2;
@@ -4686,6 +4687,10 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 		keep.made = down->ragdoll;
 		keep.ticks = command.other;
 		keep.count = uint8_t( std::clamp( command.value, 0, 255 ) );
+		if ( command.mode == 1 )
+		{
+			SetRagdollHit( keep, command );
+		}
 		if ( down->ragdoll != 0 )
 		{
 			m_physicsQueue.push_back( std::move( keep ) );
@@ -4696,25 +4701,13 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 	{
 		// (Made from the player as it is now, when the physics events are applied: M246.)
 		PhysicsEvent ragdoll = RagdollEvent( e, command.other );
-		ragdoll.hitAt = command.a;
-		ragdoll.hitVector = command.b;
-		ragdoll.mode = uint8_t( ImpulseVelocity );
+		SetRagdollHit( ragdoll, command );
 		ragdoll.count = uint8_t( std::clamp( command.value, 0, 255 ) );
 		m_physicsQueue.push_back( std::move( ragdoll ) );
 	}
 
 	c.dead = 1;
-	c.velocity = { 0.0f, 0.0f, 0.0f };
-	c.pogoVelocity = 0.0f;
-	c.grounded = 0;
-	c.sprinting = 0;
-	c.airTicks = 0;
-	c.groundTicks = 0;
-	c.stepDistance = 0.0f;
-	e.set<Character>( c );
-	e.set<Velocity>( {} );
-	// Out of the broadphase: nothing collides with it or hits it with a ray until it respawns.
-	b3Body_Disable( BodyOf( e.get<PhysicsBody>() ) );
+	LeaveBody( e, c );
 }
 
 void Simulation::TossPlayer( flecs::entity e, const SimCommand& command )
@@ -4726,16 +4719,31 @@ void Simulation::TossPlayer( flecs::entity e, const SimCommand& command )
 	}
 	// (Made from the player as it is now, when the physics events are applied: M246.)
 	PhysicsEvent ragdoll = RagdollEvent( e, 0 );
-	ragdoll.vector = { ragdoll.vector.x + command.a.x, ragdoll.vector.y + command.a.y, ragdoll.vector.z + command.a.z };
 	ragdoll.kind = 1;
 	ragdoll.at.y += 0.05f; // (off the ground: its feet would drag)
-	ragdoll.hitAt = { std::max( command.b.x, 0.0f ), command.b.y > 0.0f ? command.b.y : 1.0f, 0.0f };
+	SetRagdollHit( ragdoll, command );
+	ragdoll.breaking = { std::max( command.c.x, 0.0f ), command.c.y > 0.0f ? command.c.y : 1.0f, 0.0f };
 	m_physicsQueue.push_back( std::move( ragdoll ) );
 
 	Downed down;
 	down.since = m_globals.tick;
 	down.mostTicks = command.value > 0 ? uint32_t( command.value ) : 5 * m_config.tickRate;
 	e.set<Downed>( down );
+	LeaveBody( e, c );
+}
+
+void Simulation::SetRagdollHit( PhysicsEvent& event, const SimCommand& command )
+{
+	// Kill and Toss say the last hit the same way: a = where, b = the change of velocity.
+	event.hitAt = command.a;
+	event.hitVector = command.b;
+	event.mode = uint8_t( ImpulseVelocity );
+}
+
+void Simulation::LeaveBody( flecs::entity e, Character c )
+{
+	// Dead or down: its body stands still, out of the broadphase (nothing collides with it or hits it
+	// with a ray), until it respawns or gets up; its ragdoll, if it has one, is the body now.
 	c.velocity = { 0.0f, 0.0f, 0.0f };
 	c.pogoVelocity = 0.0f;
 	c.grounded = 0;
@@ -4745,7 +4753,6 @@ void Simulation::TossPlayer( flecs::entity e, const SimCommand& command )
 	c.stepDistance = 0.0f;
 	e.set<Character>( c );
 	e.set<Velocity>( {} );
-	// Out of the broadphase, as a dead one is, until it gets up.
 	b3Body_Disable( BodyOf( e.get<PhysicsBody>() ) );
 }
 

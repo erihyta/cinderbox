@@ -1587,7 +1587,8 @@ void TestItemBreaks()
 // up where the ragdoll lies (beyond the wall), the ragdoll gone. Tossed at 3 m/s, the wall stands
 // whole. Killed while down, the ragdoll stays as the dead player's (it does not get up), lasting
 // what the kill says. A simulation that follows the first one's physics (no characters at all,
-// given its physics events) has its physics world on every tick.
+// given its physics events) has its physics world on every tick. Struck in the chest as it is tossed
+// (M275: the hit a killed one's ragdoll takes too), its torso leads its legs; only thrown, it does not.
 void TestToss()
 {
 	LevelLayout map;
@@ -1632,9 +1633,11 @@ void TestToss()
 		float upZ = 0.0f, lowest = 0.0f;
 		bool followed = true;
 		bool upEnabled = false, ragdollGone = false;
+		float bend = 0.0f;
 	};
-	// `kill`: killed half a second after the toss; `leave`: gone from the game then.
-	auto toss = [&]( float speed, bool kill, bool leave = false ) {
+	// `kill`: killed half a second after the toss; `leave`: gone from the game then; `struck`: hit in
+	// the chest as it is tossed.
+	auto toss = [&]( float speed, bool kill, bool leave = false, bool struck = false ) {
 		Outcome out;
 		auto simulation = std::make_unique<Simulation>( TestConfig(), map ); // (two: not on the stack)
 		auto followerSim = std::make_unique<Simulation>( TestConfig(), map );
@@ -1661,6 +1664,11 @@ void TestToss()
 			step();
 		}
 		const uint32_t player = sim.PlayerNetId( 0 );
+		// As Context::Toss says it: the whole body's speed an impulse on the character first.
+		SimCommand push;
+		push.type = CommandType::Impulse;
+		push.target = player;
+		push.mode = ImpulseVelocity;
 		SimCommand c;
 		c.type = CommandType::Toss;
 		c.target = player;
@@ -1668,9 +1676,16 @@ void TestToss()
 			// At the wall's middle, from where the player stands, rising a little.
 			const b3Vec3 from = sim.EntityTransform( player )->position;
 			const b3Vec3 way = b3Normalize( b3Vec3{ -from.x, 0.0f, -from.z } );
-			c.a = { way.x * speed, 3.0f, way.z * speed };
+			push.b = { way.x * speed, 3.0f, way.z * speed };
+			if ( struck )
+			{
+				// Struck in the chest (M275): that part takes 8 m/s more, the joints pass it on.
+				c.a = { from.x, from.y + 0.3f, from.z };
+				c.b = { way.x * 8.0f, 0.0f, way.z * 8.0f };
+			}
 		}
-		c.b = { 10.0f, 1.5f, 0.0f };
+		c.c = { 10.0f, 1.5f, 0.0f };
+		f.commands.push_back( push );
 		f.commands.push_back( c );
 		step();
 		const uint32_t tossedAt = sim.Tick();
@@ -1679,6 +1694,12 @@ void TestToss()
 			out.downed = e.has<Downed>() && e.get<Character>().dead == 0 && b3Body_IsEnabled( sim.BodyOf( e.get<PhysicsBody>() ) ) == false;
 			const uint32_t rag = e.has<Downed>() ? e.get<Downed>().ragdoll : 0;
 			out.ragdoll = rag != 0 && sim.FindEntity( rag ).has<Tossed>() && sim.FindEntity( rag ).has<RagdollBodies>();
+			if ( out.ragdoll )
+			{
+				// How far the torso leads the legs: a body struck folds; one only thrown flies stiff.
+				const RagdollPose& pose = sim.FindEntity( rag ).get<RagdollPose>();
+				out.bend = b3Length( b3Sub( pose.linear[ragdoll::Torso], pose.linear[ragdoll::LeftLowerLeg] ) );
+			}
 		}
 		uint32_t ragdoll = out.ragdoll ? sim.FindEntity( player ).get<Downed>().ragdoll : 0;
 		for ( int i = 0; i < 6 * 60; ++i )
@@ -1721,7 +1742,7 @@ void TestToss()
 		}
 		return out;
 	};
-	const Outcome fast = toss( 25.0f, false );
+	const Outcome fast = toss( 25.0f, false, false, true );
 	const Outcome slow = toss( 3.0f, false );
 	const Outcome killed = toss( 25.0f, true );
 	const Outcome left = toss( 25.0f, false, true ); // (its ragdoll goes with it, on the follower too)
@@ -1738,6 +1759,8 @@ void TestToss()
 	CHECK( fast.followed && slow.followed && killed.followed );
 	std::printf( "    left while down: its ragdoll gone %d, followed %d\n", int( left.ragdollGone ), int( left.followed ) );
 	CHECK( left.downed && left.ragdollGone && left.followed );
+	std::printf( "    the torso ahead of the legs after a tick: struck %.2f m/s, only thrown %.2f m/s\n", fast.bend, slow.bend );
+	CHECK( fast.bend > 0.3f && slow.bend < 0.05f );
 }
 
 // Glue (map version 11: a breakable's glue): its pieces are bodies from the start, welded where they
@@ -8578,6 +8601,70 @@ void TestPoseTools()
 	}
 	std::printf( "    ragdoll at rest: worst joint off by %.4f m\n", worst );
 	CHECK( worst < 1e-4f );
+
+	// A rig whose rest is a T-pose (M275: the placeholder's, its arms turned out level about the
+	// shoulders) is fitted to the ragdoll's arms-down standing start: the same rest as the
+	// placeholder's own, so a ragdoll starts with its arms down, as its bodies are.
+	{
+		std::vector<int> parents;
+		for ( int16_t parent : set->Skeleton().joint_parents() )
+		{
+			parents.push_back( parent );
+		}
+		present::RagdollRig tPose = rig;
+		for ( int side = 0; side < 2; ++side )
+		{
+			const int shoulder = rig.anchorJoint[side == 0 ? ragdoll::LeftUpperArm : ragdoll::RightUpperArm];
+			const b3Quat out = b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 0.0f, 1.0f }, side == 0 ? 0.5f * detmath::kPi : -0.5f * detmath::kPi );
+			const b3Vec3 pivot = rig.restPosition[size_t( shoulder )];
+			for ( size_t j = 0; j < parents.size(); ++j )
+			{
+				int up = int( j );
+				while ( up >= 0 && up != shoulder )
+				{
+					up = parents[size_t( up )];
+				}
+				if ( up == shoulder )
+				{
+					tPose.restPosition[j] = b3Add( pivot, b3RotateVector( out, b3Sub( rig.restPosition[j], pivot ) ) );
+					tPose.restRotation[j] = b3MulQuat( out, rig.restRotation[j] );
+				}
+			}
+		}
+		const int hand = present::FindJoint( *set, "LeftHand" );
+		const float levelBefore = tPose.restPosition[size_t( hand )].y - tPose.restPosition[size_t( rig.anchorJoint[ragdoll::LeftUpperArm] )].y;
+		present::FitRestToRagdoll( parents, tPose );
+		float fitted = 0.0f;
+		for ( size_t j = 0; j < parents.size(); ++j )
+		{
+			fitted = std::max( fitted, b3Distance( tPose.restPosition[j], rig.restPosition[j] ) );
+		}
+		std::printf( "    a T-pose's left hand %.2f m above its shoulder; fitted, every joint within %.4f m of the arms-down rest\n",
+					 double( levelBefore ), double( fitted ) );
+		CHECK( std::fabs( levelBefore ) < 0.05f && fitted < 0.01f );
+	}
+
+	// Every character this checkout has (the paid one only where it was built locally: never in the
+	// repository): its upper arms, as a ragdoll standing at rest hangs them, point down.
+	for ( const char* name : { "mannequin", "ual_mannequin" } )
+	{
+		const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/" + name;
+		std::string error, warnings;
+		auto character = std::filesystem::exists( dir + "/anim.cfg" ) ? anim::AnimSet::Load( dir, error, warnings ) : nullptr;
+		if ( character == nullptr || character->Humanoid() == false )
+		{
+			continue;
+		}
+		const present::RagdollRig fittedRig = present::BuildRagdollRig( *character );
+		present::Models standing;
+		present::RagdollModels( fittedRig, parts, present::RagdollFrame( parts[ragdoll::Pelvis], 0.0f ), standing );
+		const int arm = present::FindJoint( *character, "LeftUpperArm" ), elbow = present::FindJoint( *character, "LeftLowerArm" );
+		const b3Vec3 rest = b3Normalize( b3Sub( position( character->RestModels()[size_t( elbow )] ), position( character->RestModels()[size_t( arm )] ) ) );
+		const b3Vec3 hung = b3Normalize( b3Sub( position( standing[size_t( elbow )] ), position( standing[size_t( arm )] ) ) );
+		std::printf( "    %s: the upper arm at rest (%.2f %.2f %.2f), on a ragdoll standing (%.2f %.2f %.2f)\n", name, double( rest.x ), double( rest.y ),
+					 double( rest.z ), double( hung.x ), double( hung.y ), double( hung.z ) );
+		CHECK( hung.y < -0.95f );
+	}
 
 	// Turned and moved, the frame carries the whole pose along: same model-space result.
 	b3Quat turn = b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, 1.1f );
