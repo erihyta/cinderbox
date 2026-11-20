@@ -10,6 +10,8 @@
 #include "joint_math.h"
 #include "level_query.h"
 #include "live_source.h"
+#include "capture.h"
+#include "mirror.h"
 #include "pose.h"
 #include "sha256.h"
 #include "registry.h"
@@ -8214,6 +8216,95 @@ void TestSeenBackCapped()
 	CHECK( double( away.cheatSum ) / away.ticks > double( onSite.cheatSum ) / onSite.ticks + 3.0 );
 }
 
+// Another player's events reach the game (M273). A pistol fired by one player at a wall: its
+// item.use (the muzzle's flash, the tracer) and item.hit (the spark where it lands) are the server's
+// events at the shooter, which a hybrid client hears with the shooter's character (M257). The game
+// takes its frames through the view codec (packet_handoff, object_source): the codec left the heard
+// ring out, so a game saw none of another player's events, and only predictions played (a player's
+// own shot). Here the watcher's frames go through the codec, as the game's do, into a mirror.
+void TestRemoteCues()
+{
+	Harness h( 48220, {}, {}, {}, UseHybridModel );
+	const ModSchema& schema = h.server.Schema();
+	const int useEvent = schema.FindEvent( "item.use" );
+	const int hitEvent = schema.FindEvent( "item.hit" );
+	CHECK( useEvent >= 0 && hitEvent >= 0 );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.actions = kKeySlot1 | ( tick > 200 && tick % 30 < 2 ? kKeyUse : 0 );
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+	const uint32_t shooter = h.server.Sim().PlayerNetId( h.bots[0].client->Slot() );
+	struct Count
+	{
+		int use = 0, hit = 0;
+	};
+	Count server, heard, shown;
+	uint32_t serverSeen = h.server.Sim().Globals().modEventCount, heardSeen = 0;
+	present::Mirror mirror( anim::AnimSet::CreateProcedural() );
+	present::ViewFrame published, decoded, last;
+	std::vector<uint8_t> bytes;
+	bool haveLast = false, codecOk = true;
+	auto tally = [&]( Count& c, int type, uint32_t a ) {
+		c.use += type == useEvent && a == shooter ? 1 : 0;
+		c.hit += type == hitEvent && a == shooter ? 1 : 0;
+	};
+	h.RunUntil( 8.0, [&]( double ) {
+		const SimGlobals& g = h.server.Sim().Globals();
+		for ( ; serverSeen < g.modEventCount; ++serverSeen )
+		{
+			const ModEventRecord& e = g.modEvents[serverSeen % kModEventHistory];
+			tally( server, int( e.type ), e.netIdA );
+		}
+		GameClient& w = *h.bots[1].client;
+		Simulation* sim = w.Sim();
+		const HybridSession* hybrid = w.Hybrid();
+		if ( sim == nullptr || hybrid == nullptr )
+		{
+			return;
+		}
+		const uint32_t count = hybrid->HeardCount();
+		for ( heardSeen = std::max( heardSeen, count - std::min( count, HybridSession::kHeardHistory ) ); heardSeen < count; ++heardSeen )
+		{
+			const ModEventRecord& e = hybrid->HeardEvents()[heardSeen % HybridSession::kHeardHistory];
+			tally( heard, int( e.type ), e.netIdA );
+		}
+		// The frame as LiveSource fills it, through the codec as the game takes it.
+		published.serial += 1;
+		published.state = "playing";
+		published.hasWorld = true;
+		present::CaptureFrame( *sim, published.frame );
+		published.frame.localNetId = sim->Globals().playerNetIds[w.Slot()];
+		published.frame.heardCount = count;
+		published.frame.heard.assign( hybrid->HeardEvents(), hybrid->HeardEvents() + HybridSession::kHeardHistory );
+		present::EncodeView( published, haveLast ? &last : nullptr, 0.0, bytes );
+		codecOk = codecOk && present::DecodeView( bytes.data(), bytes.size(), haveLast ? &last : nullptr, decoded );
+		last = published;
+		haveLast = true;
+		mirror.Update( decoded.frame, 0.5f, 1.0f / 60.0f );
+		for ( const present::Event& e : mirror.Events() )
+		{
+			if ( e.type == present::EventType::Mod )
+			{
+				tally( shown, int( e.modType ), e.netId );
+			}
+		}
+	} );
+	std::printf( "    the shooter's shots and hits: on the server %d and %d; the other's game heard %d and %d, and shown through the codec %d and %d\n",
+				 server.use, server.hit, heard.use, heard.hit, shown.use, shown.hit );
+	CHECK( codecOk );
+	CHECK( server.use >= 8 && server.hit >= 8 );
+	CHECK( heard.use == server.use && heard.hit == server.hit );
+	CHECK( shown.use == server.use && shown.hit == server.hit );
+	for ( Bot& b : h.bots )
+	{
+		CheckHybridClient( *b.client );
+	}
+}
+
 // The hybrid on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A lost
 // state costs nothing but itself (the next is a few ticks away, against a base the client has); a
 // lost frame comes again in the next packets, and the physics, behind, has waited for it rarely.
@@ -8483,6 +8574,7 @@ int main( int argc, char** argv )
 		{ "lag_compensation", TestLagCompensation },
 		{ "brawl_lag_compensation", TestBrawlLagCompensation },
 		{ "seen_back_capped", TestSeenBackCapped },
+		{ "remote_cues", TestRemoteCues },
 		{ "hybrid_puppets", TestHybridPuppets },
 		{ "hybrid_own_fields", TestHybridOwnFields },
 		{ "hybrid_reconnect", TestHybridReconnect },

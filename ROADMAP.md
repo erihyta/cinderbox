@@ -31,7 +31,7 @@ planned says so. Detail of finished steps is in the history.
 | Looks | reactions, predictions and HUD lines in sheets; workshop items are Godot packs, checked by a pack validator and a scene guard. The validator was bypassed by an escaped script name (found in M261.9); tightened in M262. Godot's parsers still read strangers' files until [6b](#6b-cooked-items) |
 | The world | props, destructible walls, items, containers; maps baked from Godot scenes |
 | Modding | a Godot project per mod, made from the SDK; Test mod (build, publish, play in one step); a look published again is taken up live; workshop items found by hash, never sent over the game connection; the store is a folder; the editor knows a mod's names after a server build |
-| Tests | 180 tests in `ctest`, all passing, and 28 Godot checks (`check_*.gd`, 20 of them in CI since M269); the determinism CI after every push (M261.8's merge went red on macOS: `net_brawl_lag_compensation` short of strikes there, made steady in M261.10). Every test in the runners' tables is registered, read from the tables themselves (M263) |
+| Tests | 181 tests in `ctest`, all passing, and 28 Godot checks (`check_*.gd`, 20 of them in CI since M269); the determinism CI after every push (M261.8's merge went red on macOS: `net_brawl_lag_compensation` short of strikes there, made steady in M261.10). Every test in the runners' tables is registered, read from the tables themselves (M263) |
 
 ## The goal
 

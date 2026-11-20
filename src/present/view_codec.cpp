@@ -48,7 +48,14 @@ enum WorldFlag : uint8_t
 	WorldHasInputs = 1 << 1,
 	WorldSameEntities = 1 << 2,
 	WorldSameRagdolls = 1 << 3,
+	// A hybrid client's ring of the server's events at characters it heard (M257), and its count:
+	// in the packet after the mod events when this frame or its base has any (M273: it was never
+	// written, so the game behind the codec heard none of them).
+	WorldHeard = 1 << 4,
 };
+
+// The heard ring's length (HybridSession::kHeardHistory).
+constexpr size_t kHeardRing = 128;
 
 // Where the packet being encoded counts its bytes (null: nobody asked).
 thread_local ViewCost* t_cost = nullptr;
@@ -1447,8 +1454,9 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	w.Write( f.modEventCount );
 	// (Nobody draws inputs: a compact packet leaves them out.)
 	bool inputs = f.hasInputs && compact == false;
+	const bool heard = f.heardCount != 0 || was.heardCount != 0;
 	w.Write( uint8_t( ( f.rolledBack ? WorldRolledBack : 0 ) | ( inputs ? WorldHasInputs : 0 ) | ( sameEntities ? WorldSameEntities : 0 ) |
-					  ( sameRagdolls ? WorldSameRagdolls : 0 ) ) );
+					  ( sameRagdolls ? WorldSameRagdolls : 0 ) | ( heard ? WorldHeard : 0 ) ) );
 	section( &ViewCost::header );
 
 	if ( compact == false )
@@ -1469,6 +1477,15 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	std::copy_n( f.modEvents.begin(), std::min<size_t>( f.modEvents.size(), kModEventHistory ), events );
 	std::copy_n( was.modEvents.begin(), std::min<size_t>( was.modEvents.size(), kModEventHistory ), eventsWas );
 	WriteRing( w, events, eventsWas );
+	if ( heard )
+	{
+		w.Write( f.heardCount );
+		ModEventRecord heardNow[kHeardRing] = {};
+		ModEventRecord heardWas[kHeardRing] = {};
+		std::copy_n( f.heard.begin(), std::min( f.heard.size(), kHeardRing ), heardNow );
+		std::copy_n( was.heard.begin(), std::min( was.heard.size(), kHeardRing ), heardWas );
+		WriteRing( w, heardNow, heardWas );
+	}
 	section( &ViewCost::events );
 
 	if ( compact )
@@ -1701,6 +1718,7 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	f.hasInputs = ( world & WorldHasInputs ) != 0;
 	bool sameEntities = ( world & WorldSameEntities ) != 0;
 	bool sameRagdolls = ( world & WorldSameRagdolls ) != 0;
+	const bool heard = ( world & WorldHeard ) != 0;
 	if ( ( sameEntities || sameRagdolls ) && b == nullptr )
 	{
 		return false;
@@ -1737,6 +1755,19 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	ReadRing( r, events );
 	f.impacts.assign( impacts, impacts + kImpactHistory );
 	f.modEvents.assign( events, events + kModEventHistory );
+	f.heardCount = 0;
+	f.heard.clear();
+	if ( heard )
+	{
+		f.heardCount = r.Read<uint32_t>();
+		ModEventRecord ring[kHeardRing] = {};
+		if ( b != nullptr )
+		{
+			std::copy_n( b->heard.begin(), std::min( b->heard.size(), kHeardRing ), ring );
+		}
+		ReadRing( r, ring );
+		f.heard.assign( ring, ring + kHeardRing );
+	}
 
 	if ( compact )
 	{
