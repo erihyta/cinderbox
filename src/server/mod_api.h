@@ -422,6 +422,23 @@ public:
 	int m_privateSlots = 0;
 };
 
+// Bots (M281): players a mod plays. The server keeps them as it keeps a player, in a player's slot
+// (teams, scores, items, the names list: whatever a mod does with a player), with no connection:
+// what they press is the mod's (Context::BotInput). GameServer is the one there is.
+class BotSeats
+{
+public:
+	virtual ~BotSeats() = default;
+	// A bot named `name` (made unique as a player's name is) joins on the next tick: its slot, or
+	// -1 when every slot is taken.
+	virtual int AddBot( const std::string& name ) = 0;
+	// It leaves on the next tick (nothing happens for a slot that is not a bot's).
+	virtual void RemoveBot( PlayerSlot slot ) = 0;
+	virtual bool IsBot( PlayerSlot slot ) const = 0;
+	// What it presses from the next tick on, until said again.
+	virtual void BotInput( PlayerSlot slot, const PlayerInput& input ) = 0;
+};
+
 // One tick, as a mod sees it.
 class Context
 {
@@ -616,6 +633,10 @@ public:
 	{
 		m_nav = nav;
 	}
+	void SetBots( BotSeats* bots )
+	{
+		m_bots = bots;
+	}
 	// Where commands go that a frame has no room for (kMaxCommandsPerFrame): the server puts them
 	// first in the next tick's frame, in order (unset: they are dropped).
 	void SetOverflow( std::vector<SimCommand>* overflow )
@@ -758,6 +779,34 @@ public:
 	void StopDriving( uint32_t body );
 	// Whether a mod drives `body` (and with what, if `input`).
 	bool DrivenByMod( uint32_t body, PlayerInput* input = nullptr ) const;
+
+	// Bots (M281; BotSeats): a player a mod plays, in a slot of its own, joining on the next tick
+	// (Joining says so then). Its slot, or -1 (every slot taken, or no server to keep it).
+	int AddBot( const std::string& name )
+	{
+		return m_bots != nullptr ? m_bots->AddBot( name ) : -1;
+	}
+	// It leaves on the next tick.
+	void RemoveBot( PlayerSlot slot )
+	{
+		if ( m_bots != nullptr )
+		{
+			m_bots->RemoveBot( slot );
+		}
+	}
+	bool IsBot( PlayerSlot slot ) const
+	{
+		return m_bots != nullptr && m_bots->IsBot( slot );
+	}
+	// What the bot presses from the next tick on (a player's keys: moving, the camera, the buttons,
+	// the actions, the slots' keys, an intent), until said again.
+	void BotInput( PlayerSlot slot, const PlayerInput& input )
+	{
+		if ( m_bots != nullptr )
+		{
+			m_bots->BotInput( slot, input );
+		}
+	}
 	// The bodies mods drive (NPCs), by NetId.
 	std::vector<uint32_t> ModDrivenBodies() const;
 
@@ -874,6 +923,7 @@ private:
 	std::vector<SimCommand>* m_overflow = nullptr;
 	const std::array<const PastPoses*, kMaxPlayers>* m_past = nullptr;
 	const NavMesh* m_nav = nullptr;
+	BotSeats* m_bots = nullptr;
 };
 
 class ServerMod
