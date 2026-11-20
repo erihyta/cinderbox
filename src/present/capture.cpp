@@ -116,7 +116,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.kind = VisualKind::Player;
 			f.slot = c->slot;
 		}
-		else if ( const IdleBody* idle = e.try_get<IdleBody>() )
+		else if ( e.has<IdleBody>() )
 		{
 			// A character's body nobody drives: drawn as its character, standing (no animation state).
 			f.kind = VisualKind::Player;

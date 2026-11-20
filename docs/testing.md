@@ -120,7 +120,8 @@ hand (Actions, determinism, Run workflow):
 
 Each build job (`scripts/ci_check.sh <preset> <name> <out-dir>`, also usable locally):
 
-- builds the simulation, server, mods and tests (no Godot);
+- builds the simulation, server, mods and tests (no Godot), with our own code's warnings as errors
+  (`CB_WARNINGS_AS_ERRORS`, M272; the dependencies' headers are system headers);
 - runs every test (`ctest`, network sessions included);
 - compares the per-tick hashes with `tests/reference_hashes.txt` and the pose hash with
   `tests/reference_anim_hash.txt`;

@@ -720,7 +720,7 @@ void TestModsSession()
 	CHECK( kKeyUse != 0 );
 	ActionBits fire = kKeyUse;
 	ActionBits pistol = kKeySlot1;
-	uint16_t spawn = schema.ActionMask( "spawn_prop" );
+	ActionBits spawn = schema.ActionMask( "spawn_prop" );
 
 	// Slot 0 stands at x = -5.25 and slot 1 at x = -3.75 (the sandbox spawn grid): slot 0 looks
 	// toward +X at slot 1, 1.5 m away, and a little down from its eye to the chest (players are hit
@@ -954,12 +954,12 @@ void TestCharacterItem()
 			std::string bytes;
 			anim::DiskReader( ( dir / "baked" ).string() )( entry.path().filename().string(), bytes );
 			std::string name = "characters/example/" + entry.path().filename().string();
-			mz_zip_writer_add_mem( &zip, name.c_str(), bytes.data(), bytes.size(), MZ_DEFAULT_COMPRESSION );
+			mz_zip_writer_add_mem( &zip, name.c_str(), bytes.data(), bytes.size(), mz_uint( MZ_DEFAULT_COMPRESSION ) );
 		}
 		if ( withHitboxes )
 		{
 			std::string text = anim::FormatHitboxes( anim::DefaultHitboxes() );
-			mz_zip_writer_add_mem( &zip, "characters/example/hitboxes.cfg", text.data(), text.size(), MZ_DEFAULT_COMPRESSION );
+			mz_zip_writer_add_mem( &zip, "characters/example/hitboxes.cfg", text.data(), text.size(), mz_uint( MZ_DEFAULT_COMPRESSION ) );
 		}
 		mz_zip_writer_add_mem( &zip, "characters/example/character.tscn", "[gd_scene]", 10, 0 );
 		void* data = nullptr;
@@ -1021,8 +1021,8 @@ void TestPickup()
 	Harness h( 47804, {}, {}, { { "pickup.spawn_each", "1" } } );
 	const ModSchema& schema = h.server.Schema();
 	ActionBits bat = kKeySlot2;
-	uint16_t pickup = schema.ActionMask( "pickup" );
-	uint16_t drop = schema.ActionMask( "drop" );
+	ActionBits pickup = schema.ActionMask( "pickup" );
+	ActionBits drop = schema.ActionMask( "drop" );
 	const BoardField* target = schema.FindField( "pickup.target" );
 	const BoardField* progress = schema.FindField( "pickup.since" );
 	const BoardField* hold = schema.FindField( "pickup.hold" );
@@ -1696,8 +1696,8 @@ void TestItemLayers()
 	} );
 	const ModSchema& schema = h.server.Schema();
 	ActionBits bat = kKeySlot2;
-	uint16_t crouch = schema.ActionMask( "crouch" );
-	uint16_t drop = schema.ActionMask( "drop" );
+	ActionBits crouch = schema.ActionMask( "crouch" );
+	ActionBits drop = schema.ActionMask( "drop" );
 	int carry = -1;
 	int sneak = -1;
 	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
@@ -1781,7 +1781,7 @@ void TestSneak()
 	} );
 	CHECK( mannequin != nullptr );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t crouch = schema.ActionMask( "crouch" );
+	ActionBits crouch = schema.ActionMask( "crouch" );
 	// The sneak mod's pack, among whatever packs other mods ship.
 	int sneakPack = -1;
 	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
@@ -1964,7 +1964,7 @@ void TestGunHurtsNpc()
 	} );
 	h.Report();
 	GameClient& client = *h.bots[0].client;
-	std::printf( "    the NPC %u hurt %d times by the pistol; desyncs %u\n", mod->npc.load(), hurtNpc, client.GetStats().desyncs );
+	std::printf( "    the NPC %u hurt %d times by the pistol; desyncs %u\n", mod->npc.load(), hurtNpc, unsigned( client.GetStats().desyncs ) );
 	CHECK( mod->npc != 0 && hurtNpc > 0 );
 	CHECK( client.GetStats().desyncs == 0 );
 }
@@ -2228,7 +2228,7 @@ void TestPistolMark()
 {
 	Harness h( 47811 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t mark = schema.ActionMask( "use2" );
+	ActionBits mark = schema.ActionMask( "use2" );
 	ActionBits pistol = kKeySlot1;
 	int scanEvent = schema.FindEvent( "item.use2" );
 	int markedEvent = schema.FindEvent( "mark.found" );
@@ -3399,7 +3399,7 @@ bool TakeUntil( present::ViewSource& source, present::ViewFrame& frame, double s
 void TestViewSources()
 {
 	std::filesystem::path replayPath = std::filesystem::temp_directory_path() / "cinderbox_view_test.cbr";
-	uint16_t spawn = 0;
+	ActionBits spawn = 0;
 	{
 		Harness h( 17830, replayPath.string() );
 		spawn = h.server.Schema().ActionMask( "spawn_prop" );
@@ -4707,7 +4707,7 @@ void TestFragBreaks()
 					 "standing; the client %d wall, %d loose, %d standing (%s); desyncs %u\n",
 					 breakRadius != nullptr ? breakRadius : "default", brokenAt, float( brokenAt - throwAt ) / 60.0f, server.walls, server.loose,
 					 int( server.standing.size() ), mine.walls, mine.loose, int( mine.standing.size() ), same ? "the same" : "not the same",
-					 client.GetStats().desyncs );
+					 unsigned( client.GetStats().desyncs ) );
 		CHECK( brokenAt > throwAt && server.walls == 0 && mine.walls == 0 && mine.loose == server.loose && same && client.GetStats().desyncs == 0 );
 	};
 	Bricks all, hole, glued;
@@ -4931,7 +4931,7 @@ void TestAnySkeleton()
 	const float camera = detmath::WrapAngle( detmath::YawToRadians( 16384 ) );
 	std::printf( "    the killed critter dead %d, ragdolls seen %d; the camera-less body faces %.3f (its camera %.3f); desyncs %u and %u\n",
 				 killed != nullptr ? int( killed->dead ) : -1, ragdolls, blindOne != nullptr ? double( blindOne->facingYaw ) : -9.0,
-				 double( camera ), first.GetStats().desyncs, second.GetStats().desyncs );
+				 double( camera ), unsigned( first.GetStats().desyncs ), unsigned( second.GetStats().desyncs ) );
 	CHECK( killed != nullptr && killed->dead && ragdolls == 0 );
 	CHECK( blindOne != nullptr && server.CharacterOf( server.FindEntity( server.PlayerNetId( second.Slot() ) ) ) == 1 &&
 		   std::fabs( blindOne->facingYaw - camera ) > 0.5f );
@@ -5014,8 +5014,8 @@ void TestPossession()
 	{
 		idle += server.FindEntity( r.netId ).has<IdleBody>() ? 1 : 0;
 	}
-	std::printf( "    the player drives %u now; bodies nobody drives: %d; desyncs %u, checksums %u\n", now, idle, client.GetStats().desyncs,
-				 client.GetStats().checksumsVerified );
+	std::printf( "    the player drives %u now; bodies nobody drives: %d; desyncs %u, checksums %u\n", now, idle, unsigned( client.GetStats().desyncs ),
+				 unsigned( client.GetStats().checksumsVerified ) );
 	// Its first body and the one it took first stand nobody's; it drives the last one spawned for it.
 	CHECK( idle == 2 && server.FindEntity( now ).has<Character>() && session != nullptr && session->Sim().PlayerNetId( client.Slot() ) == now );
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
@@ -5056,8 +5056,8 @@ void TestPossessProp()
 	const flecs::entity first = server.FindEntity( firstTaken );
 	std::printf( "    first it drove %u (%s), now %u (%s); desyncs %u, checksums %u\n", firstTaken,
 				 first.is_valid() && first.has<DrivenProp>() == false && first.has<Prop>() ? "a prop again" : "?", now,
-				 server.FindEntity( now ).has<DrivenProp>() ? "a prop" : "a character's body", client.GetStats().desyncs,
-				 client.GetStats().checksumsVerified );
+				 server.FindEntity( now ).has<DrivenProp>() ? "a prop" : "a character's body", unsigned( client.GetStats().desyncs ),
+				 unsigned( client.GetStats().checksumsVerified ) );
 	CHECK( first.is_valid() && first.has<Prop>() && first.has<DrivenProp>() == false && now != firstTaken );
 	CHECK( client.Session() != nullptr && client.Session()->Sim().PlayerNetId( client.Slot() ) == now );
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
@@ -5178,7 +5178,7 @@ void TestInventoryBodies()
 	GameClient& client = *h.bots[0].client;
 	std::printf( "    left its body %d, back %d; its bat %u before it died (tick %u): %s; the next life's bat %d; desyncs %u, checksums %u\n",
 				 int( left ), int( back ), bat, deathTick, batGone ? "gone" : batLying ? "LYING IN THE WORLD" : "?", int( nextLifeBat ),
-				 client.GetStats().desyncs, client.GetStats().checksumsVerified );
+				 unsigned( client.GetStats().desyncs ), unsigned( client.GetStats().checksumsVerified ) );
 	CHECK( left && back && bat != 0 && deathTick != 0 );
 	CHECK( batGone && batLying == false );
 	CHECK( nextLifeBat );
@@ -5267,8 +5267,8 @@ void TestNpc()
 	const Transform* at = server.EntityTransform( npc->m_body );
 	std::printf( "    the NPC %u: driven %d, at (%.1f, %.1f); %u inputs sent in %u ticks; the shot %s (%s); desyncs %u, checksums %u\n",
 				 npc->m_body, int( body.has<ModDriven>() ), at != nullptr ? double( at->position.x ) : 0.0, at != nullptr ? double( at->position.z ) : 0.0,
-				 npc->m_sent, npc->m_ticks, npc->m_hit ? "hit it" : "missed", npc->m_zone.c_str(), client.GetStats().desyncs,
-				 client.GetStats().checksumsVerified );
+				 npc->m_sent, npc->m_ticks, npc->m_hit ? "hit it" : "missed", npc->m_zone.c_str(), unsigned( client.GetStats().desyncs ),
+				 unsigned( client.GetStats().checksumsVerified ) );
 	CHECK( body.is_valid() && body.has<ModDriven>() && body.has<Character>() );
 	CHECK( npc->m_sent > 0 && npc->m_sent < npc->m_ticks / 30 );
 	CHECK( npc->m_hit );
@@ -5298,7 +5298,7 @@ void TestLeaveAfterFiring()
 	h.RunUntil( 7.0 );
 	h.Report();
 	GameClient& client = *h.bots[0].client;
-	std::fprintf( stderr, "    desyncs %u, checksums %u\n", client.GetStats().desyncs, client.GetStats().checksumsVerified );
+	std::fprintf( stderr, "    desyncs %u, checksums %u\n", unsigned( client.GetStats().desyncs ), unsigned( client.GetStats().checksumsVerified ) );
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 	// The body it drives now carries the player's health and deaths (the combat mod's), as its first did.
 	Simulation& server = h.server.Sim();
@@ -5582,8 +5582,8 @@ void RunChaos( bool hybrid )
 	for ( size_t b = 0; b < h.bots.size(); ++b )
 	{
 		const GameClient& client = *h.bots[b].client;
-		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u; bodies moved before its physics steps %llu\n", b, client.GetStats().desyncs,
-					  client.GetStats().checksumsVerified,
+		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u; bodies moved before its physics steps %llu\n", b, unsigned( client.GetStats().desyncs ),
+					  unsigned( client.GetStats().checksumsVerified ),
 					  client.Hybrid() != nullptr ? (unsigned long long)client.Hybrid()->GetStats().scrambled : 0ull );
 		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 	}
@@ -5677,7 +5677,7 @@ void TestCombatNpc()
 	const uint32_t player = server.PlayerNetId( h.bots[0].client->Slot() );
 	std::printf( "    the NPC: dead after three hits %d; now health %d, deaths %d; the player's kills %d; desyncs %u\n", int( hurt->m_deadAt140 ),
 				 field( hurt->m_npc, "combat.health" ), field( hurt->m_npc, "combat.deaths" ), field( player, "combat.kills" ),
-				 h.bots[0].client->GetStats().desyncs );
+				 unsigned( h.bots[0].client->GetStats().desyncs ) );
 	std::printf( "    its health before it was hit: %d\n", hurt->m_healthBefore );
 	CHECK( hurt->m_healthBefore == 100 );
 	CHECK( hurt->m_deadAt140 && field( hurt->m_npc, "combat.health" ) == 100 && field( hurt->m_npc, "combat.deaths" ) == 1 &&
@@ -5808,7 +5808,7 @@ void TestNavigation()
 	}
 	std::printf( "    the way: %zu corners%s; the NPC ended at (%.2f, %.2f), the goal (0, 6); desyncs %u\n", walker->m_corners.size(),
 				 throughDoor ? ", through the doorway" : "", at ? double( at->position.x ) : 0.0, at ? double( at->position.z ) : 0.0,
-				 h.bots[0].client->GetStats().desyncs );
+				 unsigned( h.bots[0].client->GetStats().desyncs ) );
 	CHECK( walker->m_found && walker->m_corners.size() >= 3 && throughDoor );
 	CHECK( at != nullptr && b3Length( b3Vec3{ at->position.x - 0.0f, 0.0f, at->position.z - 6.0f } ) < 1.0f );
 	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
@@ -5916,7 +5916,7 @@ void TestNpcItems()
 	const uint32_t player = server.PlayerNetId( h.bots[0].client->Slot() );
 	const Slots* slots = brawler->m_npc != 0 ? server.FindEntity( brawler->m_npc ).try_get<Slots>() : nullptr;
 	std::printf( "    the NPC holds slot %d; the player's health %d, the NPC's %d; desyncs %u\n", slots != nullptr ? int( slots->selected ) : -1,
-				 health( player ), health( brawler->m_npc ), h.bots[0].client->GetStats().desyncs );
+				 health( player ), health( brawler->m_npc ), unsigned( h.bots[0].client->GetStats().desyncs ) );
 	CHECK( slots != nullptr && slots->selected == 0 );
 	CHECK( health( player ) < 100 && health( player ) >= 0 );
 	CHECK( health( brawler->m_npc ) < 100 && health( brawler->m_npc ) >= 0 );
@@ -6031,7 +6031,7 @@ void TestWaves()
 	h.Report();
 	const uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
 	std::printf( "    wave %d; at most %d NPCs at once; the bot's lowest health %d, its kills %d; desyncs %u\n",
-				 server.GlobalBoardValue( wave->slot ), most, lowest, server.BoardValue( me, kills->slot ), h.bots[0].client->GetStats().desyncs );
+				 server.GlobalBoardValue( wave->slot ), most, lowest, server.BoardValue( me, kills->slot ), unsigned( h.bots[0].client->GetStats().desyncs ) );
 	CHECK( server.GlobalBoardValue( wave->slot ) >= 3 );
 	CHECK( lowest < 100 );
 	CHECK( server.BoardValue( me, kills->slot ) >= 5 ); // (the first two waves: 2 + 3)
@@ -6186,7 +6186,7 @@ void TestFlight()
 	// The jetpack is off unless the server says so.
 	Harness h( 47861, {}, {}, { { "flight.jetpack", "1" }, { "test.mods", "flight" } } );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fly = schema.ActionMask( "fly" );
+	ActionBits fly = schema.ActionMask( "fly" );
 	const BoardField* on = schema.FindField( "flight.on" );
 	const BoardField* fuel = schema.FindField( "flight.fuel" );
 	bool haveSet = false;
@@ -7171,7 +7171,7 @@ void TestHybridSession()
 	const ModSchema& schema = h.server.Schema();
 	ActionBits fire = kKeyUse;
 	ActionBits pistol = kKeySlot1;
-	uint16_t spawn = schema.ActionMask( "spawn_prop" );
+	ActionBits spawn = schema.ActionMask( "spawn_prop" );
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
 		in.cameraYaw = 16384;

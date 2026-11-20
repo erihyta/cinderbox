@@ -704,8 +704,6 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 													 else if ( y == nullptr || ( x && x->netId < y->netId ) )
 													 {
 														 std::printf( "  %x: only the server's (%.4f %.4f %.4f)\n", x->netId, x->at.x, x->at.y, x->at.z );
-													 const flecs::entity se = server.FindEntity( x->netId );
-													 const uint32_t theOwner = se.is_valid() && se.has<Prop>() ? se.get<Prop>().owner : 0;
 													 for ( Simulation* sim : { &server, &f.client->Sim() } )
 													 {
 														 const flecs::entity e = sim->FindEntity( x->netId );

@@ -1577,7 +1577,7 @@ void Simulation::ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevB
 	}
 }
 
-void Simulation::StepSlots( const InputFrame& frame )
+void Simulation::StepSlots( const InputFrame& )
 {
 	m_usingScratch.clear();
 	m_usingItems.clear();
@@ -2445,7 +2445,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	std::stable_sort( m_usingScratch.begin(), m_usingScratch.end(), byHolder );
 	auto kindsOf = [this, byHolder]( uint32_t netId, Kinds& k ) {
 		auto take = [&]( const std::vector<std::pair<uint32_t, uint16_t>>& list, uint16_t* to, uint32_t& count, uint32_t most ) {
-			const std::pair<uint32_t, uint16_t> key{ netId, 0 };
+			const std::pair<uint32_t, uint16_t> key{ netId, uint16_t( 0 ) };
 			for ( auto it = std::lower_bound( list.begin(), list.end(), key, byHolder ); it != list.end() && it->first == netId && count < most; ++it )
 			{
 				to[count++] = it->second;

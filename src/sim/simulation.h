@@ -837,7 +837,7 @@ private:
 	void EnforceRagdollCap( uint32_t cap );
 	void MoveCharacters( const InputFrame& frame );
 	// Slots (types.h): each player's intent of this tick, before anything asks what it holds.
-	void StepSlots( const InputFrame& frame );
+	void StepSlots( const InputFrame& );
 	// The item a player has in a slot (0: none).
 	uint32_t SlotItemOf( uint32_t holder, uint8_t slot ) const;
 	// A new arrival finds its slot (its kind's own, pushing out what is there; else the first free

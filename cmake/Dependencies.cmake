@@ -129,6 +129,15 @@ if(CB_SANITIZE MATCHES "undefined")
 	target_compile_options(box3d PRIVATE -fno-sanitize=nonnull-attribute)
 endif()
 
+# The dependencies' headers are system headers to our code: what they warn of (miniz's unused
+# static functions, in every file that includes it) is not ours, and our warnings are errors in CI
+# (M272). (The SYSTEM property needs CMake 3.25; older ones take it as a name and ignore it.)
+foreach(t flecs_static box3d enet miniz ozz_base ozz_animation ozz_animation_offline Recast Detour)
+	if(TARGET ${t})
+		set_property(TARGET ${t} PROPERTY SYSTEM TRUE)
+	endif()
+endforeach()
+
 # ozz builds with warnings-as-errors; a newer compiler must not break our build.
 foreach(t ozz_base ozz_animation ozz_animation_offline ozz_options ozz_geometry)
 	if(TARGET ${t})

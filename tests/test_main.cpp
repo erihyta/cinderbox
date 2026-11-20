@@ -3107,7 +3107,7 @@ void TestGameplaySanity()
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 90 );
 	CHECK( sim.IsPlayerActive( 0 ) );
-	const Character& idle = player().get<Character>();
+	const Character idle = player().get<Character>(); // (a copy: player() is an entity made for the call)
 	b3Vec3 start = player().get<Transform>().position;
 	std::printf( "    idle: y=%.3f grounded=%d\n", start.y, idle.grounded );
 	CHECK( idle.grounded == 1 );
@@ -5877,7 +5877,7 @@ void TestPropWalls()
 		f.inputs[0].cameraYaw = uint16_t( int( 3000.0f * std::sin( float( i ) * 0.05f ) ) );
 		step( 1 );
 		const Transform& t = *sim.EntityTransform( crate );
-		const DrivenProp& prop = sim.FindEntity( crate ).get<DrivenProp>();
+		const DrivenProp prop = sim.FindEntity( crate ).get<DrivenProp>(); // (a copy)
 		for ( int k = 0; k < 8; ++k )
 		{
 			const b3Vec3 corner = { ( k & 1 ) ? prop.high[0] : prop.low[0], ( k & 2 ) ? prop.high[1] : prop.low[1], ( k & 4 ) ? prop.high[2] : prop.low[2] };
@@ -9424,7 +9424,7 @@ void TestSlotKeys()
 	};
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 30 );
-	for ( uint16_t kind : { 0, 1, 2 } )
+	for ( uint16_t kind : { uint16_t( 0 ), uint16_t( 1 ), uint16_t( 2 ) } )
 	{
 		SimCommand c;
 		c.type = CommandType::SpawnItem;
@@ -9655,7 +9655,7 @@ void TestLeftHand()
 	};
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 10 );
-	for ( uint16_t kind : { 0, 1, 2, 3 } )
+	for ( uint16_t kind : { uint16_t( 0 ), uint16_t( 1 ), uint16_t( 2 ), uint16_t( 3 ) } )
 	{
 		SimCommand c;
 		c.type = CommandType::SpawnItem;
@@ -13676,8 +13676,12 @@ void TestViewFile()
 } // namespace
 
 #if defined( _WIN32 )
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 // A crash says where: the return addresses from this executable's start, for llvm-symbolizer
 // (--relative-address) with its .pdb.

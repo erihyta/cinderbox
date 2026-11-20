@@ -782,7 +782,7 @@ bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<
 std::string DefaultWorkshopDir()
 {
 	// Godot's user:// for the project named "Cinderbox" (godot/project.godot).
-	const char* suffix = "/Godot/app_userdata/Cinderbox/workshop";
+	[[maybe_unused]] const char* suffix = "/Godot/app_userdata/Cinderbox/workshop"; // (not on Linux)
 #if defined( _WIN32 )
 	const char* appData = std::getenv( "APPDATA" );
 	return appData != nullptr ? std::string( appData ) + suffix : std::string();

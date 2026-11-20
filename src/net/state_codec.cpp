@@ -377,26 +377,26 @@ void EncodePuppet( const Puppet& now, const Puppet* base, uint32_t tick, std::ve
 	const Puppet& was = base != nullptr ? *base : none;
 	const size_t layers = std::min<size_t>( now.layerCount, kPuppetLayers );
 	uint32_t changed = 0;
-	changed |= now.x != was.x || now.y != was.y || now.z != was.z ? PuppetPlace : 0;
-	changed |= now.facing != was.facing ? PuppetFacing : 0;
-	changed |= now.aimYaw != was.aimYaw || now.aimPitch != was.aimPitch ? PuppetAim : 0;
-	changed |= now.flags != was.flags ? PuppetFlagsChanged : 0;
-	changed |= now.slot != was.slot ? PuppetSlot : 0;
-	changed |= now.lastJumpTick != was.lastJumpTick ? PuppetJump : 0;
-	changed |= now.airSince != was.airSince ? PuppetAir : 0;
-	changed |= now.stepCount != was.stepCount ? PuppetStep : 0;
-	changed |= now.motionsOn != was.motionsOn ? PuppetMotions : 0;
-	changed |= now.layerCount != was.layerCount || std::memcmp( now.stances, was.stances, layers ) != 0 ? PuppetStances : 0;
+	changed |= now.x != was.x || now.y != was.y || now.z != was.z ? uint32_t( PuppetPlace ) : 0u;
+	changed |= now.facing != was.facing ? uint32_t( PuppetFacing ) : 0u;
+	changed |= now.aimYaw != was.aimYaw || now.aimPitch != was.aimPitch ? uint32_t( PuppetAim ) : 0u;
+	changed |= now.flags != was.flags ? uint32_t( PuppetFlagsChanged ) : 0u;
+	changed |= now.slot != was.slot ? uint32_t( PuppetSlot ) : 0u;
+	changed |= now.lastJumpTick != was.lastJumpTick ? uint32_t( PuppetJump ) : 0u;
+	changed |= now.airSince != was.airSince ? uint32_t( PuppetAir ) : 0u;
+	changed |= now.stepCount != was.stepCount ? uint32_t( PuppetStep ) : 0u;
+	changed |= now.motionsOn != was.motionsOn ? uint32_t( PuppetMotions ) : 0u;
+	changed |= now.layerCount != was.layerCount || std::memcmp( now.stances, was.stances, layers ) != 0 ? uint32_t( PuppetStances ) : 0u;
 	uint32_t layerMask = 0;
 	for ( size_t l = 0; l < layers; ++l )
 	{
 		layerMask |= now.layers[l] == was.layers[l] ? 0 : uint32_t( 1 ) << l;
 	}
-	changed |= layerMask != 0 || now.layerCount != was.layerCount ? PuppetLayersChanged : 0;
+	changed |= layerMask != 0 || now.layerCount != was.layerCount ? uint32_t( PuppetLayersChanged ) : 0u;
 	changed |= now.kindCount != was.kindCount || now.kindsInUse != was.kindsInUse ||
 					   std::memcmp( now.kinds, was.kinds, sizeof( now.kinds ) ) != 0
-				   ? PuppetKindsChanged
-				   : 0;
+				   ? uint32_t( PuppetKindsChanged )
+				   : 0u;
 	PutVarint( out, changed );
 	if ( changed & PuppetPlace )
 	{

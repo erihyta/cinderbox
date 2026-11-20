@@ -52,11 +52,24 @@ if(CB_SANITIZE)
 	endif()
 endif()
 
-# Warnings for our own targets only.
+# Warnings for our own targets only; errors with CB_WARNINGS_AS_ERRORS (the CI's builds, M272).
+# Left out: MSVC's C4456 (a local hiding another of the function's: a style, used on purpose in
+# long functions) and C4127 (a constant condition: the tests' checks of constants), GCC's
+# -Wmaybe-uninitialized (it said so of a struct whose every field has an initializer).
+option(CB_WARNINGS_AS_ERRORS "Our own targets' warnings are errors" OFF)
 function(cb_target_warnings target)
 	if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-		target_compile_options(${target} PRIVATE /W4 /permissive-)
+		target_compile_options(${target} PRIVATE /W4 /permissive- /wd4456 /wd4127)
+		if(CB_WARNINGS_AS_ERRORS)
+			target_compile_options(${target} PRIVATE /WX)
+		endif()
 	else()
 		target_compile_options(${target} PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
+		if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+			target_compile_options(${target} PRIVATE -Wno-maybe-uninitialized)
+		endif()
+		if(CB_WARNINGS_AS_ERRORS)
+			target_compile_options(${target} PRIVATE -Werror)
+		endif()
 	endif()
 endfunction()

@@ -108,12 +108,12 @@ struct EntityRecord : EntityFixed
 template <typename Record>
 void Zero( Record& r )
 {
-	std::memset( &r, 0, sizeof( r ) );
+	std::memset( static_cast<void*>( &r ), 0, sizeof( r ) );
 }
 
 void Zero( EntityRecord& r )
 {
-	std::memset( static_cast<EntityFixed*>( &r ), 0, sizeof( EntityFixed ) );
+	std::memset( static_cast<void*>( static_cast<EntityFixed*>( &r ) ), 0, sizeof( EntityFixed ) );
 	r.anim = AnimState{};
 	r.board.values.clear();
 }
@@ -209,7 +209,7 @@ FrameEntity FromRecord( const EntityRecord& r )
 RagdollRecord ToRecord( const FrameRagdoll& f )
 {
 	RagdollRecord r;
-	std::memset( &r, 0, sizeof( r ) );
+	std::memset( static_cast<void*>( &r ), 0, sizeof( r ) );
 	r.netId = f.netId;
 	r.owner = f.owner;
 	r.slot = f.slot;
@@ -655,7 +655,7 @@ static_assert( sizeof( RestRecord ) == 60, "RestRecord has padding" );
 RestRecord Rest( const EntityRecord& record )
 {
 	RestRecord rest;
-	std::memset( &rest, 0, sizeof( rest ) );
+	std::memset( static_cast<void*>( &rest ), 0, sizeof( rest ) );
 	rest.netId = record.netId;
 	rest.kind = record.kind;
 	rest.shape = record.shape;
@@ -851,7 +851,7 @@ struct CompactRagdoll
 	static bool Write( ByteWriter& w, const RagdollRecord& now, const RagdollRecord* wasExact )
 	{
 		RagdollRecord zero;
-		std::memset( &zero, 0, sizeof( zero ) );
+		std::memset( static_cast<void*>( &zero ), 0, sizeof( zero ) );
 		const RagdollRecord& was = wasExact != nullptr ? *wasExact : zero;
 
 		std::vector<uint8_t> body;
@@ -930,7 +930,7 @@ struct Exact
 	static bool Write( ByteWriter& w, const Record& now, const Record* was )
 	{
 		Record zero;
-		std::memset( &zero, 0, sizeof( zero ) );
+		std::memset( static_cast<void*>( &zero ), 0, sizeof( zero ) );
 		const Record& before = was != nullptr ? *was : zero;
 		if ( std::memcmp( &now, &before, sizeof( Record ) ) == 0 )
 		{
