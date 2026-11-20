@@ -22,7 +22,12 @@ The markers carry the collision the simulation needs; everything else in the sce
    `test_ground.tscn` is the arena opened onto bumpy terrain with a building-sized block on it, for
    trying movement, slopes and the camera, and a ball pit (a 5 x 5 m pen of 181 balls pushed by
    characters) south-east of the spawn. `make_test_ground.gd` makes it anew from the arena, without
-   what was added by hand since (the pushed balls, the critter, the ball pit).
+   what was added by hand since (the pushed balls, the critter, the ball pit). `arena.tscn` (M278)
+   is the slice's map: a city block for 8 to 10 players, 140 m across inside a skyline of tall
+   blocks (a park with trees and a fountain in the middle, a ring road and four streets, two
+   towers, two open garages with ramps and brick parapets that break, brick walls for cover, street
+   lamps, team spawns at the west and east streets' ends). `tools/make_arena.py` wrote its first
+   draft; once it is edited in Godot, edit it there.
 2. Place `CbStatic` nodes for the collision (boxes, or [shapes](#collision-shapes) under them), and
    your own meshes, lights and effects for the look.
 3. Press **Bake Map** in the 3D toolbar, or run `tools\bake_map.ps1 -Scene res://maps/arena.tscn`.
