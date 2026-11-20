@@ -56,6 +56,16 @@ struct LevelBody
 	float yaw = 0.0f;
 };
 
+// A place a mod names (M277: a CbSpawn with a tag): where a team spawns. The simulation ignores it;
+// the server's mods read it (Context::Place).
+struct LevelPlace
+{
+	std::string tag;
+	b3Vec3 at = {};
+	float yaw = 0.0f;
+	float radius = 0.0f;
+};
+
 struct LevelProp
 {
 	ShapeKind kind;
@@ -102,6 +112,7 @@ struct LevelLayout
 	std::vector<std::vector<LevelBox>> shapeSets;
 	std::vector<LevelProp> props;
 	std::vector<LevelBody> bodies;
+	std::vector<LevelPlace> places;
 	b3Vec3 spawnCenter;
 	float spawnRadius;
 };

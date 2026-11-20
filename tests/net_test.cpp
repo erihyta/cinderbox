@@ -5760,6 +5760,72 @@ void TestTeams()
 	}
 }
 
+// Teams spawned apart and chosen (M277): a map with the places "team1" and "team2" (CbSpawn tags),
+// 12 m either side of the spawn. Two players join, teams 1 and 2, each standing within its team's
+// place; the first then picks team 2 on the team screen (the intent teams.join): it is in team 2,
+// chose it itself, and starts again within team 2's place.
+void TestTeamsChosen()
+{
+	LevelLayout map = GetLevelLayout();
+	map.name = "teams";
+	const b3Vec3 spawn = map.spawnCenter;
+	map.places.push_back( { "team1", { spawn.x - 12.0f, spawn.y, spawn.z }, 0.0f, 3.0f } );
+	map.places.push_back( { "team2", { spawn.x + 12.0f, spawn.y, spawn.z }, 0.0f, 3.0f } );
+	QuantizeLayout( map );
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	std::string error;
+	const std::filesystem::path mapPath = std::filesystem::temp_directory_path() / "cb_net_test_teams.cbmap";
+	CHECK( WriteMapFile( mapPath.string(), bytes, error ) );
+
+	Harness h( 48250, {}, mapPath.string(), { { "test.mods", "teams" } } );
+	const ModSchema& schema = h.server.Schema();
+	int join = -1;
+	for ( size_t i = 0; i < schema.intents.size(); ++i )
+	{
+		join = schema.intents[i] == "teams.join" ? int( i ) : join;
+	}
+	CHECK( join >= 0 );
+	h.AddBot().script = [join]( uint32_t tick ) {
+		PlayerInput in;
+		if ( tick > 150 )
+		{
+			in.intent = uint8_t( kFirstModIntent + join );
+			in.intentA = 2;
+			in.intentSeq = 1;
+		}
+		return in;
+	};
+	h.RunUntil( 0.5 );
+	h.AddBot();
+	Simulation& server = h.server.Sim();
+	auto field = [&]( PlayerSlot slot, const char* name ) {
+		const BoardField* f = schema.FindField( name );
+		return f->scope == BoardScope::Private ? h.server.Privates( slot ).values[f->slot] : server.BoardValue( server.PlayerNetId( slot ), f->slot );
+	};
+	auto from = [&]( PlayerSlot slot, int team ) {
+		const Transform* t = server.EntityTransform( server.PlayerNetId( slot ) );
+		const b3Vec3 at = map.places[size_t( team - 1 )].at;
+		return t != nullptr ? std::sqrt( ( t->position.x - at.x ) * ( t->position.x - at.x ) + ( t->position.z - at.z ) * ( t->position.z - at.z ) ) : 99.0f;
+	};
+	h.RunUntil( 2.0 );
+	const int32_t teamsBefore[2] = { field( 0, "team.id" ), field( 1, "team.id" ) };
+	const float placedBefore[2] = { from( 0, 1 ), from( 1, 2 ) };
+	const int32_t chosenBefore = field( 0, "teams.chosen" );
+	h.RunUntil( 4.0 );
+	h.Report();
+	std::printf( "    teams %d %d, %.2f and %.2f m from their places, chosen %d; after picking team 2: team %d, chosen %d, %.2f m from its place\n",
+				 teamsBefore[0], teamsBefore[1], double( placedBefore[0] ), double( placedBefore[1] ), chosenBefore, field( 0, "team.id" ),
+				 field( 0, "teams.chosen" ), double( from( 0, 2 ) ) );
+	CHECK( teamsBefore[0] == 1 && teamsBefore[1] == 2 && chosenBefore == 0 );
+	CHECK( placedBefore[0] < 3.0f && placedBefore[1] < 3.0f );
+	CHECK( field( 0, "team.id" ) == 2 && field( 0, "teams.chosen" ) == 1 && from( 0, 2 ) < 3.0f );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 // A map places a character's body (CbCharacterBody): test_ground's critter. The server puts the
 // critter on its list (from its item), and spawns the body on the first tick: nobody's, standing on
 // its feet; a client has it too.
@@ -8681,6 +8747,7 @@ int main( int argc, char** argv )
 		{ "chaos_hybrid", TestChaosHybrid },
 		{ "combat_npc", TestCombatNpc },
 		{ "teams", TestTeams },
+		{ "teams_chosen", TestTeamsChosen },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },
 		{ "npc_items", TestNpcItems },

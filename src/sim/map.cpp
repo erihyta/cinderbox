@@ -307,6 +307,12 @@ void QuantizeLayout( LevelLayout& layout )
 		SnapVec( body.feet, kMapPositionScale );
 		Snap( body.yaw, kMapAngleScale );
 	}
+	for ( LevelPlace& place : layout.places )
+	{
+		SnapVec( place.at, kMapPositionScale );
+		Snap( place.yaw, kMapAngleScale );
+		Snap( place.radius, kMapPositionScale );
+	}
 	SnapVec( layout.spawnCenter, kMapPositionScale );
 	Snap( layout.spawnRadius, kMapPositionScale );
 }
@@ -465,6 +471,16 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 		AppendString( out, body.character.substr( 0, kMapNameLimit ) );
 		AppendPos( out, body.feet );
 		AppendI32( out, MapQuantize( body.yaw, kMapAngleScale ) );
+	}
+
+	AppendU32( out, uint32_t( std::min<size_t>( layout.places.size(), kMapPlaceLimit ) ) );
+	for ( size_t i = 0; i < layout.places.size() && i < kMapPlaceLimit; ++i )
+	{
+		const LevelPlace& place = layout.places[i];
+		AppendString( out, place.tag.substr( 0, kMapNameLimit ) );
+		AppendPos( out, place.at );
+		AppendI32( out, MapQuantize( place.yaw, kMapAngleScale ) );
+		AppendI32( out, MapQuantize( place.radius, kMapPositionScale ) );
 	}
 }
 
@@ -878,6 +894,30 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 				return false;
 			}
 			layout.bodies.push_back( std::move( body ) );
+		}
+	}
+
+	if ( version >= 13 )
+	{
+		const uint32_t placeCount = rd.U32();
+		if ( rd.ok == false || placeCount > kMapPlaceLimit )
+		{
+			error = "corrupt place list";
+			return false;
+		}
+		for ( uint32_t i = 0; i < placeCount && rd.ok; ++i )
+		{
+			LevelPlace place;
+			place.tag = rd.Text();
+			place.at = rd.Pos();
+			place.yaw = MapDequantize( rd.I32(), kMapAngleScale );
+			place.radius = MapDequantize( rd.I32(), kMapPositionScale );
+			if ( SafeName( place.tag ) == false || std::isfinite( place.radius ) == false || place.radius < 0.0f )
+			{
+				error = "bad place in the place list";
+				return false;
+			}
+			layout.places.push_back( std::move( place ) );
 		}
 	}
 

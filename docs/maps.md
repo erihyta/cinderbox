@@ -12,7 +12,7 @@ The markers carry the collision the simulation needs; everything else in the sce
 | `CbStatic` | Solid level geometry: floor, wall, ramp, step, platform. A box of `size` (full size in metres), or the [shapes](#collision-shapes) under it. |
 | `CbProp` | A dynamic body the level starts with: a box or sphere, or the [shapes](#collision-shapes) under it, drawn by its own meshes. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce`. Solid to characters unless `pushed_by_characters` ([who pushes what](#who-pushes-what)) |
 | `CbBreakable` | A [wall that breaks](#walls-that-break): static and whole until a mod breaks it, then the `CbProp` pieces under it. |
-| `CbSpawn` | Where players appear. One per map. |
+| `CbSpawn` | Where players appear. One per map without a `tag`. With a `tag` (M277), a place a server mod names instead: the teams mod spawns team 1 within the radius of the one tagged `team1`, team 2 at `team2` (`Context::Place`; map version 13) |
 | `CbCharacterBody` | A character's body standing where it is, facing where it faces, nobody driving it (a player may take it over, a mod may drive it). `character`: a character item's name (`critter`): the server loads it from its item and players download it. Spawned when the game starts. |
 | `CbTemplate` | A named entity built from components (see Entities below). |
 | `CbComponent` | One component on a template, with the fields the simulation defines. |

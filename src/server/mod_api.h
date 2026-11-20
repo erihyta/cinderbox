@@ -444,6 +444,18 @@ public:
 	{
 		return m_sim.Map();
 	}
+	// A place the map names (M277: a CbSpawn with that tag, "team1"), or null.
+	const LevelPlace* Place( const std::string& tag ) const
+	{
+		for ( const LevelPlace& place : m_sim.Map().places )
+		{
+			if ( place.tag == tag )
+			{
+				return &place;
+			}
+		}
+		return nullptr;
+	}
 	const ModSchema& Schema() const
 	{
 		return m_schema;

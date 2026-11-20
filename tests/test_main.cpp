@@ -210,6 +210,8 @@ void TestMapFormat()
 	authored.props.push_back( { ShapeKind::Box, { 2.0f, 1.0f, 0.0f }, { 0.5f, 0.5f, 0.5f }, 12.3456f, 77.7777f, 0.1234f, 0.8765f } );
 	// (And a character's body it places: map version 12.)
 	authored.bodies.push_back( { "critter", { 3.3333f, 0.0f, -2.5f }, 1.2345f } );
+	// (And a place a mod names: map version 13.)
+	authored.places.push_back( { "team1", { -20.1234f, 0.5f, 7.7777f }, 3.0001f, 4.2f } );
 	QuantizeLayout( authored );
 	std::vector<uint8_t> authoredBytes;
 	SerializeMap( authored, authoredBytes );
@@ -218,6 +220,8 @@ void TestMapFormat()
 	CHECK( SameLayout( authored, authoredBack ) );
 	CHECK( authoredBack.bodies.size() == 1 && authoredBack.bodies[0].character == "critter" &&
 		   authoredBack.bodies[0].feet.x == authored.bodies[0].feet.x && authoredBack.bodies[0].yaw == authored.bodies[0].yaw );
+	CHECK( authoredBack.places.size() == 1 && authoredBack.places[0].tag == "team1" && authoredBack.places[0].at.z == authored.places[0].at.z &&
+		   authoredBack.places[0].yaw == authored.places[0].yaw && authoredBack.places[0].radius == authored.places[0].radius );
 	CHECK( authoredBack.props.size() == 2 && authoredBack.props[1].mass > 12.3f && authoredBack.props[1].restitution > 0.87f &&
 		   authoredBack.props[0].mass == 0.0f && authoredBack.props[0].density == 40.0f );
 	{

@@ -169,7 +169,8 @@ private:
 	double m_glue = 0.0;
 };
 
-// Where players appear. Exactly one per map; the simulation spreads the slots around it.
+// Where players appear. Exactly one per map without a tag; the simulation spreads the slots around
+// it. With a tag (M277), a place a mod names instead: the teams mod spawns team 1 at "team1".
 class CbSpawn : public godot::Node3D
 {
 	GDCLASS( CbSpawn, godot::Node3D )
@@ -179,6 +180,14 @@ public:
 	float get_radius() const
 	{
 		return m_radius;
+	}
+	void set_tag( const godot::String& tag )
+	{
+		m_tag = tag;
+	}
+	godot::String get_tag() const
+	{
+		return m_tag;
 	}
 
 	void _notification( int what );
@@ -190,6 +199,7 @@ private:
 	void UpdatePreview();
 
 	float m_radius = 4.0f;
+	godot::String m_tag;
 	godot::MeshInstance3D* m_preview = nullptr;
 };
 

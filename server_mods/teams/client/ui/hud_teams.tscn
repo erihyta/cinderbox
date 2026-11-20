@@ -1,0 +1,147 @@
+[gd_scene format=3]
+
+; The teams mod's screen, on M (and a hint until the player picks a team itself). No scripts: a
+; CbKey ("teams", M, each press switches it, the cursor free meanwhile) keeps ui.teams, Shown (a
+; CbFieldBinding) shows the panel while it is 1, and each team is a button: a CbClick whose
+; mod_intent is "teams.join" and intent_a the team's number. The teams mod (teams.cpp) puts the
+; player in it and starts it again at that team's spawn; the screen shows it when that arrives.
+; Teams are named here, not on the server: team 1 is Red, team 2 Blue. Rename them freely.
+;   Hint      while teams.chosen (private) is 0: how to open the screen
+;   Teams     the panel: Current (the team you are in now), Red, Blue
+
+[sub_resource type="StyleBoxFlat" id="Panel"]
+bg_color = Color(0.05, 0.05, 0.07, 0.88)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0, 0, 0, 0.8)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 18.0
+content_margin_top = 14.0
+content_margin_right = 18.0
+content_margin_bottom = 18.0
+
+[sub_resource type="StyleBoxFlat" id="RedButton"]
+bg_color = Color(0.55, 0.12, 0.1, 0.92)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="BlueButton"]
+bg_color = Color(0.1, 0.22, 0.55, 0.92)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+
+[sub_resource type="LabelSettings" id="Title"]
+font_size = 20
+font_color = Color(1, 0.85, 0.35, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.85)
+
+[sub_resource type="LabelSettings" id="Team"]
+font_size = 18
+font_color = Color(0.95, 0.96, 1, 1)
+outline_size = 3
+outline_color = Color(0, 0, 0, 0.8)
+
+[sub_resource type="LabelSettings" id="Hint"]
+font_size = 18
+font_color = Color(1, 0.9, 0.55, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.85)
+
+[node name="TeamsHud" type="CanvasLayer"]
+
+[node name="Hint" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 78.0
+offset_right = 300.0
+offset_bottom = 106.0
+label_settings = SubResource("Hint")
+horizontal_alignment = 1
+text = "Press M to choose your team"
+conditions = PackedStringArray("?teams.chosen", "!teams.chosen", "!ui.teams")
+
+[node name="Teams" type="PanelContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Panel")
+
+[node name="Key" type="CbKey" parent="Teams"]
+action = "teams"
+key = "M"
+mode = 1
+cursor = true
+
+[node name="Shown" type="CbFieldBinding" parent="Teams"]
+conditions = PackedStringArray("ui.teams")
+
+[node name="Rows" type="VBoxContainer" parent="Teams"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Teams/Rows"]
+layout_mode = 2
+text = "CHOOSE YOUR TEAM"
+label_settings = SubResource("Title")
+horizontal_alignment = 1
+
+[node name="Current" type="CbFieldLabel" parent="Teams/Rows"]
+layout_mode = 2
+label_settings = SubResource("Team")
+horizontal_alignment = 1
+choice_field = "team.id"
+choices = PackedStringArray("", "You are on Red", "You are on Blue")
+
+[node name="Red" type="PanelContainer" parent="Teams/Rows"]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("RedButton")
+
+[node name="Join" type="CbClick" parent="Teams/Rows/Red"]
+mod_intent = "teams.join"
+intent_a = "1"
+
+[node name="Label" type="Label" parent="Teams/Rows/Red"]
+layout_mode = 2
+text = "Red"
+label_settings = SubResource("Team")
+horizontal_alignment = 1
+
+[node name="Blue" type="PanelContainer" parent="Teams/Rows"]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("BlueButton")
+
+[node name="Join" type="CbClick" parent="Teams/Rows/Blue"]
+mod_intent = "teams.join"
+intent_a = "2"
+
+[node name="Label" type="Label" parent="Teams/Rows/Blue"]
+layout_mode = 2
+text = "Blue"
+label_settings = SubResource("Team")
+horizontal_alignment = 1

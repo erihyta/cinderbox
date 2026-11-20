@@ -1069,6 +1069,16 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 			ctx.layout.bodies.push_back( body );
 		}
 	}
+	else if ( auto* tagged = Object::cast_to<CbSpawn>( node ); tagged != nullptr && tagged->get_tag().strip_edges().is_empty() == false )
+	{
+		// A place a mod names (M277).
+		LevelPlace place;
+		place.tag = std::string( tagged->get_tag().strip_edges().utf8().get_data() );
+		place.at = ToSim( here.origin );
+		place.yaw = float( here.basis.orthonormalized().get_euler( EULER_ORDER_YXZ ).y );
+		place.radius = tagged->get_radius();
+		ctx.layout.places.push_back( place );
+	}
 	else if ( auto* spawn = Object::cast_to<CbSpawn>( node ) )
 	{
 		ctx.spawnCount += 1;
@@ -1401,6 +1411,10 @@ void CbSpawn::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_radius", "radius" ), &CbSpawn::set_radius );
 	ClassDB::bind_method( D_METHOD( "get_radius" ), &CbSpawn::get_radius );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "radius" ), "set_radius", "get_radius" );
+	ClassDB::bind_method( D_METHOD( "set_tag", "tag" ), &CbSpawn::set_tag );
+	ClassDB::bind_method( D_METHOD( "get_tag" ), &CbSpawn::get_tag );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "tag", PROPERTY_HINT_PLACEHOLDER_TEXT, "empty: the map's spawn; a mod's place: team1" ),
+				  "set_tag", "get_tag" );
 }
 
 void CbSpawn::set_radius( float radius )
