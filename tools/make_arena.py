@@ -1,27 +1,35 @@
 # Writes the slice's first arena, godot/maps/arena.tscn (ROADMAP step 4; M278): a city block for 8 to 10
 # players, big enough that they feel small. Plain shapes and flat colours, as a Roblox battlegrounds
-# map is. Then bake it:
+# map is. Its walls that break (M280) are scenes of their own, godot/maps/arena_parts/*.tscn, each
+# a design the arena places many times, cut into chunks by the fracture tool. Then bake it:
 #
 #   python tools/make_arena.py
+#   godot --headless --path godot --script res://addons/cinderbox_maps/fracture_scenes.gd -- res://maps/arena_parts
 #   powershell -ExecutionPolicy Bypass -File tools\bake_map.ps1 -Scene res://maps/arena.tscn
 #
 # A first draft to start from: once the scene is edited in Godot, edit it there; running this again
-# writes it over. Everything is in metres, the map's middle at the origin, the ground's top at y = 0.
+# writes it over (and the wall designs, uncut: cut them again). Everything is in metres, the map's
+# middle at the origin, the ground's top at y = 0.
 #
 #   the park       the middle, 40 m across: grass, paths, a fountain, trees, benches
 #   the ring road  around it, 12 m wide, sidewalks either side; streets from it to the four edges
-#   towers         two of one design (NW, SE): 18 x 18 m, 26 m high, solid
+#   towers         two of one design (NW, SE): 18 x 18 m, seven storeys; columns at the corners,
+#                  floors and a core inside, and between them walls with windows that break, a
+#                  storey and a side each (three designs of chunks, so neighbours differ)
 #   garages        two of another (NE, SW): three open floors and a roof on pillars, ramps up the
-#                  outside, brick parapets that break
+#                  outside; the parapets, the rails and the ramps' outer wall break
 #   cover          brick walls that break in the plazas beside the streets
 #   the edge       a skyline of tall blocks all round: the city goes on, nobody leaves
 #   spawns         the map's own in the park; "team1" at the west street's end, "team2" at the east's
+#
+# What breaks them in the team deathmatch: a body the brawl finisher throws (brawl.toss_break).
 
 import math
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "godot", "maps", "arena.tscn")
+PARTS = os.path.join(ROOT, "godot", "maps", "arena_parts")
 
 MATERIALS = {
     "Grass": (0.36, 0.62, 0.30),
@@ -32,7 +40,6 @@ MATERIALS = {
     "Path": (0.80, 0.72, 0.55),
     "Tower": (0.82, 0.74, 0.62),
     "TowerTrim": (0.55, 0.42, 0.36),
-    "Window": (0.22, 0.32, 0.44),
     "Concrete": (0.64, 0.65, 0.68),
     "ConcreteDark": (0.46, 0.47, 0.50),
     "Brick": (0.70, 0.34, 0.25),
@@ -54,6 +61,8 @@ nodes = []  # node blocks
 meshes = {}  # (kind, dims, material) -> id
 shapes = {}
 names = {}
+ext = []  # ext_resource blocks (the wall designs)
+designs = {}  # design name -> ext id
 
 
 def f(v):
@@ -157,34 +166,71 @@ def deco(name, parent, center, size, mat, yaw=0.0):
     return node(name, "MeshInstance3D", parent, {"mesh": 'SubResource("%s")' % box_mesh(size, mat)}, center, yaw)
 
 
-def brick_wall(name, parent, center, length, height, yaw=0.0, brick=(1.0, 0.5, 0.35)):
-    """A wall that breaks (CbBreakable): bricks laid with 2 cm between them, the bottom row held."""
-    path = node(name, "CbBreakable", parent, None, center, yaw)
-    node("Shape", "CollisionShape3D", path, {"shape": 'SubResource("%s")' % box_shape((length, height, brick[2]))})
-    node("Mesh", "MeshInstance3D", path, {"mesh": 'SubResource("%s")' % box_mesh((length, height, brick[2]), "Brick")})
-    cols = int(round(length / brick[0]))
-    rows = int(round(height / brick[1]))
-    bw, bh = length / cols, height / rows
-    piece = (bw - 0.02, bh - 0.02, brick[2])
-    for r in range(rows):
-        shift = (bw * 0.5) if r % 2 else 0.0
-        for c in range(cols):
-            x = -length / 2 + bw * (c + 0.5) + shift
-            w = piece[0]
-            if shift and c == cols - 1:
-                # The last brick of an offset row is a half: the wall's end stays straight.
-                x -= bw * 0.25
-                w = bw * 0.5 - 0.02
-            elif shift and c == 0:
-                pass
-            p = node("Brick%d_%d" % (r, c), "CbProp", path, {"size": vec((w, piece[1], piece[2]))}, (x, -height / 2 + bh * (r + 0.5), 0))
-            node("Mesh", "MeshInstance3D", p, {"mesh": 'SubResource("%s")' % box_mesh((w, piece[1], piece[2]), "Brick")})
-        if shift:
-            # The offset row's first half brick.
-            x = -length / 2 + bw * 0.25
-            p = node("Brick%d_half" % r, "CbProp", path, {"size": vec((bw * 0.5 - 0.02, piece[1], piece[2]))}, (x, -height / 2 + bh * (r + 0.5), 0))
-            node("Mesh", "MeshInstance3D", p, {"mesh": 'SubResource("%s")' % box_mesh((bw * 0.5 - 0.02, piece[1], piece[2]), "Brick")})
-    return path
+# --- walls that break -------------------------------------------------------------------------
+#
+# A design is a CbBreakable scene of its own (godot/maps/arena_parts/<name>.tscn): a wall `length`
+# along its X, `height` up its Y, `thick` through its Z, centred on its origin, with rectangular
+# openings (windows, doors) cut out of it; its shapes and looks whole are the boxes around them. Its
+# metadata says how the fracture tool cuts it (fracture_scenes.gd does): every placement shares the
+# chunks.
+
+CHUNK_DENSITY = 60.0  # kg per cubic metre: light, so what breaks flies
+
+
+def wall_rects(length, height, openings):
+    """The boxes a wall with openings is made of, as (x, y, width, height) about its centre: band by
+    band up the wall (split where an opening starts or ends), the solid stretches across each.
+    Openings are (x0, x1, y0, y1) from the wall's bottom left corner."""
+    ys = sorted({0.0, height} | {y for o in openings for y in (o[2], o[3]) if 0.0 < y < height})
+    rects = []
+    for ya, yb in zip(ys, ys[1:]):
+        gaps = sorted((o[0], o[1]) for o in openings if o[2] <= ya + 1e-6 and o[3] >= yb - 1e-6)
+        x = 0.0
+        for g0, g1 in gaps + [(length, length)]:
+            if g0 - x > 1e-6:
+                rects.append(((x + g0) / 2 - length / 2, (ya + yb) / 2 - height / 2, g0 - x, yb - ya))
+            x = max(x, g1)
+    return rects
+
+
+def design(name, length, height, thick, mat, pieces, seed, held=1, openings=()):
+    """Writes a wall design's scene (uncut) once; its ext_resource id for the arena."""
+    if name in designs:
+        return designs[name]
+    c = MATERIALS[mat]
+    dsub = ['[sub_resource type="StandardMaterial3D" id="Mat"]\nalbedo_color = Color(%s, %s, %s, 1)\nroughness = 0.9\n' % (f(c[0]), f(c[1]), f(c[2]))]
+    dnodes = []
+    title = "".join(part.capitalize() for part in name.split("_"))
+    root = ['[node name="%s" type="CbBreakable"]' % title]
+    if held != 1:
+        root.append("held_at = %d" % held)
+    root.append('metadata/cinderbox_fracture = {"crowd": 0.0, "density": %s, "pieces": %d, "seed": %d}' % (f(CHUNK_DENSITY), pieces, seed))
+    dnodes.append("\n".join(root) + "\n")
+    for k, (x, y, w, h) in enumerate(wall_rects(length, height, openings)):
+        size = (w, h, thick)
+        dsub.append('[sub_resource type="BoxShape3D" id="Shape_%d"]\nsize = %s\n' % (k, vec(size)))
+        dsub.append('[sub_resource type="BoxMesh" id="Box_%d"]\nmaterial = SubResource("Mat")\nsize = %s\n' % (k, vec(size)))
+        at = transform((x, y, 0.0))
+        suffix = "" if k == 0 else str(k + 1)
+        dnodes.append('[node name="Shape%s" type="CollisionShape3D" parent="."]\ntransform = %s\nshape = SubResource("Shape_%d")\n' % (suffix, at, k))
+        dnodes.append('[node name="Mesh%s" type="MeshInstance3D" parent="."]\ntransform = %s\nmesh = SubResource("Box_%d")\n' % (suffix, at, k))
+    os.makedirs(PARTS, exist_ok=True)
+    header = "[gd_scene format=3]\n\n; A wall of the arena that breaks, written by tools/make_arena.py (%s); cut by fracture_scenes.gd.\n\n" % name
+    with open(os.path.join(PARTS, name + ".tscn"), "w", encoding="utf-8", newline="\n") as out:
+        out.write(header + "\n".join(dsub) + "\n" + "\n".join(dnodes))
+    eid = "%d_%s" % (len(ext) + 1, name)
+    ext.append('[ext_resource type="PackedScene" path="res://maps/arena_parts/%s.tscn" id="%s"]\n' % (name, eid))
+    designs[name] = eid
+    return eid
+
+
+def place(name, parent, eid, center, yaw=0.0):
+    """A placement of a wall design."""
+    name = unique(parent, name)
+    lines = ['[node name="%s" parent="%s" instance=ExtResource("%s")]' % (name, parent, eid)]
+    lines.append("transform = " + transform(center, yaw))
+    nodes.append("\n".join(lines) + "\n")
+    return name if parent == "." else parent + "/" + name
 
 
 # --- the level --------------------------------------------------------------------------------
@@ -299,24 +345,52 @@ def lamps():
         node("Light", "MeshInstance3D", p, {"mesh": 'SubResource("%s")' % box_mesh((0.5, 0.18, 0.7), "Lamp")}, (0, 2.78, 1.4))
 
 
+TOWER_W = 18.0  # the towers' side
+TOWER_STOREY, TOWER_FLOORS = 3.5, 7
+TOWER_SLAB, TOWER_COLUMN, TOWER_WALL = 0.4, 1.2, 0.5
+
+
+def tower_designs():
+    """A storey's wall between two corner columns: four windows (2 m wide, from 0.9 to 2.4 m up),
+    in three designs of chunks; the entrance's, a door in the middle (3 m wide, 2.4 high) and a
+    window either side."""
+    length = TOWER_W - 2 * TOWER_COLUMN
+    height = TOWER_STOREY - TOWER_SLAB
+    window, sill, top = 2.0, 0.9, 2.4
+    pier = (length - 4 * window) / 5
+    windows = [(pier + i * (window + pier), pier + i * (window + pier) + window, sill, top) for i in range(4)]
+    door = (length / 2 - 1.5, length / 2 + 1.5, 0.0, top)
+    held = 7  # the floor, the slab above, the columns
+    plain = [design("tower_wall_" + v, length, height, TOWER_WALL, "Tower", 44, seed, held, windows) for v, seed in (("a", 1), ("b", 2), ("c", 3))]
+    entrance = design("tower_entrance", length, height, TOWER_WALL, "Tower", 44, 4, held, [windows[0], windows[3], door])
+    return plain, entrance
+
+
 def tower(name, center, yaw):
-    """18 x 18 m, 26 m high: a solid block with window bands, a trim and an entrance."""
+    """18 x 18 m, seven storeys of 3.5 m: columns at the corners, a floor at each storey with a core
+    in the middle, and between them walls that break; the entrance on its local -Z side."""
     g = group(name, ".", center, yaw)
-    w, h = 18.0, 26.0
-    solid("Body", g, (0, h / 2 + 0.12, 0), (w, h, w), "Tower")
-    solid("Base", g, (0, 1.0 + 0.12, 0), (w + 0.8, 2.0, w + 0.8), "TowerTrim")
-    solid("Roof", g, (0, h + 0.12 + 0.4, 0), (w + 0.6, 0.8, w + 0.6), "TowerTrim")
-    floor_ = 3.5
-    y = 4.5
-    while y < h - 1.5:
+    w, base = TOWER_W, 0.12
+    top = base + TOWER_FLOORS * TOWER_STOREY
+    plain, entrance = tower_designs()
+    for sx in (1, -1):
+        for sz in (1, -1):
+            solid("Column", g, (sx * (w - TOWER_COLUMN) / 2, (base + top) / 2, sz * (w - TOWER_COLUMN) / 2), (TOWER_COLUMN, top - base, TOWER_COLUMN), "TowerTrim")
+    solid("Core", g, (0, (base + top) / 2, 0), (5.0, top - base, 5.0), "Concrete")
+    for i in range(1, TOWER_FLOORS + 1):
+        y = base + i * TOWER_STOREY
+        solid("Floor", g, (0, y - TOWER_SLAB / 2, 0), (w, TOWER_SLAB, w), "TowerTrim")
+    solid("Roof", g, (0, top + 0.25, 0), (w + 0.6, 0.5, w + 0.6), "TowerTrim")
+    # The walls: a storey and a side each, flush with the outside.
+    out = w / 2 - TOWER_WALL / 2
+    for i in range(TOWER_FLOORS):
+        y = base + i * TOWER_STOREY + (TOWER_STOREY - TOWER_SLAB) / 2
         for a in range(4):
             ang = a * math.pi / 2
-            ox, oz = math.sin(ang) * (w / 2 + 0.03), math.cos(ang) * (w / 2 + 0.03)
-            deco("Windows", g, (ox, y + 0.12, oz), (w - 2.0, 1.6, 0.06), "Window", yaw=ang)
-        y += floor_
-    # The entrance: a canopy over a door, on the side facing the middle (local -Z).
-    deco("Door", g, (0, 1.6, -(w / 2 + 0.45)), (3.0, 3.0, 0.06), "Window")
-    solid("Canopy", g, (0, 3.6, -(w / 2 + 1.6)), (5.0, 0.3, 3.2), "TowerTrim")
+            eid = entrance if (i == 0 and a == 2) else plain[(i + a) % 3]
+            place("Wall", g, eid, (math.sin(ang) * out, y, math.cos(ang) * out), ang)
+    # The entrance's canopy, over the door at the first floor's slab.
+    solid("Canopy", g, (0, base + TOWER_STOREY - TOWER_SLAB / 2, -(w / 2 + 1.6)), (5.0, 0.3, 3.2), "TowerTrim")
 
 
 def garage(name, center, yaw):
@@ -327,14 +401,18 @@ def garage(name, center, yaw):
     storey = 4.5
     levels = 3  # the floors above the ground: 4.5, 9, 13.5 (the roof)
     base = 0.12
+    parapet = design("garage_parapet", w / 2 - 0.4, 1.2, 0.35, "Brick", 14, 5)
+    rail = design("garage_rail", d - 0.4, 1.2, 0.4, "ConcreteDark", 20, 6)
+    side = [design("garage_side_" + v, 22.0, storey, 0.4, "ConcreteDark", 60, seed) for v, seed in (("a", 7), ("b", 8))]
     for i in range(1, levels + 1):
         y = base + i * storey
         solid("Slab", g, (0, y - 0.25, 0), (w, 0.5, d), "Concrete")
-        # Parapets: bricks along the open long side, solid concrete on the short sides.
-        brick_wall("Parapet", g, (-w / 4, y + 0.6, -(d / 2 - 0.2)), w / 2 - 0.4, 1.2)
-        brick_wall("Parapet", g, (w / 4, y + 0.6, -(d / 2 - 0.2)), w / 2 - 0.4, 1.2)
+        # Parapets: bricks along the open long side, concrete rails on the short sides (they stop
+        # short of the parapets' corner, so no two walls' chunks start inside each other).
+        place("Parapet", g, parapet, (-w / 4, y + 0.6, -(d / 2 - 0.2)))
+        place("Parapet", g, parapet, (w / 4, y + 0.6, -(d / 2 - 0.2)))
         for sx in (1, -1):
-            solid("Rail", g, (sx * (w / 2 - 0.2), y + 0.6, 0), (0.4, 1.2, d), "ConcreteDark")
+            place("Rail", g, rail, (sx * (w / 2 - 0.2), y + 0.6, 0.2), math.pi / 2)
     for x in (-w / 2 + 1, -w / 6, w / 6, w / 2 - 1):
         for z in (-d / 2 + 1, 0, d / 2 - 1):
             solid("Pillar", g, (x, base + levels * storey / 2 - 0.25, z), (0.8, levels * storey - 0.5, 0.8), "ConcreteDark")
@@ -356,8 +434,9 @@ def garage(name, center, yaw):
         top_x = high if going == 1 else low
         landing_x = top_x + going * 1.0
         solid("Landing", g, (landing_x, y0 + storey - 0.25, d / 2 + width - 1.0), (4.0, 0.5, 2 * width + 2.0), "Concrete")
-    # The outer lane's rail, all the way up.
-    solid("RampWall", g, (( low + high ) / 2, base + levels * storey / 2, d / 2 + 2 * width + 0.2), (high - low + 8.0, levels * storey, 0.4), "ConcreteDark")
+    # The outer lane's wall, all the way up: a storey each (22 m: high - low + 8).
+    for i in range(levels):
+        place("RampWall", g, side[i % 2], ((low + high) / 2, base + i * storey + storey / 2, d / 2 + 2 * width + 0.2))
 
     # A sign on the roof's edge.
     deco("Sign", g, (0, base + levels * storey + 1.8, -(d / 2 - 0.1)), (8.0, 1.6, 0.2), "TowerTrim")
@@ -366,10 +445,11 @@ def garage(name, center, yaw):
 def cover():
     g = group("Cover")
     # Brick walls in the plazas beside the streets: 6 m long, 2.5 m high, across the way.
+    walls = [design("cover_wall_" + v, 6.0, 2.5, 0.35, "Brick", 24, seed) for v, seed in (("a", 9), ("b", 10))]
     for sx in (1, -1):
         for sz in (1, -1):
-            brick_wall("CoverWall", g, (sx * 47, 1.37, sz * 20), 6.0, 2.5, yaw=math.pi / 2)
-            brick_wall("CoverWall", g, (sx * 20, 1.37, sz * 47), 6.0, 2.5)
+            place("CoverWall", g, walls[(sx + sz) // 2 % 2], (sx * 47, 1.37, sz * 20), math.pi / 2)
+            place("CoverWall", g, walls[(sx - sz) // 2 % 2], (sx * 20, 1.37, sz * 47))
     # Low concrete barriers along the streets' ends.
     for s in (1, -1):
         solid("Barrier", g, (s * 52, 0.6, STREET - 1.5), (4.0, 1.2, 0.8), "Concrete")
@@ -419,8 +499,10 @@ def main():
     park()
     lamps()
     corner = (RING_OUT + HALF) / 2
-    tower("TowerNW", (-corner, 0, corner), math.pi)
-    tower("TowerSE", (corner, 0, -corner), 0.0)
+    # The towers' entrances face the streets their side starts on (the west's, the east's), as the
+    # garages' ramps do.
+    tower("TowerNW", (-corner, 0, corner), 0.0)
+    tower("TowerSE", (corner, 0, -corner), math.pi)
     garage("GarageNE", (corner, 0, corner), math.pi)
     garage("GarageSW", (-corner, 0, -corner), 0.0)
     cover()
@@ -428,8 +510,8 @@ def main():
     spawns()
     header = "[gd_scene format=3]\n\n; The slice's first arena (ROADMAP step 4), written by tools/make_arena.py: see it for the layout.\n\n"
     with open(OUT, "w", encoding="utf-8", newline="\n") as out:
-        out.write(header + "\n".join(sub) + "\n" + "\n".join(nodes))
-    print("wrote %s: %d nodes, %d resources" % (OUT, len(nodes), len(sub)))
+        out.write(header + "".join(ext) + "\n" + "\n".join(sub) + "\n" + "\n".join(nodes))
+    print("wrote %s: %d nodes, %d resources, %d wall designs (cut them: fracture_scenes.gd)" % (OUT, len(nodes), len(sub), len(designs)))
 
 
 main()

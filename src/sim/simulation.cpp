@@ -985,7 +985,7 @@ void Simulation::LoosenPieces()
 	}
 }
 
-void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks )
+void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks, const b3Vec3* from )
 {
 	// The wall: whole (a template with pieces), or a piece of it left standing by a blast before.
 	uint32_t wallId = 0;
@@ -1031,11 +1031,13 @@ void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, fl
 			e.set<Prop>( { 0, m_globals.tick, m_globals.tick + rubbleTicks } );
 		}
 	};
-	// Away from the blast, a little up, slower the further it was.
+	// Away from the blast (or where it is flung from), a little up, slower the further it was.
+	const b3Vec3 flung = from != nullptr ? *from : blast;
 	auto thrown = [&]( b3Vec3 position, float& distance ) {
-		b3Vec3 away = b3Sub( position, blast );
-		distance = b3Length( away );
-		away = distance > 1e-4f ? b3MulSV( 1.0f / distance, away ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
+		distance = b3Distance( position, blast );
+		b3Vec3 away = b3Sub( position, flung );
+		const float length = b3Length( away );
+		away = length > 1e-4f ? b3MulSV( 1.0f / length, away ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
 		away = b3Normalize( b3Add( away, { 0.0f, 0.3f, 0.0f } ) );
 		return b3MulSV( speed / ( 1.0f + distance ), away );
 	};
@@ -3210,9 +3212,12 @@ void Simulation::BreakByItems()
 		const ItemShape shape = BreakerShape( item );
 		const float moving = b3Length( smash.before );
 		const b3Vec3 way = moving > 0.01f ? b3MulSV( 1.0f / moving, smash.before ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
-		// A hole as wide as it was fast; the pieces flung its way (from half a metre behind the hit).
+		// A hole as wide as it was fast, around where it struck; the pieces flung its way (from half
+		// a metre behind the hit). (Measured from there too until M280: a thick wall's pieces, their
+		// middles inside it, were mostly out of a slow hit's reach, so it cracked and nothing went.)
 		const float radius = std::clamp( shape.breakHole * smash.speed / 30.0f, 0.25f, 4.0f );
-		BreakWall( wall, b3Sub( smash.point, b3MulSV( 0.5f, way ) ), radius, 0.5f * smash.speed, 0 );
+		const b3Vec3 behind = b3Sub( smash.point, b3MulSV( 0.5f, way ) );
+		BreakWall( wall, smash.point, radius, 0.5f * smash.speed, 0, &behind );
 		// It has bounced off in this step: on through the hole instead, with a share of what it had.
 		if ( shape.breakThrough > 0.0f )
 		{

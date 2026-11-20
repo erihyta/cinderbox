@@ -9,7 +9,9 @@ extends RefCounted
 ##   made.pieces: the new CbProp nodes (not added to the wall), made.error: "" or why not.
 ##
 ## The wall's BoxShape3D and ConvexPolygonShape3D children are what is cut (each its share of the
-## pieces, by size). A thin shape (a wall) is cut through: every chunk goes from face to face.
+## pieces, by size). A thin wall is cut through: every chunk goes from face to face. Thin is judged
+## on all its shapes together, so a wall of several (one with windows: the boxes around them) is cut
+## through even where one of its shapes alone is not thin (a sill as high as the wall is thick).
 ## `crowd` (0 to 1): the share of chunks crowded around the focus (a child Node3D named
 ## "FractureFocus", else the wall's centre), so they are small there and big farther out.
 ## The same settings always give the same chunks. Each chunk weighs by its size (`density`); the
@@ -46,6 +48,22 @@ static func fracture(wall: Node3D, count: int, seed: int, crowd: float) -> Dicti
 			box = box.expand(p)
 		source.box = box
 		total += box.get_volume()
+	# The wall's thin axis (in its own frame), and that axis in each shape's frame.
+	var whole := AABB()
+	for i in sources.size():
+		var at: Transform3D = sources[i].node.transform
+		var b: AABB = at * sources[i].box
+		whole = b if i == 0 else whole.merge(b)
+	var thin := _thin_axis(whole.size)
+	for source in sources:
+		source.thin = -1
+		if thin >= 0:
+			var axis := Vector3()
+			axis[thin] = 1.0
+			var there: Vector3 = (source.node.transform.basis.inverse() * axis).normalized()
+			for k in 3:
+				if absf(there[k]) > 0.999:
+					source.thin = k
 	var left := count
 	for i in sources.size():
 		var share: int = left if i == sources.size() - 1 else maxi(1, roundi(count * sources[i].box.get_volume() / total))
@@ -122,6 +140,14 @@ static func _hull_planes(points: Array) -> Array:
 	return planes if planes.size() >= 4 else []
 
 
+# The axis a box of this size is thin along (a quarter of the other two, or less); -1: not thin.
+static func _thin_axis(size: Vector3) -> int:
+	var smallest := size.min_axis_index()
+	if size[smallest] * 4.0 < size[(smallest + 1) % 3] and size[smallest] * 4.0 < size[(smallest + 2) % 3]:
+		return smallest
+	return -1
+
+
 static func _inside(planes: Array, p: Vector3) -> bool:
 	for plane in planes:
 		if plane.normal.dot(p) > plane.d:
@@ -132,12 +158,10 @@ static func _inside(planes: Array, p: Vector3) -> bool:
 # Where the chunks' centres go, in the shape's frame.
 static func _seeds(source: Dictionary, rng: RandomNumberGenerator, focus: Vector3, crowd: float) -> Array:
 	var box: AABB = source.box
-	# A thin shape is cut through: every seed on its middle plane, so each chunk spans it.
-	var thin := -1
+	# A thin wall is cut through: every seed on the shape's middle plane, so each chunk spans it. (A
+	# shape thin by itself in a wall that is not, as one side of an L: through that shape.)
 	var size := box.size
-	var smallest := size.min_axis_index()
-	if size[smallest] * 4.0 < size[(smallest + 1) % 3] and size[smallest] * 4.0 < size[(smallest + 2) % 3]:
-		thin = smallest
+	var thin: int = source.thin if source.thin >= 0 else _thin_axis(size)
 	var reach := size.length() * 0.5
 	var seeds := []
 	var crowded := roundi(source.count * crowd)

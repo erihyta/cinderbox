@@ -744,11 +744,12 @@ private:
 	// `standing`: a static body whatever the template says (a breakable's piece left standing).
 	flecs::entity CreateFromTemplate( uint32_t templateIndex, b3Vec3 position, b3Quat rotation, b3Vec3 extraVelocity,
 									  uint32_t owner, bool standing = false );
-	// A breakable's pieces near `blast` (all of them when `radius` is 0) fly away from it at
-	// `speed / (1 + distance)`; then any standing piece no chain of touching pieces joins to a held
-	// one falls. `target` is the whole wall or any piece of it left standing. `rubbleTicks` > 0:
-	// the pieces that go are removed after that long.
-	void BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks );
+	// A breakable's pieces within `radius` of `blast` (all of them when `radius` is 0) fly away from
+	// `from` (the blast itself unless given: a body that struck it flings them from behind where it
+	// struck, M280) at `speed / (1 + distance)`; then any standing piece no chain of touching pieces
+	// joins to a held one falls. `target` is the whole wall or any piece of it left standing.
+	// `rubbleTicks` > 0: the pieces that go are removed after that long.
+	void BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks, const b3Vec3* from = nullptr );
 	// A glued breakable (EntityTemplate::glue) where the map places it: its pieces made at once, the
 	// held ones static, welded where they touch.
 	void CreateGluedWall( uint32_t templateIndex, b3Vec3 position, b3Quat rotation );

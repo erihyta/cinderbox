@@ -25,9 +25,9 @@ The markers carry the collision the simulation needs; everything else in the sce
    what was added by hand since (the pushed balls, the critter, the ball pit). `arena.tscn` (M278)
    is the slice's map: a city block for 8 to 10 players, 140 m across inside a skyline of tall
    blocks (a park with trees and a fountain in the middle, a ring road and four streets, two
-   towers, two open garages with ramps and brick parapets that break, brick walls for cover, street
-   lamps, team spawns at the west and east streets' ends). `tools/make_arena.py` wrote its first
-   draft; once it is edited in Godot, edit it there.
+   towers, two open garages with ramps, brick walls for cover, street lamps, team spawns at the west
+   and east streets' ends). Its walls break, cut into chunks ([below](#the-arenas-walls)).
+   `tools/make_arena.py` wrote its first draft; once it is edited in Godot, edit it there.
 2. Place `CbStatic` nodes for the collision (boxes, or [shapes](#collision-shapes) under them), and
    your own meshes, lights and effects for the look.
 3. Press **Bake Map** in the 3D toolbar, or run `tools\bake_map.ps1 -Scene res://maps/arena.tscn`.
@@ -93,7 +93,8 @@ Pieces can be placed by hand (bricks, planks), or cut: select a `CbBreakable` an
 
 - It cuts the wall's `BoxShape3D` and `ConvexPolygonShape3D` shapes (others: it says why not) into
   irregular convex chunks (Voronoi cells). Each is a `CbProp` with a hull and a mesh of its own.
-- A thin shape is cut through: every chunk goes from one face to the other.
+- A thin wall is cut through: every chunk goes from one face to the other. Thin is judged on all its
+  shapes together, so a wall built of boxes around its windows is cut through too.
 - Outside faces get the wall's own material (its first mesh's); the cut faces a darker copy of it.
   Textures run on across chunks (laid on from the side each face looks toward, a metre a repeat).
 - Each chunk is cut against its 40 nearest, then any other whose side a corner of it turns out to
@@ -102,7 +103,34 @@ Pieces can be placed by hand (bricks, planks), or cut: select a `CbBreakable` an
   each chunk weighs by its size. Undo puts the old pieces back. The settings are kept on the node
   for next time.
 - Scripts can cut too: `preload("res://addons/cinderbox_maps/fracture.gd").fracture(wall, pieces, seed, crowd)`
-  (`make_test_ground.gd` does).
+  (`make_test_ground.gd` does). Whole scenes at once: `fracture_scenes.gd` cuts every
+  `CbBreakable` whose settings are kept on it, and saves:
+  `godot --headless --path godot --script res://addons/cinderbox_maps/fracture_scenes.gd -- res://maps/arena_parts`
+  (scenes, or folders of them; `density` in the settings, if there, is the chunks').
+
+### The arena's walls
+
+`arena.tscn`'s walls that break (M280) are wall **designs**, each a scene of its own in
+`godot/maps/arena_parts/` (a `CbBreakable` cut into chunks), placed many times: the chunks are
+shared, so the arena's scene stays small. Edit a design and every wall of it changes.
+
+| Design | Size (m) | Chunks | Where |
+|---|---|---|---|
+| `tower_wall_a`, `_b`, `_c` | 15.6 x 3.1 x 0.5, four windows | 44 | the towers: a storey and a side each, between the corner columns, held by the floor, the slab above and the columns; three cuts, so neighbours differ |
+| `tower_entrance` | the same, a door and two windows | 44 | each tower's ground floor, facing its street |
+| `garage_parapet` | 10.6 x 1.2 x 0.35, brick | 14 | the garages' open long side, two a floor |
+| `garage_rail` | 15.6 x 1.2 x 0.4 | 20 | the garages' short sides |
+| `garage_side_a`, `_b` | 22 x 4.5 x 0.4 | 60 | the ramps' outer wall, a storey each |
+| `cover_wall_a`, `_b` | 6 x 2.5 x 0.35, brick | 24 | cover in the plazas |
+
+94 walls, 3424 chunks; the map is 0.7 MB baked. The towers are no longer solid: behind the walls
+are seven floors and a core; through the windows, or a hole, a player gets in. Remaking it:
+
+```
+python tools/make_arena.py
+godot --headless --path godot --script res://addons/cinderbox_maps/fracture_scenes.gd -- res://maps/arena_parts
+powershell -ExecutionPolicy Bypass -File tools\bake_map.ps1 -Scene res://maps/arena.tscn
+```
 
 
 ## Who pushes what
