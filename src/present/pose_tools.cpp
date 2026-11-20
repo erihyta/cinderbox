@@ -1,5 +1,6 @@
 #include "pose_tools.h"
 
+#include "detmath.h"
 #include "profile.h"
 #include "ragdoll.h"
 
@@ -48,6 +49,12 @@ RagdollRig BuildRagdollRig( const anim::AnimSet& set )
 	}
 
 	// Parents come before children in an ozz skeleton, so one pass settles every joint.
+	std::vector<int> parentOf( static_cast<size_t>( joints ) );
+	for ( int j = 0; j < joints; ++j )
+	{
+		parentOf[size_t( j )] = parents[size_t( j )];
+	}
+	FitRestToRagdoll( parentOf, rig );
 	rig.partOf.assign( size_t( joints ), -1 );
 	for ( int j = 0; j < joints; ++j )
 	{
@@ -65,6 +72,91 @@ RagdollRig BuildRagdollRig( const anim::AnimSet& set )
 		}
 	}
 	return rig;
+}
+
+void FitRestToRagdoll( const std::vector<int>& parents, RagdollRig& rig )
+{
+	const size_t joints = rig.restPosition.size();
+	const float limit = std::cos( kRestFitDegrees * detmath::kPi / 180.0f );
+
+	// Per part, the joint its bone ends at: the next part's joint furthest along it, else its own
+	// joint's child furthest from it (a hand, a foot, the head).
+	int boneEnd[ragdoll::PartCount];
+	for ( int p = 0; p < ragdoll::PartCount; ++p )
+	{
+		boneEnd[p] = -1;
+		const int a = rig.anchorJoint[size_t( p )];
+		if ( a < 0 || ragdoll::kParts[p].parent < 0 )
+		{
+			continue;
+		}
+		const b3Vec3 along = b3Normalize( b3Sub( ragdoll::kParts[p].center, ragdoll::kParts[p].anchor ) );
+		float best = 0.0f;
+		for ( int q = 0; q < ragdoll::PartCount; ++q )
+		{
+			const int b = rig.anchorJoint[size_t( q )];
+			const float ahead = b3Dot( b3Sub( ragdoll::kParts[q].anchor, ragdoll::kParts[p].anchor ), along );
+			if ( ragdoll::kParts[q].parent == p && b >= 0 && ahead > best )
+			{
+				best = ahead;
+				boneEnd[p] = b;
+			}
+		}
+		if ( boneEnd[p] >= 0 )
+		{
+			continue;
+		}
+		float farthest = 0.0f;
+		for ( size_t j = 0; j < joints; ++j )
+		{
+			const float d = b3Distance( rig.restPosition[j], rig.restPosition[size_t( a )] );
+			if ( parents[j] == a && d > farthest )
+			{
+				farthest = d;
+				boneEnd[p] = int( j );
+			}
+		}
+	}
+
+	// Each joint moved rigidly with its nearest turned ancestor: x -> turn x + shift.
+	std::vector<b3Quat> turn( joints, b3Quat_identity );
+	std::vector<b3Vec3> shift( joints, b3Vec3{ 0.0f, 0.0f, 0.0f } );
+	for ( size_t j = 0; j < joints; ++j )
+	{
+		if ( parents[j] >= 0 )
+		{
+			turn[j] = turn[size_t( parents[j] )];
+			shift[j] = shift[size_t( parents[j] )];
+		}
+		for ( int p = 0; p < ragdoll::PartCount; ++p )
+		{
+			if ( rig.anchorJoint[size_t( p )] != int( j ) || boneEnd[p] < 0 )
+			{
+				continue;
+			}
+			const b3Vec3 bone = b3Sub( rig.restPosition[size_t( boneEnd[p] )], rig.restPosition[j] );
+			if ( b3Length( bone ) < 1e-4f )
+			{
+				continue;
+			}
+			const b3Vec3 now = b3RotateVector( turn[j], b3Normalize( bone ) );
+			const b3Vec3 along = b3Normalize( b3Sub( ragdoll::kParts[p].center, ragdoll::kParts[p].anchor ) );
+			if ( b3Dot( now, along ) >= limit )
+			{
+				continue;
+			}
+			// Turned about the joint where it is now.
+			const b3Vec3 pivot = b3Add( b3RotateVector( turn[j], rig.restPosition[j] ), shift[j] );
+			const b3Quat arc = anim::Arc( now, along );
+			turn[j] = b3NormalizeQuat( b3MulQuat( arc, turn[j] ) );
+			shift[j] = b3Add( b3RotateVector( arc, b3Sub( shift[j], pivot ) ), pivot );
+		}
+	}
+	for ( size_t j = 0; j < joints; ++j )
+	{
+		rig.restPosition[j] = b3Add( b3RotateVector( turn[j], rig.restPosition[j] ), shift[j] );
+		rig.restRotation[j] = b3NormalizeQuat( b3MulQuat( turn[j], rig.restRotation[j] ) );
+	}
 }
 
 Transform RagdollFrame( const Transform& pelvis, float yaw )

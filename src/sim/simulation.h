@@ -831,6 +831,11 @@ private:
 	void RespawnPlayer( flecs::entity e, const SimCommand& command );
 	// M249: a living character tossed (CommandType::Toss); those down get up (in the step).
 	void TossPlayer( flecs::entity e, const SimCommand& command );
+	// The last hit a Kill or a Toss says (a: where, b: the change of velocity), on the ragdoll its
+	// event makes or keeps (M275: one way for both).
+	static void SetRagdollHit( PhysicsEvent& event, const SimCommand& command );
+	// A character dead or down: still, and out of the physics world's queries.
+	void LeaveBody( flecs::entity e, Character c );
 	void RunGetUps();
 	// A ragdoll as a Ragdoll physics event says (RagdollEvent makes one from a player).
 	flecs::entity CreateRagdoll( const PhysicsEvent& event );

@@ -12,6 +12,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 93 | A toss's ragdoll is hit as a killed one's is (Toss: a, b the hit, c what it breaks; a ragdoll event's `breaking`), and a kill while down hits the ragdoll it keeps (M275) |
 | 92 | An input packet's acknowledgements as varints behind its newest tick, its first input with how far back the player saw the others (it went without, and read 0: M261) |
 | 91 | What a character carries in its puppet, by kind; another's items put away out of sight not sent (M260) |
 | 90 | A puppet's update may go against its record as the client has it in its newest state (its base too old; M257) |
@@ -108,6 +109,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 62 | Toss's hit and what it breaks (a, b, c as the protocol's 93); a kill while down hits the ragdoll it keeps |
 | 61 | A frame's joins and leaves counted in a varint |
 | 60 | 1023 players (two-byte slots: the frames' joins and leaves, a character's record) |
 | 59 | The config's lag compensation (a motion's finds and probes meet the others as the player saw them) |

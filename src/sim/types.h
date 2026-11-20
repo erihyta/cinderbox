@@ -336,12 +336,13 @@ enum class CommandType : uint8_t
 	// = 0: it is driven no more and stands where it is, nobody's. An NPC is a body a mod drives.
 	Drive = 22,
 	// target = a living character (M249): tossed, a ragdoll in the physics world going at its
-	// velocity and `a` (m/s) more, down and not dead (it does not move, nothing hits its capsule).
+	// velocity, then hit as a killed one's is (M275: at `a`, the part nearest it given `b` m/s; the
+	// joints pass it on), down and not dead (it does not move, nothing hits its capsule).
 	// It gets up where the ragdoll lies once that has been still for a moment, or after `value`
-	// ticks (0: 5 seconds). While it flies, its ragdoll breaks a breakable it hits at `b.x` m/s or
-	// more (0: none), its hole's radius `b.y` m at 30 m/s, wider the faster, as a thrown item's
-	// (0: 1). A character without a ragdoll, a
-	// driven prop, a dead or downed one: nothing.
+	// ticks (0: 5 seconds). While it flies, its ragdoll breaks a breakable it hits at `c.x` m/s or
+	// more (0: none), its hole's radius `c.y` m at 30 m/s, wider the faster, as a thrown item's
+	// (0: 1). A character without a ragdoll, a driven prop, a dead or downed one: nothing. (More
+	// speed for the whole body: an Impulse on the character first, in the same frame.)
 	Toss = 23,
 };
 inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Toss );
@@ -468,9 +469,9 @@ enum class PhysicsEventType : uint8_t
 	Ragdoll = 3,   // a ragdoll of the player `netId` (slot `slot`): its feet at `at`, facing `yaw`, going
 				   // `vector`, weighing `mass`, lasting `ticks`; then hit (`hitAt`, `hitVector`, `mode`), and
 				   // the ragdolls kept to `count` (0: no cap). It is made with the NetId `made`. `kind` 1: a
-				   // toss (M249), the player down, not dead: it breaks walls at `hitAt.x` m/s, its hole
-				   // `hitAt.y` (no hit). `kind` 2: no new one: the toss's ragdoll `made` is the dead player's
-				   // now, lasting `ticks`, the ragdolls kept to `count`
+				   // toss (M249), the player down, not dead: it breaks walls at `breaking.x` m/s, its hole
+				   // `breaking.y`. `kind` 2: no new one: the toss's ragdoll `made` is the dead player's
+				   // now, lasting `ticks`, the ragdolls kept to `count`, and hit as a new one is (M275)
 	// Bodies between the two worlds (M247): what a character takes from the physics world or gives
 	// back to it.
 	Remove = 4,	  // the entity `netId` is gone (an item its own motion removed)
@@ -505,6 +506,7 @@ struct PhysicsEvent
 	uint32_t ticks = 0;
 	uint32_t made = 0; // the entity it made (a ragdoll), once applied
 	Float3 at, vector, hitAt, hitVector;
+	Float3 breaking; // Ragdoll kind 1: what its ragdoll breaks (Tossed: x its speed, y its hole)
 	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	float yaw = 0.0f, mass = 0.0f;
 	std::vector<int32_t> board; // IntoWorld: the item's fields (empty: none)

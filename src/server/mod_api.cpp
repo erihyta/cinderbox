@@ -996,13 +996,20 @@ void Context::Kill( uint32_t target, bool ragdoll, b3Vec3 hitPoint, b3Vec3 hitVe
 	Add( c );
 }
 
-void Context::Toss( uint32_t target, b3Vec3 velocity, float breakSpeed, float holeRadius, float mostSeconds )
+void Context::Toss( uint32_t target, b3Vec3 velocity, b3Vec3 hitPoint, b3Vec3 hitVelocity, float breakSpeed, float holeRadius,
+					float mostSeconds )
 {
+	if ( b3LengthSquared( velocity ) > 0.0f )
+	{
+		// More speed for the whole body: the character's, which its ragdoll starts with.
+		Push( target, {}, velocity, ImpulseVelocity );
+	}
 	SimCommand c;
 	c.type = CommandType::Toss;
 	c.target = target;
-	c.a = ToFloat3( velocity );
-	c.b = { std::max( breakSpeed, 0.0f ), std::max( holeRadius, 0.0f ), 0.0f };
+	c.a = ToFloat3( hitPoint );
+	c.b = ToFloat3( hitVelocity );
+	c.c = { std::max( breakSpeed, 0.0f ), std::max( holeRadius, 0.0f ), 0.0f };
 	c.value = int32_t( std::clamp( mostSeconds, 0.0f, 600.0f ) * float( m_sim.Config().tickRate ) );
 	Add( c );
 }

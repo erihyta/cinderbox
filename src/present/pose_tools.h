@@ -35,6 +35,15 @@ struct RagdollRig
 
 RagdollRig BuildRagdollRig( const anim::AnimSet& set );
 
+// The rig's rest turned to the ragdoll's own standing layout (M275): each part's bone, from its
+// joint to the next part's (or to its joint's farthest child), laid along the part where it is more
+// than kRestFitDegrees off, the joints under it carried along. A ragdoll starts standing with its
+// arms down (sim/ragdoll.h); a skeleton whose rest is a T-pose hung off it as it was showed its arms
+// straight out while the bodies' hung down. Below the limit a bone is the rig's (a spine's curve).
+// `parents`: each joint's parent (-1: the root), parents first. BuildRagdollRig does this.
+inline constexpr float kRestFitDegrees = 10.0f;
+void FitRestToRagdoll( const std::vector<int>& parents, RagdollRig& rig );
+
 // The frame a ragdoll's pose is expressed in: facing its rest yaw, placed where its feet would be
 // if the pelvis still stood at rest. It follows the pelvis, so the pose stays near the origin.
 Transform RagdollFrame( const Transform& pelvis, float yaw );

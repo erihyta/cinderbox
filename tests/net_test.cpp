@@ -5407,7 +5407,7 @@ public:
 			{
 				// Tossed (M249), breaking what it hits hard.
 				const b3Vec3 way = { float( random( 21 ) ) - 10.0f, 3.0f + float( random( 5 ) ), float( random( 21 ) ) - 10.0f };
-				ctx.Toss( body, way, 8.0f, 1.2f );
+				ctx.Toss( body, way, {}, {}, 8.0f, 1.2f );
 			}
 		}
 	}

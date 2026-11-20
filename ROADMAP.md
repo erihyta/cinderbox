@@ -71,13 +71,13 @@ Which steps launch needs: [the road](#the-road).
 
 | # | Step | State | For launch |
 |---|---|---|---|
-| 0 | [Decisions](#0-decisions) | eighteen taken; nine open | |
+| 0 | [Decisions](#0-decisions) | twenty taken; eight open | |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean. **By hand: to do** | |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
-| 4 | [The slice](#4-the-slice) | **next**: an arena brawler | yes: the test of everything else |
+| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, outlined; ragdolls (M275) | yes: the test of everything else |
 | 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
 | 6 | [Sheets improved](#6-sheets-improved) | after 5 | yes: the sheet's format settled, with a version |
@@ -122,6 +122,8 @@ Which steps launch needs: [the road](#the-road).
 | **Pushers stay exact** (2026-11-06) | a pusher's place every tick, not every other tick filled in: that would change how they push | [docs/scaling.md](docs/scaling.md#the-plan-for-many-players-step-3b-2026-11-03) |
 | **The goal's scope** (2026-11-17) | as proposed, with avatars in it | [the goal](#the-goal) |
 | **The slice's game** (2026-11-17) | an arena brawler | [step 4](#4-the-slice) |
+| **The slice's network model** (2026-11-20, after playing both) | the **hybrid**; the inputs model is no longer worked on (kept for a while, maybe deleted later) | [step 4](#4-the-slice) |
+| **The slice's mode** (2026-11-20) | **team deathmatch**, a server preset (`--preset tdm`) | [step 4](#4-the-slice) |
 | **Avatars before launch** (2026-11-17) | yes; the owner brings a few models when the step starts | [step 11](#11-avatars) |
 | **The Hytale comparison's proposals** (2026-11-17) | 1 and 7 before launch; 5 in step 6, 3 with it; 2, 4 and 6 postponed and kept open | [From the Hytale comparison](#from-the-hytale-comparison) |
 | **No version number in the plan** (2026-11-17) | the road ends at launch, and no release is named by a number (agents confused one with the protocol's and the formats' versions) | this file |
@@ -138,7 +140,6 @@ Which steps launch needs: [the road](#the-road).
 | **How players find servers** | a website's "play" link that starts the game; the game's own list; a desktop shortcut (not Steam: 2026-11-17) | decided later (the owner, 2026-11-17); needed for launch, not for the alpha. The second review (2026-11-17): it is one decision with the website, updates, the store and avatar uploads; take it before the alpha ends | [parked](#parked) |
 | **The players an arena is made for** | a few (a duel, 2v2) to tens | decided with the slice's map | [step 4](#4-the-slice) |
 | **Cosmetic physics** | Jolt with a static copy of the level; no Jolt at all | decided later | [step 12](#12-godots-own-used) |
-| **The slice's network model** | the hybrid (the default); the inputs model | chosen by playing both (`playtest.ps1 -NetModel inputs`), at 60 ms and at 150 ms, in an arena with physics in it (review, 2026-11-17). The review's lean, for up to 16 players where physics matters: the inputs model (in the hybrid your own hit on a body shows about 0.2 s late at 150 ms) | [step 4](#4-the-slice) |
 | **Both network models after the alpha** | keep both (the inputs model for small servers); keep one | after the alpha. Two models cost every feature twice (three client sessions in `game_client.h`; NetIds used up by hand to follow the server in `Simulation::ApplyCommand`). The review: the model the slice does not take gets no new features from that day | [step 3](#3-two-network-models) |
 | **Which servers the game joins at launch** | any; official or listed ones only | none yet: any server needs every decoder of server data fuzzed first. The review's lean: official and listed. Mods are compiled C++, so a community host runs a server program of its own, and Box3D's world bytes were not made to be read from a hostile source | [before launch](#before-launch) |
 | **Players' own avatars at launch** | uploaded by players; a curated set (the owner's models) | none yet: uploads need terms, moderation and budgets. The review's lean: a curated set; with a store of our own (not Steam), moderating uploads is all ours | [step 11](#11-avatars) |
@@ -223,29 +224,47 @@ pure move that the reference hashes prove changed nothing.)
 ### 4. The slice
 
 One game made with the engine and played by people. **Decided (2026-11-17): an arena brawler**,
-like a Roblox fighting game: one map, one mode (rounds and a score), the brawl kit and the bat, a
-ten-minute session that is fun. How many players an arena is made for is decided with its map.
+like a Roblox fighting game; **(2026-11-20): team deathmatch**, a server preset: `cb_server --preset
+tdm` (`presets/tdm.cfg`; `playtest.ps1 -ServerPreset tdm`). Two teams, the brawl kit and the bat,
+rounds to a team's kill limit, a ten-minute session that is fun. The hybrid only (2026-11-20: the
+inputs model is no longer worked on, kept for a while, maybe deleted later). Started 2026-11-20.
 
-| | Today |
-|---|---|
-| The mode | `deathmatch`, on by default: a round ends at 10 kills or 5 minutes; a scoreboard |
-| The kit | `brawl`: fist, dash strike, uppercut, ground slam, guard, as hotbar skills; all predicted from sheets |
-| The bat | `melee`: each life starts with one (the shop sells another); C++ with a hand-written prediction ([step 5](#5-every-item-a-sheet)) |
-| The map | `test_ground` and `example_arena` are test maps; none is made for the slice yet |
-| Players | the owner, with two games on one machine |
-| The network model | **the hybrid** (decided 2026-11-20, after playing it). The inputs model is no longer worked on: kept for a while, maybe deleted later |
+**The outline (2026-11-20)**, in order:
 
-- **First** (done 2026-11-20): the hybrid played by hand, the brawl kit against each other at 150 ms
-  and at a local round trip; it works. Every later step is the hybrid's alone.
-- Built beside steps 5 to 8: each of those is done when the slice uses it. Played every week, with
-  latency; what it runs into is the next milestone.
-- **Proposed by the second review (2026-11-17), not decided**: an arena that shows what only
-  Cinderbox has, shared physics (walls that break, props to throw, ring-outs), so the network model
-  is chosen on what matters; and bots that fight with the kit, since strangers in a weekly alpha
-  will often find the server empty.
+| # | Part | What | Where it lives | State |
+|---|---|---|---|---|
+| 1 | Ragdolls | one way for the last hit: a kill's, a toss's, a kill while down all strike the ragdoll where the hit landed. Every rig's ragdoll starts with its arms down (both mannequins' rest is a T-pose: every ragdoll showed its arms straight out). A tossed body breaks walls | the engine; brawl passes its hits | **done (M275)** |
+| 2 | The preset, teams | `--preset NAME`; the `teams` mod (the smaller team on joining, `team.id` shared); combat spares teammates (`combat.friendly_fire`), the finisher does not toss one; deathmatch scores teams (`deathmatch.team_kills`) | the server (presets); mods, cooperating by the name `team.id` | next |
+| 3 | Teammates not shoved | a find skips what shares a field's value with its owner: `find ... not same team.id`. A shove is predicted (every simulation runs the sheet), so the server cannot take one back: it has to be the sheet's | a mechanism in the sheet language and the motion set; the rule the mod's sheets | |
+| 4 | Teams seen | your team and the others' at a glance (a name tag or an outline in the team's colour), team scores on the HUD and the scoreboard, the winning team's banner | looks: a `teams` client project, deathmatch's HUD | |
+| 5 | Team spawns | a map's places by name (a node baked into the map, read by `ctx`), each team respawned at its own | the engine (maps); the teams mod | |
+| 6 | The arena | one map made for the slice, large, with walls that break ([below](#walls-that-break-for-the-arena)); how many players it is made for is decided with it | the owner, in the editor | the owner's |
+| 7 | Weapons and skills | the owner's ideas, animations and effects, each a sheet (step 5's way) | content | the owner brings them |
+| 8 | Bots that fight | bots with the kit, so a weekly alpha is not an empty server (proposed by the second review) | a mod or `cb_bot` | proposed |
+| 9 | Played by hand | every week, two games, at 150 ms and locally; what it runs into is the next milestone | | weekly |
+
+- Built beside steps 5 to 8: each of those is done when the slice uses it.
+- **To decide**: a teammate's shoves skipped (the leaning: a team game where your own side knocks
+  you about is not fun) or kept (some brawlers keep friendly knockback); teams chosen by the server
+  (today: the smaller one) or by the player too.
 - **Done when** the playtest checklist ([docs/playtest.md](docs/playtest.md)) passes by hand and our own ten-minute sessions run clean and are fun.
-  **Time limit: four weeks** from the step's start; then [the alpha](#4b-the-alpha) goes ahead with
-  what is left.
+  **Time limit: four weeks** from the step's start (2026-11-20); then [the alpha](#4b-the-alpha)
+  goes ahead with what is left.
+
+#### Walls that break, for the arena
+
+`test_ground`'s two big breakables, compared (2026-11-20):
+
+| | `GreatWall` (static until broken) | `GluedTower` (welded pieces, `glue`) |
+|---|---|---|
+| Whole | one static body: costs nothing, drawn as its own whole mesh | never whole: every piece a body from the start (asleep), welded where it touches |
+| Hit | a hole where the blast or the body struck; pieces nothing holds up fall | welds break by force: it cracks, sags, falls under its own weight |
+| On a large map | free until hit | every piece and weld in every game's physics world, always (the hybrid steps physics on every client) |
+| Looks | seamless until broken | the cracks always show: its whole mesh is never drawn, only its pieces' |
+
+**The leaning**: the Great Wall's way for most of the arena's walls, glued for a few showpieces where
+the collapse is the point (a tower, a bridge). The glued look needs no shader: draw its whole mesh
+until its first weld breaks, as a breakable is drawn whole (later; not for the first build).
 
 ### 4b. The alpha
 

@@ -654,13 +654,16 @@ public:
 	void Kill( uint32_t target, bool ragdoll, b3Vec3 hitPoint = {}, b3Vec3 hitVelocity = {}, uint32_t ragdollLifetimeTicks = 0,
 			   uint32_t ragdollCap = 0 );
 	void Respawn( uint32_t target );
-	// Tosses a living character (M249): its ragdoll flies at its velocity and `velocity` more, and
-	// it is down, not dead (nothing of it changes: its fields, its items), until it gets up where
-	// the ragdoll lies, once that has been still a moment, or after `mostSeconds` (0: 5). Flying,
-	// the ragdoll breaks a breakable it hits at `breakSpeed` m/s or more (0: none), a hole of radius
-	// `holeRadius` m at 30 m/s, wider the faster, as a thrown item's. Killed while down, it stays the
-	// player's ragdoll (or goes, without one); respawned, it goes. IsDown says whether it is.
-	void Toss( uint32_t target, b3Vec3 velocity, float breakSpeed = 0.0f, float holeRadius = 1.0f, float mostSeconds = 0.0f );
+	// Tosses a living character (M249): its ragdoll flies at its velocity and `velocity` more, hit
+	// as Kill's is (M275: the part nearest `hitPoint` given `hitVelocity`, which the joints pass on:
+	// it folds where it was struck), and it is down, not dead (nothing of it changes: its fields,
+	// its items), until it gets up where the ragdoll lies, once that has been still a moment, or
+	// after `mostSeconds` (0: 5). Flying, the ragdoll breaks a breakable it hits at `breakSpeed` m/s
+	// or more (0: none), a hole of radius `holeRadius` m at 30 m/s, wider the faster, as a thrown
+	// item's. Killed while down, it stays the player's ragdoll and takes the killing hit (or goes,
+	// without one); respawned, it goes. IsDown says whether it is.
+	void Toss( uint32_t target, b3Vec3 velocity, b3Vec3 hitPoint = {}, b3Vec3 hitVelocity = {}, float breakSpeed = 0.0f,
+			   float holeRadius = 1.0f, float mostSeconds = 0.0f );
 	bool IsDown( uint32_t target ) const;
 	void RespawnAt( uint32_t target, b3Vec3 position, float yaw );
 	// A frozen player ignores movement and jump (mods decide what else a freeze means for them).
