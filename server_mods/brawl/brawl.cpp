@@ -21,6 +21,8 @@
 //     blow) strikes the ragdoll where it landed, as hard as the sheet shoves, so it folds there
 //   - a tossed body breaks walls it flies into (brawl.toss_break m/s and up, a hole of
 //     brawl.toss_hole m)
+//   - teams (M276): the finisher does not toss a teammate (team.id the same, not 0) unless
+//     combat.friendly_fire; combat does not let the hit hurt either
 //
 // It runs by default, beside the weapons; its skills then go to whatever slots are free (their
 // slots' keys use them wherever they are). Alone, with only what it needs:
@@ -84,6 +86,7 @@ public:
 		// Another: the fist is back, the next punch may start (its sheet waits for it).
 		declare.Event( "brawl.fist.ready" );
 		m_damage = declare.Event( "combat.damage" );
+		m_team = declare.Field( "team.id", BoardType::Int, BoardScope::Entity, true ); // (the teams mod's)
 		declare.Motions( "brawl.moves" );
 		// The five skills: all of them are their scenes'.
 		declare.ItemsOfLook();
@@ -100,6 +103,7 @@ public:
 		m_slamDamage = int32_t( ctx.Option( "brawl.slam", 25.0 ) );
 		m_tossBreak = float( std::max( 0.0, ctx.Option( "brawl.toss_break", 8.0 ) ) );
 		m_tossHole = float( std::max( 0.1, ctx.Option( "brawl.toss_hole", 1.2 ) ) );
+		m_friendlyFire = ctx.Option( "combat.friendly_fire", 0.0 ) != 0.0;
 		m_guard = ctx.Schema().FindItemKind( "brawl.guard" );
 	}
 
@@ -115,7 +119,7 @@ public:
 				}
 				const b3Vec3 shove = b3Add( b3MulSV( kShoves[i].ahead, Away( ctx, e.netIdA, e.point ) ), b3Vec3{ 0.0f, kShoves[i].up, 0.0f } );
 				if ( Hurt( ctx, e.netIdA, e.netIdB, m_amounts[i], e.point, shove ) && i == 1 && Guarding( ctx, e.netIdB ) == false &&
-					 ctx.IsDown( e.netIdB ) == false )
+					 ctx.IsDown( e.netIdB ) == false && Teammates( ctx, e.netIdA, e.netIdB ) == false )
 				{
 					// The finisher tosses: the sheet's shove (predicted) is already its velocity, which
 					// the ragdoll keeps; struck where the fist landed, it folds there.
@@ -161,6 +165,12 @@ public:
 		return length > 0.01f ? b3MulSV( 1.0f / length, away ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
 	}
 
+	bool Teammates( Context& ctx, uint32_t a, uint32_t b ) const
+	{
+		const int32_t team = ctx.Get( a, m_team );
+		return m_friendlyFire == false && team != 0 && team == ctx.Get( b, m_team );
+	}
+
 	bool Guarding( Context& ctx, uint32_t victim ) const
 	{
 		const int slot = ctx.IsPlayer( victim ) ? ctx.SlotOf( victim ) : -1;
@@ -173,6 +183,8 @@ public:
 	EventHandle m_slamLanded;
 	EventHandle m_slamHit;
 	EventHandle m_damage;
+	FieldHandle m_team;
+	bool m_friendlyFire = false;
 	int32_t m_slamDamage = 25;
 	float m_tossBreak = 8.0f;
 	float m_tossHole = 1.2f;

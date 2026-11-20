@@ -18,6 +18,9 @@
 //   you read     combat.health, combat.max_health, combat.dead, combat.kills, combat.deaths
 //                (a player's Character::dead says the same as combat.dead, a tick sooner)
 //
+// Teams (M276): two bodies whose team.id (the teams mod's) is the same, and not 0, do not hurt each
+// other, unless combat.friendly_fire says they do. Hurting yourself always counts.
+//
 // Bodies a mod drives (NPCs: ctx.Drive) are hurt and killed the same way, at full health on their own
 // board from the tick a mod starts driving them; they can kill too. Bringing one back is the driving
 // mod's: combat does not respawn an NPC (Respawn it, and it is at full health again; or let it go).
@@ -28,6 +31,7 @@
 //   combat.ragdoll_seconds  how long a body lies (10)
 //   combat.ragdoll_cap      how many bodies lie at once (16)
 //   combat.fall_counts      falling out of the world counts as a death (1; 0: it does not)
+//   combat.friendly_fire    teammates hurt each other (0; 1: they do)
 //
 // Without this mod a server has no health: weapons fire and report their hits, and nobody dies.
 // Events are heard a tick after they are sent, so damage lands the tick after the hit.
@@ -84,6 +88,7 @@ public:
 		m_dead = declare.Field( "combat.dead", BoardType::Bool );
 		m_kills = declare.Field( "combat.kills", BoardType::Int, BoardScope::Entity, true ); // (shared: the scores list)
 		m_deaths = declare.Field( "combat.deaths", BoardType::Int, BoardScope::Entity, true );
+		m_team = declare.Field( "team.id", BoardType::Int, BoardScope::Entity, true ); // (the teams mod's)
 
 		m_damage = declare.Event( "combat.damage" );
 		m_heal = declare.Event( "combat.heal" );
@@ -105,6 +110,7 @@ public:
 		m_ragdollTicks = Ticks( ctx, std::max( 0.0, ctx.Option( "combat.ragdoll_seconds", 10.0 ) ) );
 		m_ragdollCap = uint32_t( std::max( 0.0, ctx.Option( "combat.ragdoll_cap", 16.0 ) ) );
 		m_fallCounts = ctx.Option( "combat.fall_counts", 1.0 ) != 0.0;
+		m_friendlyFire = ctx.Option( "combat.friendly_fire", 0.0 ) != 0.0;
 	}
 
 	void Tick( Context& ctx ) override
@@ -313,6 +319,14 @@ private:
 		{
 			return;
 		}
+		if ( m_friendlyFire == false && attackerNetId != 0 && attackerNetId != victimNetId )
+		{
+			const int32_t team = ctx.Get( victimNetId, m_team );
+			if ( team != 0 && team == ctx.Get( attackerNetId, m_team ) )
+			{
+				return; // (a teammate's)
+			}
+		}
 		Fighter v = victim.get<Fighter>();
 		uint32_t victimTarget = TargetOf( v );
 		flecs::entity attacker = FighterOf( ctx, attackerNetId );
@@ -363,6 +377,7 @@ private:
 	FieldHandle m_dead;
 	FieldHandle m_kills;
 	FieldHandle m_deaths;
+	FieldHandle m_team;
 	EventHandle m_damage;
 	EventHandle m_heal;
 	EventHandle m_roundStart;
@@ -375,6 +390,7 @@ private:
 	uint32_t m_ragdollTicks = 0;
 	uint32_t m_ragdollCap = 0;
 	bool m_fallCounts = true;
+	bool m_friendlyFire = false;
 
 	flecs::query<Fighter> m_fighters;
 	flecs::entity m_bySlot[kMaxPlayers];

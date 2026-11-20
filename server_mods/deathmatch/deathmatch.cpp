@@ -8,8 +8,14 @@
 // It announces "game.round_start" in turn, which the combat mod answers with full health and the
 // pistol with a full magazine. Mods cooperate through names.
 //
+// In teams (M276: the teams mod runs, and players have a team.id): each kill of another team's
+// player is a point for the killer's team too (deathmatch.team_score_1 to _4), a fall costs its
+// team the penalty, and a round ends when a team reaches deathmatch.team_kills; the team with the
+// most wins it (deathmatch.winning_team; 0: a draw). deathmatch.winner is still the best player.
+//
 // Options (cb_server --mod-option NAME=VALUE):
 //   deathmatch.kills          kill limit (10)
+//   deathmatch.team_kills     a team's kill limit, in teams (25)
 //   deathmatch.round_seconds  round length (300)
 //   deathmatch.pause_seconds  intermission between rounds (6)
 //   deathmatch.fall_penalty   points lost for falling out of the world (1)
@@ -18,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace
 {
@@ -35,6 +42,8 @@ enum Ending : int32_t
 	SinglePoint = 3, // a lead of one
 	ClearWin = 4,
 };
+
+constexpr int kMostTeams = 4; // (the teams mod's most)
 
 enum Phase : int32_t
 {
@@ -60,6 +69,13 @@ public:
 		m_limit = declare.Field( "deathmatch.kill_limit", BoardType::Int, BoardScope::Global );
 		// How the last round ended (Ending). A number: the words for it are the look's.
 		m_ending = declare.Field( "deathmatch.ending", BoardType::Int, BoardScope::Global );
+		m_team = declare.Field( "team.id", BoardType::Int, BoardScope::Entity, true ); // (the teams mod's)
+		for ( int t = 0; t < kMostTeams; ++t )
+		{
+			m_teamScore[t] = declare.Field( "deathmatch.team_score_" + std::to_string( t + 1 ), BoardType::Int, BoardScope::Global );
+		}
+		m_winningTeam = declare.Field( "deathmatch.winning_team", BoardType::Int, BoardScope::Global );
+		m_teamLimitField = declare.Field( "deathmatch.team_kill_limit", BoardType::Int, BoardScope::Global );
 
 		m_killed = declare.Event( "combat.killed" );
 		// a = the winner (0: nobody scored), value = the winning score.
@@ -71,6 +87,7 @@ public:
 	{
 		uint32_t rate = ctx.Config().tickRate;
 		m_killLimit = std::max( 1, int32_t( ctx.Option( "deathmatch.kills", 10.0 ) ) );
+		m_teamLimit = std::max( 1, int32_t( ctx.Option( "deathmatch.team_kills", 25.0 ) ) );
 		m_roundTicks = uint32_t( std::max( 10.0, ctx.Option( "deathmatch.round_seconds", 300.0 ) ) * rate );
 		m_pauseTicks = uint32_t( std::max( 1.0, ctx.Option( "deathmatch.pause_seconds", 6.0 ) ) * rate );
 		m_fallPenalty = int32_t( ctx.Option( "deathmatch.fall_penalty", 1.0 ) );
@@ -85,6 +102,7 @@ public:
 			ctx.Set( 0, m_phase, Playing );
 			ctx.Set( 0, m_round, m_roundNumber );
 			ctx.Set( 0, m_limit, m_killLimit );
+			ctx.Set( 0, m_teamLimitField, m_teamLimit );
 			ctx.Set( 0, m_winner, 0 );
 		}
 
@@ -120,7 +138,8 @@ public:
 		if ( m_state == Playing )
 		{
 			Score( ctx );
-			bool limitReached = std::any_of( m_scores, m_scores + kMaxPlayers, [&]( int32_t s ) { return s >= m_killLimit; } );
+			bool limitReached = std::any_of( m_scores, m_scores + kMaxPlayers, [&]( int32_t s ) { return s >= m_killLimit; } ) ||
+								std::any_of( m_teamScores, m_teamScores + kMostTeams, [&]( int32_t s ) { return s >= m_teamLimit; } );
 			if ( limitReached || ctx.Tick() >= m_phaseEnd )
 			{
 				EndRound( ctx );
@@ -150,13 +169,17 @@ private:
 			}
 			int killer = ctx.SlotOf( e.netIdA );
 			int victim = ctx.SlotOf( e.netIdB );
-			if ( killer >= 0 && killer != victim )
+			const int32_t killerTeam = killer >= 0 ? ctx.Get( e.netIdA, m_team ) : 0;
+			const int32_t victimTeam = victim >= 0 ? ctx.Get( e.netIdB, m_team ) : 0;
+			if ( killer >= 0 && killer != victim && ( killerTeam == 0 || killerTeam != victimTeam ) )
 			{
 				Add( ctx, killer, 1 );
+				AddTeam( ctx, killerTeam, 1 );
 			}
 			else if ( e.netIdA == 0 && victim >= 0 )
 			{
 				Add( ctx, victim, -m_fallPenalty );
+				AddTeam( ctx, victimTeam, -m_fallPenalty );
 			}
 		}
 	}
@@ -167,8 +190,35 @@ private:
 		ctx.Set( SlotTarget( PlayerSlot( slot ) ), m_score, m_scores[slot] );
 	}
 
+	void AddTeam( Context& ctx, int32_t team, int32_t points )
+	{
+		if ( team < 1 || team > kMostTeams )
+		{
+			return;
+		}
+		m_teamScores[team - 1] += points;
+		ctx.Set( 0, m_teamScore[team - 1], m_teamScores[team - 1] );
+	}
+
 	void EndRound( Context& ctx )
 	{
+		// In teams: the team with the most (0: a draw, or nobody scored).
+		int32_t bestTeam = 0;
+		bool draw = false;
+		for ( int t = 0; t < kMostTeams; ++t )
+		{
+			if ( bestTeam == 0 || m_teamScores[t] > m_teamScores[bestTeam - 1] )
+			{
+				bestTeam = t + 1;
+				draw = false;
+			}
+			else if ( m_teamScores[t] == m_teamScores[bestTeam - 1] )
+			{
+				draw = true;
+			}
+		}
+		ctx.Set( 0, m_winningTeam, draw || m_teamScores[bestTeam - 1] <= 0 ? 0 : bestTeam );
+
 		int best = -1;
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
@@ -214,6 +264,12 @@ private:
 		{
 			ctx.Destroy( id );
 		}
+		for ( int t = 0; t < kMostTeams; ++t )
+		{
+			m_teamScores[t] = 0;
+			ctx.Set( 0, m_teamScore[t], 0 );
+		}
+		ctx.Set( 0, m_winningTeam, 0 );
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			PlayerSlot slot = PlayerSlot( i );
@@ -242,11 +298,17 @@ private:
 	FieldHandle m_round;
 	FieldHandle m_limit;
 	FieldHandle m_ending;
+	FieldHandle m_team;
+	FieldHandle m_teamScore[kMostTeams];
+	FieldHandle m_winningTeam;
+	FieldHandle m_teamLimitField;
 	EventHandle m_killed;
 	EventHandle m_roundEnd;
 	EventHandle m_roundStart;
 
 	int32_t m_killLimit = 10;
+	int32_t m_teamLimit = 25;
+	int32_t m_teamScores[kMostTeams] = {};
 	uint32_t m_roundTicks = 0;
 	uint32_t m_pauseTicks = 0;
 	int32_t m_fallPenalty = 1;

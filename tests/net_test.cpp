@@ -5687,6 +5687,79 @@ void TestCombatNpc()
 	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
 }
 
+// Teams (M276): three players, teams 1, 2, 1 as they join (the smallest team first). A test mod has
+// slot 0 hurt slot 1 (the other team's) and slot 2 (its own team's), 30 each, then kill slot 1:
+// combat hurts only the other team's, unless combat.friendly_fire; deathmatch scores the kill for
+// team 1 too.
+class HurtTeamsMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_hurt_teams";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_damage = declare.Event( "combat.damage" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		const uint32_t a = ctx.PlayerNetId( 0 ), b = ctx.PlayerNetId( 1 ), c = ctx.PlayerNetId( 2 );
+		if ( a == 0 || b == 0 || c == 0 )
+		{
+			return;
+		}
+		++m_ticks;
+		if ( m_ticks == 30 )
+		{
+			ctx.Emit( m_damage, a, b, 30, ctx.EntityTransform( b )->position );
+			ctx.Emit( m_damage, a, c, 30, ctx.EntityTransform( c )->position );
+		}
+		if ( m_ticks == 60 )
+		{
+			ctx.Emit( m_damage, a, b, 200, ctx.EntityTransform( b )->position );
+		}
+	}
+	mods::EventHandle m_damage;
+	uint32_t m_ticks = 0;
+};
+
+void TestTeams()
+{
+	for ( int friendlyFire = 0; friendlyFire < 2; ++friendlyFire )
+	{
+		std::vector<std::unique_ptr<mods::ServerMod>> extra;
+		extra.push_back( std::make_unique<HurtTeamsMod>() );
+		Harness h( uint16_t( 48230 + 10 * friendlyFire ), {}, {},
+				   { { "test.mods", "teams" }, { "combat.friendly_fire", friendlyFire != 0 ? "1" : "0" }, { "combat.respawn_seconds", "30" } },
+				   {}, std::move( extra ) );
+		for ( int i = 0; i < 3; ++i )
+		{
+			h.AddBot();
+			h.RunUntil( 0.5 * double( i + 1 ) );
+		}
+		h.RunUntil( 4.0 );
+		h.Report();
+		Simulation& server = h.server.Sim();
+		const ModSchema& schema = h.server.Schema();
+		auto field = [&]( PlayerSlot slot, const char* name ) {
+			return server.BoardValue( server.PlayerNetId( slot ), schema.FindField( name )->slot );
+		};
+		const int32_t teams[3] = { field( 0, "team.id" ), field( 1, "team.id" ), field( 2, "team.id" ) };
+		const int32_t teamScore = server.GlobalBoardValue( schema.FindField( "deathmatch.team_score_1" )->slot );
+		std::printf( "    friendly fire %d: teams %d %d %d; slot 1 dead %d, slot 2's health %d; team 1's score %d, team 2's %d\n", friendlyFire,
+					 teams[0], teams[1], teams[2], field( 1, "combat.dead" ), field( 2, "combat.health" ), teamScore,
+					 server.GlobalBoardValue( schema.FindField( "deathmatch.team_score_2" )->slot ) );
+		CHECK( teams[0] == 1 && teams[1] == 2 && teams[2] == 1 );
+		CHECK( field( 1, "combat.dead" ) == 1 && teamScore == 1 );
+		CHECK( field( 2, "combat.health" ) == ( friendlyFire != 0 ? 70 : 100 ) );
+		for ( Bot& b : h.bots )
+		{
+			CHECK( b.client->GetStats().desyncs == 0 );
+		}
+	}
+}
+
 // A map places a character's body (CbCharacterBody): test_ground's critter. The server puts the
 // critter on its list (from its item), and spawns the body on the first tick: nobody's, standing on
 // its feet; a client has it too.
@@ -8607,6 +8680,7 @@ int main( int argc, char** argv )
 		{ "chaos", TestChaos },
 		{ "chaos_hybrid", TestChaosHybrid },
 		{ "combat_npc", TestCombatNpc },
+		{ "teams", TestTeams },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },
 		{ "npc_items", TestNpcItems },
