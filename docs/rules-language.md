@@ -155,7 +155,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 
 | Line | Does |
 |---|---|
-| `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at (x, y, z)]` | everything the shape overlaps when its step starts; the lines further in run once for each, nearest first, at most N (16). Players and bodies (props, items lying about) unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), as it looks (with the pitch), or not at all |
+| `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at (x, y, z)]` | everything the shape overlaps when its step starts; the lines further in run once for each, nearest first, at most N (16). Players and bodies (props, items lying about) unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), as it looks (with the pitch, about the chest: 1 m up, M279), or not at all |
 | `cast SHAPE range R [speed V] [holds level bodies players] [along look\|facing]` | a line thrown along the look (`along facing`: level along the body's facing, whatever the camera does: a punch's) when the motion starts: at once (speed 0: it holds what is there, or the motion does not happen) or flying at V m/s, holding what it meets first. The lines further in act **while it holds**; with a cast, what the first step does to bodies goes under it |
 
 | A `SHAPE` | |

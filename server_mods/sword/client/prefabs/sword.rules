@@ -1,0 +1,40 @@
+# The sword (M279): what it does to bodies (predicted: every simulation runs these) and how it
+# answers. Damage, blocks and parries are the sword mod's (sword.cpp), on sword.hit.
+
+# A swing, on the left mouse button: the pack plays it (sword.swing), and at the clip's
+# sword.strike marker a box where the player looks, pitch and all, finds whom the blade meets:
+# 2.4 m ahead, 1.2 m across, 1.6 m from low to high, turned about the chest with the look. Without
+# the marker (a body the pack does not fit) the timeout hits the same way. The next swing waits for
+# sword.done, the follow-through's end.
+motion Swing on use if not motion.sword.blade.Block and not sword.stunned
+	cooldown 0.4
+	emit sword.swing
+	then when sword.strike within 0.5
+	find box (1.2, 1.6, 2.4) at (0, 1, 1.3) turned look max 2
+		emit sword.hit
+		impulse 6 along facing
+	timeout
+	find box (1.2, 1.6, 2.4) at (0, 1, 1.3) turned look max 2
+		emit sword.hit
+		impulse 6 along facing
+	then when sword.done within 1.0
+
+# The block, while the right mouse button is held: slow, no jump; the pack holds the blade up.
+# Whether a hit is blocked or parried (the block up within 0.2 s) is the server's (sword.cpp).
+motion Block while held.use2 and not motion.sword.blade.Swing
+	move walk_speed 2 sprint_speed 2 jump_speed 0
+
+# SparksOnHit
+on sword.hit
+	subject ^^
+	call Model/Sparks restart
+
+# SparksOnBlock: the blocker's own blade (the event is at whoever blocked).
+on sword.blocked
+	subject ^^
+	call Model/Sparks restart
+
+# SparksOnParry
+on sword.parried
+	subject ^^
+	call Model/Sparks restart

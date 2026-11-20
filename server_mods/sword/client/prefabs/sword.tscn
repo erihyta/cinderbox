@@ -1,0 +1,130 @@
+[gd_scene format=3]
+
+; The sword (M279): the slice's first weapon. A plain blade, held as the bat is (its grip, Carry).
+;   Sword       CbItem     once a press; its pack sword.hold (animation_packs/sword_hold.tscn); hangs
+;                          on the back while put away; each life starts with one
+;     Model     the blade, its guard, grip and pommel; Sparks, started by the sheet's reactions
+;     Rules     CbRules    sword.rules: the swing (left mouse button: a box where the player looks,
+;                          at the clip's sword.strike marker) and the block (right button held)
+; Damage, blocks and parries are the server mod's (sword.cpp).
+
+[sub_resource type="StandardMaterial3D" id="Steel"]
+albedo_color = Color(0.82, 0.84, 0.88, 1)
+metallic = 0.8
+roughness = 0.3
+
+[sub_resource type="StandardMaterial3D" id="Brass"]
+albedo_color = Color(0.78, 0.62, 0.3, 1)
+metallic = 0.6
+roughness = 0.4
+
+[sub_resource type="StandardMaterial3D" id="Leather"]
+albedo_color = Color(0.25, 0.15, 0.1, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Blade"]
+material = SubResource("Steel")
+size = Vector3(0.06, 0.012, 0.8)
+
+[sub_resource type="BoxMesh" id="Guard"]
+material = SubResource("Brass")
+size = Vector3(0.22, 0.03, 0.04)
+
+[sub_resource type="BoxMesh" id="Grip"]
+material = SubResource("Leather")
+size = Vector3(0.035, 0.035, 0.18)
+
+[sub_resource type="BoxMesh" id="Pommel"]
+material = SubResource("Brass")
+size = Vector3(0.05, 0.05, 0.05)
+
+[sub_resource type="StandardMaterial3D" id="Glow"]
+transparency = 1
+blend_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+billboard_mode = 3
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="Spark"]
+material = SubResource("Glow")
+size = Vector2(0.04, 0.04)
+
+[sub_resource type="Gradient" id="Fade"]
+colors = PackedColorArray(1, 0.95, 0.7, 1, 1, 0.55, 0.1, 0)
+
+[sub_resource type="GradientTexture1D" id="FadeTexture"]
+gradient = SubResource("Fade")
+
+[sub_resource type="ParticleProcessMaterial" id="Burst"]
+emission_shape = 3
+emission_box_extents = Vector3(0.03, 0.01, 0.35)
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 2.0
+initial_velocity_max = 5.0
+scale_min = 0.5
+scale_max = 1.0
+color_ramp = SubResource("FadeTexture")
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.08, 0.06, 1.05)
+
+[node name="Sword" type="CbItem"]
+kind = "sword.blade"
+display_name = "Sword"
+properties = {
+"inventory.start": 1.0,
+"item.ruled": 1.0,
+"pickup.hold_seconds": 0.5
+}
+use = 1
+slot = 6
+holster = "Back"
+animation_pack = "sword.hold"
+carry_grip = NodePath("Model/Carry")
+view_offset = Vector3(-0.16, 0.31, 0.77)
+view_rotation = Vector3(40, 30, 0)
+view_left_hand = false
+mass = 1.4
+
+[node name="Model" type="Node3D" parent="."]
+
+[node name="Grip" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0)
+mesh = SubResource("Grip")
+
+[node name="Pommel" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.11)
+mesh = SubResource("Pommel")
+
+[node name="Guard" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.1)
+mesh = SubResource("Guard")
+
+[node name="Blade" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.52)
+mesh = SubResource("Blade")
+
+[node name="Carry" type="Marker3D" parent="Model"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, -0.035053983)
+
+[node name="Sparks" type="GPUParticles3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.55)
+cast_shadow = 0
+emitting = false
+amount = 40
+lifetime = 0.4
+one_shot = true
+explosiveness = 0.9
+process_material = SubResource("Burst")
+draw_pass_1 = SubResource("Spark")
+
+[node name="Body" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.4)
+shape = SubResource("Body")
+
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/sword.rules"

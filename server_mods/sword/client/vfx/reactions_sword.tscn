@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+; The sword's sounds (M279): its rules sheet, reactions_sword.rules.
+
+[node name="SwordReactions" type="Node3D"]
+
+[node name="Rules" type="CbRules" parent="."]
+file = "res://vfx/reactions_sword.rules"

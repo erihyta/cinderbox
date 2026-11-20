@@ -23,6 +23,9 @@
 //     brawl.toss_hole m)
 //   - teams (M276): the finisher does not toss a teammate (team.id the same, not 0) unless
 //     combat.friendly_fire; combat does not let the hit hurt either
+//   - with the fist in the hand its holder faces where the camera looks (M279, the bat's way): the
+//     upper body bends with the pitch, and the fist's box turns with the look, so a punch reaches
+//     up a ramp and down at someone lower
 //
 // It runs by default, beside the weapons; its skills then go to whatever slots are free (their
 // slots' keys use them wherever they are). Alone, with only what it needs:
@@ -88,6 +91,7 @@ public:
 		m_damage = declare.Event( "combat.damage" );
 		m_team = declare.Field( "team.id", BoardType::Int, BoardScope::Entity, true ); // (the teams mod's)
 		declare.Motions( "brawl.moves" );
+		m_hand = declare.Socket( "RightHand" );
 		// The five skills: all of them are their scenes'.
 		declare.ItemsOfLook();
 	}
@@ -105,10 +109,31 @@ public:
 		m_tossHole = float( std::max( 0.1, ctx.Option( "brawl.toss_hole", 1.2 ) ) );
 		m_friendlyFire = ctx.Option( "combat.friendly_fire", 0.0 ) != 0.0;
 		m_guard = ctx.Schema().FindItemKind( "brawl.guard" );
+		m_fist = ctx.Schema().FindItemKind( "brawl.fist" );
 	}
 
 	void Tick( Context& ctx ) override
 	{
+		// The fist out: its holder faces the camera (put away, the inventory mod lets it go).
+		for ( int i = 0; i < kMaxPlayers; ++i )
+		{
+			const PlayerSlot slot = PlayerSlot( i );
+			const Character* c = ctx.PlayerCharacter( slot );
+			const uint32_t inHand = c != nullptr && c->dead == 0 ? ctx.HeldItem( slot, m_hand ) : 0;
+			const bool fist = inHand != 0 && m_fist >= 0 && ctx.ItemKindOf( inHand ).index == m_fist;
+			if ( ctx.Joining( slot ) || ctx.Leaving( slot ) )
+			{
+				m_fistOut[size_t( i )] = false;
+			}
+			if ( fist != m_fistOut[size_t( i )] )
+			{
+				m_fistOut[size_t( i )] = fist;
+				if ( fist )
+				{
+					ctx.FaceCamera( SlotTarget( slot ), true );
+				}
+			}
+		}
 		for ( const ModEventRecord& e : ctx.RecentEvents() )
 		{
 			for ( size_t i = 0; i < m_hits.size(); ++i )
@@ -189,6 +214,9 @@ public:
 	float m_tossBreak = 8.0f;
 	float m_tossHole = 1.2f;
 	int m_guard = -1;
+	int m_fist = -1;
+	SocketHandle m_hand;
+	std::array<bool, kMaxPlayers> m_fistOut{};
 };
 
 } // namespace

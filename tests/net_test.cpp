@@ -4315,6 +4315,8 @@ void TestBrawl()
 			float dx = to->position.x - at->position.x, dz = to->position.z - at->position.z;
 			in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
 			in.moveForward = dx * dx + dz * dz > 1.0f * 1.0f ? 127 : 0; // (close: its last steps turn its body to B, and the body's facing is where it hits)
+			// Far (the finisher throws B some 28 m since M275 strikes its ragdoll too): it runs.
+			in.buttons |= dx * dx + dz * dz > 4.0f * 4.0f ? BtnSprint : 0;
 		}
 		in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0; // the fist out
 		auto at_ = [&]( uint32_t when ) { return tick >= when && tick < when + 3; };
@@ -4387,6 +4389,129 @@ void TestBrawl()
 	// 8, 8, 20, 15, 18, 25, and the guarded jab: 2.
 	CHECK( damages == std::vector<int32_t>( { 8, 8, 20, 15, 18, 25, 2 } ) );
 	CHECK( fistKept );
+	CHECK( a.client->GetStats().desyncs == 0 && b.client->GetStats().desyncs == 0 );
+}
+
+// The sword (M279): A takes its sword out and walks to B, looking at it; B faces A. Three swings:
+// the first lands (30); B holds its block up long before the second (a fifth: 6, sword.blocked);
+// B's block goes up just before the third lands (a parry: nothing, sword.parried, A reels: its
+// sword.stunned on, its walk slowed). A's swing finds B where A looks, and A faces its camera while
+// the sword is out.
+void TestSword()
+{
+	Harness h( 48260, {}, {}, { { "test.mods", "sword" }, { "combat.max_health", "1000" } } );
+	const ModSchema& schema = h.server.Schema();
+	const int damage = schema.FindEvent( "combat.damage" ), blocked = schema.FindEvent( "sword.blocked" ),
+			  parried = schema.FindEvent( "sword.parried" ), hit = schema.FindEvent( "sword.hit" );
+	const ActionBits block = schema.ActionMask( "use2" );
+	CHECK( damage >= 0 && blocked >= 0 && parried >= 0 && hit >= 0 && block != 0 );
+	if ( damage < 0 )
+	{
+		return;
+	}
+	Simulation& server = h.server.Sim();
+	h.AddBot();
+	h.AddBot();
+	Bot& a = h.bots[0];
+	Bot& b = h.bots[1];
+	// Which slot the sword is in (each life starts with one: its scene's slot 6, or the next free).
+	auto swordSlot = [&]( uint32_t player ) {
+		for ( uint8_t i = 0; i < 16; ++i )
+		{
+			const uint32_t item = server.SlotItem( player, i );
+			const flecs::entity e = item != 0 ? server.FindEntity( item ) : flecs::entity();
+			const HeldItem* held = e.is_valid() ? e.try_get<HeldItem>() : nullptr;
+			if ( held != nullptr && held->kind < schema.itemKinds.size() && schema.itemKinds[held->kind] == "sword.blade" )
+			{
+				return int( i );
+			}
+		}
+		return -1;
+	};
+	auto look = [&]( uint32_t me, uint32_t it, PlayerInput& in, bool walk ) {
+		const Transform* at = me != 0 ? server.EntityTransform( me ) : nullptr;
+		const Transform* to = it != 0 ? server.EntityTransform( it ) : nullptr;
+		if ( at != nullptr && to != nullptr )
+		{
+			const float dx = to->position.x - at->position.x, dz = to->position.z - at->position.z;
+			in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
+			in.moveForward = walk && dx * dx + dz * dz > 1.6f * 1.6f ? 127 : 0;
+		}
+	};
+	const uint32_t swings[3] = { 400, 600, 800 };
+	// (Found by the server's tick observer: the scripts read only what it wrote.)
+	int slots[2] = { -1, -1 };
+	a.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		const uint32_t me = server.PlayerNetId( a.client->Slot() ), it = server.PlayerNetId( b.client->Slot() );
+		look( me, it, in, true );
+		if ( tick >= 250 && slots[0] >= 0 )
+		{
+			in.intent = uint8_t( SlotIntent::Select );
+			in.intentA = uint8_t( slots[0] );
+			in.intentSeq = 1;
+		}
+		for ( uint32_t at : swings )
+		{
+			in.actions |= tick >= at && tick < at + 3 ? kKeyUse : 0;
+		}
+		return in;
+	};
+	b.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		const uint32_t me = server.PlayerNetId( b.client->Slot() ), it = server.PlayerNetId( a.client->Slot() );
+		look( me, it, in, false );
+		if ( tick >= 250 && slots[1] >= 0 )
+		{
+			in.intent = uint8_t( SlotIntent::Select );
+			in.intentA = uint8_t( slots[1] );
+			in.intentSeq = 1;
+		}
+		// Held from well before the second swing; raised just before the third lands (its strike is
+		// 0.4 s after the press: the hit is said about 30 ticks after it, and heard the tick after).
+		const bool held = ( tick >= swings[1] - 60 && tick < swings[1] + 80 ) || ( tick >= swings[2] + 22 && tick < swings[2] + 80 );
+		in.actions |= held ? block : 0;
+		return in;
+	};
+	std::vector<int32_t> damages;
+	int counts[2] = { 0, 0 };
+	int hits = 0;
+	bool stunned = false, facing = false;
+	uint32_t seen = 0;
+	h.server.SetTickObserver( [&] {
+		const SimGlobals& g = server.Globals();
+		const uint32_t victim = server.PlayerNetId( b.client->Slot() ), attacker = server.PlayerNetId( a.client->Slot() );
+		slots[0] = attacker != 0 ? swordSlot( attacker ) : -1;
+		slots[1] = victim != 0 ? swordSlot( victim ) : -1;
+		for ( ; seen < g.modEventCount; ++seen )
+		{
+			const ModEventRecord& e = g.modEvents[seen % kModEventHistory];
+			if ( int( e.type ) == damage && e.netIdB == victim )
+			{
+				damages.push_back( e.value );
+			}
+			counts[0] += int( e.type ) == blocked ? 1 : 0;
+			counts[1] += int( e.type ) == parried ? 1 : 0;
+			hits += int( e.type ) == hit ? 1 : 0;
+		}
+		const BoardField* stun = schema.FindField( "sword.stunned" );
+		stunned = stunned || ( stun != nullptr && attacker != 0 && server.BoardValue( attacker, stun->slot ) != 0 );
+		const Character* c = server.PlayerCharacter( a.client->Slot() );
+		facing = facing || ( c != nullptr && c->faceCamera != 0 );
+	} );
+	h.RunUntil( 16.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	std::string list;
+	for ( int32_t d : damages )
+	{
+		list += " " + std::to_string( d );
+	}
+	std::printf( "    swings that found B %d; B's damage:%s; blocked %d, parried %d; A stunned %d, faced its camera %d\n", hits, list.c_str(), counts[0],
+				 counts[1], int( stunned ), int( facing ) );
+	CHECK( hits == 3 );
+	CHECK( damages == std::vector<int32_t>( { 30, 6 } ) );
+	CHECK( counts[0] == 1 && counts[1] == 1 && stunned && facing );
 	CHECK( a.client->GetStats().desyncs == 0 && b.client->GetStats().desyncs == 0 );
 }
 
@@ -8748,6 +8873,7 @@ int main( int argc, char** argv )
 		{ "combat_npc", TestCombatNpc },
 		{ "teams", TestTeams },
 		{ "teams_chosen", TestTeamsChosen },
+		{ "sword", TestSword },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },
 		{ "npc_items", TestNpcItems },
@@ -8779,11 +8905,13 @@ int main( int argc, char** argv )
 		{ "view_sources", TestViewSources },
 	};
 
+	// A name, or several with commas (in the table's order: to see what one leaves for the next).
 	const char* filter = argc > 1 ? argv[1] : nullptr;
+	const std::string names = filter != nullptr ? "," + std::string( filter ) + "," : "";
 	int run = 0;
 	for ( const Test& t : tests )
 	{
-		if ( filter != nullptr && std::strcmp( filter, t.name ) != 0 )
+		if ( filter != nullptr && names.find( "," + std::string( t.name ) + "," ) == std::string::npos )
 		{
 			continue;
 		}

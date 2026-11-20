@@ -5839,8 +5839,11 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 {
 	const uint32_t selfId = e.get<NetId>().value;
 	sayer = sayer != 0 ? sayer : selfId;
-	// The shape, turned as the player faces (or looks), at its feet.
+	// The shape, turned as the player faces (or looks), at its feet. Turned as it looks, it pitches
+	// about its chest (M279: kFindLookPivot up), as the upper body bends there, not about its feet: a
+	// swing at someone on a ramp above goes up where the arms reach, not over the head.
 	b3Quat turn = b3Quat_identity;
+	b3Vec3 pivot = { 0.0f, 0.0f, 0.0f };
 	if ( find.frame == MotionFrame::Facing )
 	{
 		turn = detmath::YawRotation( c.facingYaw );
@@ -5850,6 +5853,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 		float pitch = float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f );
 		turn = b3MulQuat( detmath::YawRotation( detmath::YawToRadians( in.cameraYaw ) ),
 						  b3MakeQuatFromAxisAngle( b3Vec3{ 1.0f, 0.0f, 0.0f }, -pitch ) );
+		pivot = { 0.0f, kFindLookPivot, 0.0f };
 	}
 	std::vector<uint32_t>& found = m_findScratch;
 	found.clear();
@@ -5862,7 +5866,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			int count = int( std::min<size_t>( piece.points.size(), 128 ) );
 			for ( int i = 0; i < count; ++i )
 			{
-				points[i] = b3RotateVector( turn, piece.points[size_t( i )] );
+				points[i] = b3Add( pivot, b3RotateVector( turn, b3Sub( piece.points[size_t( i )], pivot ) ) );
 			}
 			const b3ShapeProxy proxy = { points, count, piece.radius };
 			b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
