@@ -526,6 +526,7 @@ bool GameServer::Start( const ServerOptions& options )
 		ctx.SetItemProperties( &m_itemProperties );
 		ctx.SetHitTester( m_hits.get() );
 		ctx.SetNavMesh( &m_nav );
+		ctx.SetBots( this );
 		for ( const auto& mod : m_mods )
 		{
 			mod->Start( ctx );
@@ -647,7 +648,7 @@ void GameServer::Update( double now )
 	// Players whose connection did not come back in time leave the world.
 	for ( Client& c : m_clients )
 	{
-		if ( c.used && c.connected == false && now - c.disconnectedAt > m_options.reconnectGraceSeconds )
+		if ( c.used && c.connected == false && c.bot == false && now - c.disconnectedAt > m_options.reconnectGraceSeconds )
 		{
 			FinishStates( true );
 			if ( c.inWorld )
@@ -1121,6 +1122,12 @@ void GameServer::RunTick( double now )
 		{
 			continue;
 		}
+		if ( c.bot )
+		{
+			c.lastInput = c.botInput;
+			frame.inputs[c.slot] = c.lastInput;
+			continue;
+		}
 		if ( c.fake )
 		{
 			const auto from = std::chrono::steady_clock::now();
@@ -1376,6 +1383,7 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetPrivates( &m_privates, &m_privatesChanged );
 	ctx.SetHitTester( m_hits.get() );
 	ctx.SetNavMesh( &m_nav );
+	ctx.SetBots( this );
 	ctx.SetOverflow( &m_overflow );
 	ctx.SetTexts( &m_typed, &m_said );
 	// Each player's view of the others, as its input says it saw them (this tick's mods see the
@@ -1468,6 +1476,57 @@ void GameServer::SendSaid()
 		}
 	}
 	m_said.clear();
+}
+
+int GameServer::AddBot( const std::string& name )
+{
+	for ( Client& c : m_clients )
+	{
+		if ( c.used )
+		{
+			continue;
+		}
+		const PlayerSlot slot = PlayerSlot( &c - m_clients.data() );
+		c = Client{};
+		m_privates[slot] = Blackboard{};
+		c.used = true;
+		c.bot = true;
+		c.slot = slot;
+		c.inWorld = true;
+		c.name = UniqueName( SanitizeName( name, slot ), c );
+		m_pendingEvents.push_back( { PlayerEventType::Join, slot } );
+		m_namesDirty = true;
+		Log( "a bot joins as slot %u (%s)", slot, c.name.c_str() );
+		return int( slot );
+	}
+	return -1;
+}
+
+void GameServer::RemoveBot( PlayerSlot slot )
+{
+	if ( IsBot( slot ) == false )
+	{
+		return;
+	}
+	Client& c = m_clients[slot];
+	Log( "the bot in slot %u leaves (%s)", slot, c.name.c_str() );
+	m_pendingEvents.push_back( { PlayerEventType::Leave, slot } );
+	m_privates[slot] = Blackboard{};
+	c = Client{};
+	m_namesDirty = true;
+}
+
+bool GameServer::IsBot( PlayerSlot slot ) const
+{
+	return slot < m_clients.size() && m_clients[slot].used && m_clients[slot].bot;
+}
+
+void GameServer::BotInput( PlayerSlot slot, const PlayerInput& input )
+{
+	if ( IsBot( slot ) )
+	{
+		m_clients[slot].botInput = input;
+	}
 }
 
 std::string GameServer::UniqueName( const std::string& wanted, const Client& self ) const

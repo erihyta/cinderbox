@@ -132,11 +132,11 @@ struct ServerOptions
 	float fakeWarmupSeconds = 5.0f;	 // what they are sent is counted from then on (not the joins' burst)
 };
 
-class GameServer
+class GameServer final : public mods::BotSeats
 {
 public:
 	GameServer();
-	~GameServer();
+	~GameServer() override;
 
 	// Gameplay mods, added before Start(). They tick in the order they were added.
 	void AddMod( std::unique_ptr<mods::ServerMod> mod );
@@ -249,6 +249,13 @@ public:
 		return m_bench;
 	}
 
+	// Bots (M281, mods::BotSeats; a mod adds them through its Context): a slot kept as a player's,
+	// with no connection (nothing is sent to it, it never times out), its input the mod's.
+	int AddBot( const std::string& name ) override;
+	void RemoveBot( PlayerSlot slot ) override;
+	bool IsBot( PlayerSlot slot ) const override;
+	void BotInput( PlayerSlot slot, const PlayerInput& input ) override;
+
 private:
 	static constexpr uint32_t kInputBuffer = 128;
 	static constexpr uint32_t kFrameHistory = 256; // frames kept for resending
@@ -356,6 +363,9 @@ private:
 		// A fake player (ServerOptions::fakePlayers): its inputs from a brain, what it is sent
 		// counted, its acknowledgements a round trip after each send.
 		bool fake = false;
+		// A bot (M281): a mod's player. Never connected; its input is botInput.
+		bool bot = false;
+		PlayerInput botInput{};
 		BotBrain brain = BotBrain( 1 );
 		uint8_t intents = 0;
 		struct Ack

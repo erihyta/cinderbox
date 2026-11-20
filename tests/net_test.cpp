@@ -4515,6 +4515,93 @@ void TestSword()
 	CHECK( a.client->GetStats().desyncs == 0 && b.client->GetStats().desyncs == 0 );
 }
 
+// Bots (M281): the bots mod fills a game of two teams up to four players. A person (standing still)
+// joins; three bots join after it, a second apart, named, and the teams are two and two. They find
+// their enemies and fight with the brawl kit or the sword: in 20 s their hits do damage, and someone
+// falls. A second person joins: a bot leaves. The people's games never disagree with the server.
+void TestBots()
+{
+	Harness h( 48270, {}, {}, { { "test.mods", "brawl,sword,teams,deathmatch,bots" }, { "bots.fill", "4" }, { "teams.count", "2" } } );
+	const ModSchema& schema = h.server.Schema();
+	const int damage = schema.FindEvent( "combat.damage" );
+	const BoardField* team = schema.FindField( "team.id" );
+	const BoardField* deaths = schema.FindField( "combat.deaths" );
+	CHECK( damage >= 0 && team != nullptr && deaths != nullptr );
+	if ( damage < 0 || team == nullptr || deaths == nullptr )
+	{
+		return;
+	}
+	Simulation& server = h.server.Sim();
+	auto still = []( uint32_t ) { return PlayerInput{}; };
+	h.AddBot().script = still;
+	auto botSlots = [&] {
+		std::vector<PlayerSlot> out;
+		for ( int i = 0; i < 16; ++i )
+		{
+			if ( h.server.IsBot( PlayerSlot( i ) ) )
+			{
+				out.push_back( PlayerSlot( i ) );
+			}
+		}
+		return out;
+	};
+	int fromBots = 0, dealt = 0;
+	uint32_t seen = 0;
+	h.server.SetTickObserver( [&] {
+		const SimGlobals& g = server.Globals();
+		for ( ; seen < g.modEventCount; ++seen )
+		{
+			const ModEventRecord& e = g.modEvents[seen % kModEventHistory];
+			int by = -1;
+			for ( int i = 0; i < 16 && e.netIdA != 0; ++i )
+			{
+				by = server.PlayerNetId( PlayerSlot( i ) ) == e.netIdA ? i : by;
+			}
+			if ( int( e.type ) == damage && by >= 0 && h.server.IsBot( PlayerSlot( by ) ) )
+			{
+				fromBots += 1;
+				dealt += e.value;
+			}
+		}
+	} );
+	h.RunUntil( 5.0 );
+	const std::vector<PlayerSlot> joined = botSlots();
+	std::string names;
+	int sizes[3] = { 0, 0, 0 };
+	for ( int i = 0; i < 16; ++i )
+	{
+		const uint32_t id = server.PlayerNetId( PlayerSlot( i ) );
+		const int32_t t = id != 0 ? server.BoardValue( id, team->slot ) : 0;
+		sizes[std::clamp( t, 0, 2 )] += id != 0 ? 1 : 0;
+	}
+	for ( PlayerSlot s : joined )
+	{
+		names += " \"" + h.bots[0].client->Names()[s] + "\"";
+	}
+	h.RunUntil( 25.0 );
+	int fell = 0;
+	for ( int i = 0; i < 16; ++i )
+	{
+		const uint32_t id = server.PlayerNetId( PlayerSlot( i ) );
+		fell += id != 0 ? server.BoardValue( id, deaths->slot ) : 0;
+	}
+	h.AddBot().script = still;
+	h.RunUntil( 29.0 );
+	h.server.SetTickObserver( {} );
+	const size_t afterSecond = botSlots().size();
+	h.Report();
+	std::printf( "    bots after 5 s: %zu (%s), teams %d and %d (none %d); in 20 s their hits %d (%d damage), deaths %d; a second person: %zu bots\n",
+				 joined.size(), names.c_str(), sizes[1], sizes[2], sizes[0], fromBots, dealt, fell, afterSecond );
+	CHECK( joined.size() == 3 && names.find( "\"Bot 1\"" ) != std::string::npos && names.find( "\"Bot 3\"" ) != std::string::npos );
+	CHECK( sizes[1] == 2 && sizes[2] == 2 );
+	CHECK( fromBots >= 5 && dealt > 0 && fell >= 1 );
+	CHECK( afterSecond == 2 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 // A fused grenade across the wire, behind 100 ms: the frag mod's grenade is thrown from the hand like
 // the impact one, bounces off the floor without going off, and when its time is up (2.5 s after it
 // left the hand) the simulation says frag.grenade.expired where it is, with who threw it, and
@@ -8874,6 +8961,7 @@ int main( int argc, char** argv )
 		{ "teams", TestTeams },
 		{ "teams_chosen", TestTeamsChosen },
 		{ "sword", TestSword },
+		{ "bots", TestBots },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },
 		{ "npc_items", TestNpcItems },

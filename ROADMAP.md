@@ -77,7 +77,7 @@ Which steps launch needs: [the road](#the-road).
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
-| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280) | yes: the test of everything else |
+| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
 | 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
 | 6 | [Sheets improved](#6-sheets-improved) | after 5 | yes: the sheet's format settled, with a version |
@@ -241,12 +241,20 @@ inputs model is no longer worked on, kept for a while, maybe deleted later). Sta
 | 6 | The buildings break | the towers hollow (seven floors and a core behind walls with windows), every wall of them, the garages' parapets, rails and ramp walls, and the cover walls cut into irregular chunks by the fracture tool (not blocks of brick); each a wall design, a scene of its own placed many times. A body struck into a wall makes its hole where it struck | the arena (`godot/maps/arena_parts`), `fracture_scenes.gd`; the engine (the hole) | **done (M280)** |
 | 7 | Teammates not shoved | a find skips what shares a field's value with its owner: `find ... not same team.id`. A shove is predicted, so it has to be the sheet's | a mechanism in the sheet language | **not for now** (the owner, 2026-11-20) |
 | 8 | Weapons and skills | the owner's ideas, animations and effects, each a sheet (step 5's way) | content | the owner brings them |
-| 9 | Bots that fight | bots with the kit, so a weekly alpha is not an empty server (proposed by the second review) | a mod or `cb_bot` | proposed |
+| 9 | Bots that fight | bots with the kit, so a weekly alpha is not an empty server (proposed by the second review), and one person can try the slice alone: they fill a game up to six players, leave as people join, keep the teams even, go for the nearest enemy along the navigation mesh and fight with the fist and its skills or the sword (guard, block, parry), with a reaction time | the engine (a mod's players: `Context::AddBot`); the `bots` mod | **done (M281)** |
 | 10 | Played by hand | every week, two games, at 150 ms and locally; what it runs into is the next milestone | | weekly |
 
 - Built beside steps 5 to 8: each of those is done when the slice uses it.
 - **Decided (2026-11-20)**: teammates' shoves stay for now; teams chosen by the player (two),
   shown only on the scoreboard; two spawn points; the arena for 8 to 10 players, tested by 2 or 3.
+- **Telekinesis** (the owner's idea, 2026-11-20), **after [6b](#6b-cooked-items)**: on a player, it
+  pulls them into melee range, staggered (no attack while pulled); on the world, a sphere the player
+  steers pulls props (a wall's pieces) to its middle, and the left button throws them as projectiles
+  that hurt. The pull is nearly today's sheet (a cast that holds a player, a rope reeled in or a
+  force; the stagger a few lines of C++, as `sword.stunned`). The sphere needs the language: a find
+  around a point the look moves (`at POINT`, planned) for as long as it is held, a lasting pull on
+  everything found toward that point (today `force` and `link` act on one held thing), a `break`
+  there (today around the player), and bodies a player threw that remember it, so their hits hurt.
 - **Done when** the playtest checklist ([docs/playtest.md](docs/playtest.md)) passes by hand and our own ten-minute sessions run clean and are fun.
   **Time limit: four weeks** from the step's start (2026-11-20); then [the alpha](#4b-the-alpha)
   goes ahead with what is left.
