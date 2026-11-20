@@ -356,7 +356,7 @@ game: `--host-local --preset=tdm`.
 
 | Preset | What |
 |---|---|
-| `tdm` | team deathmatch, the slice ([ROADMAP step 4](../ROADMAP.md#4-the-slice)): `inventory`, `item`, `pickup`, `expire`, `chat`, `combat`, `brawl`, `melee`, `deathmatch`, `teams` on `test_ground`, two teams to 25 |
+| `tdm` | team deathmatch, the slice ([ROADMAP step 4](../ROADMAP.md#4-the-slice)): `inventory`, `item`, `pickup`, `expire`, `chat`, `combat`, `brawl`, `melee`, `deathmatch`, `teams` on `arena` (M278), two teams to 25 |
 
 ## Switched off by default
 
