@@ -233,11 +233,10 @@ ten-minute session that is fun. How many players an arena is made for is decided
 | The bat | `melee`: each life starts with one (the shop sells another); C++ with a hand-written prediction ([step 5](#5-every-item-a-sheet)) |
 | The map | `test_ground` and `example_arena` are test maps; none is made for the slice yet |
 | Players | the owner, with two games on one machine |
-| The network model | not chosen. The hybrid is the default; [docs/scaling.md](docs/scaling.md#the-two-network-models) calls the inputs model the fighting games' (10 to 30 players). In the hybrid your punch moves another player a round trip and the buffer late; in the inputs model at once, with every client simulating everyone |
+| The network model | **the hybrid** (decided 2026-11-20, after playing it). The inputs model is no longer worked on: kept for a while, maybe deleted later |
 
-- **First**: both network models played by hand (`tools\playtest.ps1 -NetModel inputs`, then the
-  default), the brawl kit against each other, at 150 ms and at 60 ms (150 alone is the hard case,
-  not the usual one); the slice takes the one that feels right.
+- **First** (done 2026-11-20): the hybrid played by hand, the brawl kit against each other at 150 ms
+  and at a local round trip; it works. Every later step is the hybrid's alone.
 - Built beside steps 5 to 8: each of those is done when the slice uses it. Played every week, with
   latency; what it runs into is the next milestone.
 - **Proposed by the second review (2026-11-17), not decided**: an arena that shows what only

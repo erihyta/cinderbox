@@ -244,6 +244,24 @@ void CinderboxClient::LeanItem( Node3D* node )
 	node->set_meta( Lean(), int64_t( found.size() ) );
 }
 
+namespace
+{
+// The nodes under `node` (and it) that `owner` owns: a node moved from one scene into another keeps
+// its owner, the scene it came from, and Godot warns on every one (M274: "will make owner 'Rifle'
+// inconsistent", on picking an item up).
+void Owned( Node* node, const Node* owner, std::vector<Node*>& out )
+{
+	if ( node->get_owner() == owner )
+	{
+		out.push_back( node );
+	}
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		Owned( node->get_child( i ), owner, out );
+	}
+}
+} // namespace
+
 void CinderboxClient::FullItem( Node3D* node, const present::Visual& v )
 {
 	if ( node == nullptr || node->has_meta( Lean() ) == false )
@@ -266,6 +284,13 @@ void CinderboxClient::FullItem( Node3D* node, const present::Visual& v )
 		NodePath where = fresh->get_path_to( from );
 		int index = n->get_index();
 		Node* into = String( where ) == String( "." ) ? static_cast<Node*>( node ) : node->get_node_or_null( where );
+		// (Owned by the item it goes into, as its own nodes are, not by the copy it came from.)
+		std::vector<Node*> owned;
+		Owned( n, fresh, owned );
+		for ( Node* o : owned )
+		{
+			o->set_owner( nullptr );
+		}
 		from->remove_child( n );
 		if ( into == nullptr )
 		{
@@ -274,6 +299,10 @@ void CinderboxClient::FullItem( Node3D* node, const present::Visual& v )
 		}
 		into->add_child( n );
 		into->move_child( n, std::min( index, into->get_child_count() - 1 ) );
+		for ( Node* o : owned )
+		{
+			o->set_owner( node );
+		}
 	}
 	memdelete( fresh );
 }
