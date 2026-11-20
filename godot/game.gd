@@ -43,7 +43,7 @@ extends Node3D
 ##
 ## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N
 ##                            --replay=FILE --view=FILE
-##                            --host-local[=MODS] --bots=N   start a server here, join it, stop it on leaving (host.gd)
+##                            --host-local[=MODS] --bots=N --preset=NAME   start a server here (a server game: tdm), join it, stop it on leaving (host.gd)
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS --measure-from=SECONDS
 ##                            --look-shots=DIR [--look-shots-at=S,S,...]   with --view: set moments from set places (look_shots.gd)
 ##                            --mods=DIR --workshop=DIR --config=FILE

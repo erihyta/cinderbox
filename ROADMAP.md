@@ -27,7 +27,7 @@ planned says so. Detail of finished steps is in the history.
 | The client | Godot 4.7 with the engine as a GDExtension; draws whatever a source hands it (a server, a replay, a view file) and runs no mod's code (packs are checked before Godot loads them: Looks, below); every body drawn one way, through the RenderingServer (M260) |
 | Bodies | a character per body, any skeleton, possession of a body or a prop, NPCs a mod drives on the server's navigation mesh |
 | Animation | Godot AnimationTrees baked to a deterministic subset (blend spaces, TimeScale, crossfade curves, OneShot, Add2, nested machines) that the simulation runs; packs and overlays items bring; far bodies posed less often (M259) |
-| Rules | 24 server mods in C++, compiled into the server, 18 on by default. What moves bodies is in sheets every simulation runs, so it is predicted: brawl, dash, flight, grapple, frag, grenade, cannon. The bat and the guns are still C++ with hand-written predictions |
+| Rules | 25 server mods in C++, compiled into the server, 18 on by default; server games as presets (`--preset tdm`, M276). What moves bodies is in sheets every simulation runs, so it is predicted: brawl, dash, flight, grapple, frag, grenade, cannon. The bat and the guns are still C++ with hand-written predictions |
 | Looks | reactions, predictions and HUD lines in sheets; workshop items are Godot packs, checked by a pack validator and a scene guard. The validator was bypassed by an escaped script name (found in M261.9); tightened in M262. Godot's parsers still read strangers' files until [6b](#6b-cooked-items) |
 | The world | props, destructible walls, items, containers; maps baked from Godot scenes |
 | Modding | a Godot project per mod, made from the SDK; Test mod (build, publish, play in one step); a look published again is taken up live; workshop items found by hash, never sent over the game connection; the store is a folder; the editor knows a mod's names after a server build |
@@ -77,7 +77,7 @@ Which steps launch needs: [the road](#the-road).
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
-| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, outlined; ragdolls (M275) | yes: the test of everything else |
+| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276) | yes: the test of everything else |
 | 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
 | 6 | [Sheets improved](#6-sheets-improved) | after 5 | yes: the sheet's format settled, with a version |
@@ -234,8 +234,8 @@ inputs model is no longer worked on, kept for a while, maybe deleted later). Sta
 | # | Part | What | Where it lives | State |
 |---|---|---|---|---|
 | 1 | Ragdolls | one way for the last hit: a kill's, a toss's, a kill while down all strike the ragdoll where the hit landed. Every rig's ragdoll starts with its arms down (both mannequins' rest is a T-pose: every ragdoll showed its arms straight out). A tossed body breaks walls | the engine; brawl passes its hits | **done (M275)** |
-| 2 | The preset, teams | `--preset NAME`; the `teams` mod (the smaller team on joining, `team.id` shared); combat spares teammates (`combat.friendly_fire`), the finisher does not toss one; deathmatch scores teams (`deathmatch.team_kills`) | the server (presets); mods, cooperating by the name `team.id` | next |
-| 3 | Teammates not shoved | a find skips what shares a field's value with its owner: `find ... not same team.id`. A shove is predicted (every simulation runs the sheet), so the server cannot take one back: it has to be the sheet's | a mechanism in the sheet language and the motion set; the rule the mod's sheets | |
+| 2 | The preset, teams | `--preset NAME`; the `teams` mod (the smaller team on joining, `team.id` shared); combat spares teammates (`combat.friendly_fire`), the finisher does not toss one; deathmatch scores teams (`deathmatch.team_kills`) | the server (presets); mods, cooperating by the name `team.id` | **done (M276)** |
+| 3 | Teammates not shoved | a find skips what shares a field's value with its owner: `find ... not same team.id`. A shove is predicted (every simulation runs the sheet), so the server cannot take one back: it has to be the sheet's | a mechanism in the sheet language and the motion set; the rule the mod's sheets | next |
 | 4 | Teams seen | your team and the others' at a glance (a name tag or an outline in the team's colour), team scores on the HUD and the scoreboard, the winning team's banner | looks: a `teams` client project, deathmatch's HUD | |
 | 5 | Team spawns | a map's places by name (a node baked into the map, read by `ctx`), each team respawned at its own | the engine (maps); the teams mod | |
 | 6 | The arena | one map made for the slice, large, with walls that break ([below](#walls-that-break-for-the-arena)); how many players it is made for is decided with it | the owner, in the editor | the owner's |

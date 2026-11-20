@@ -4,6 +4,9 @@
 #
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1                        the default mods on test_ground
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Add possess,waves     and mods that are off by default
+#   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -ServerPreset tdm      a server game (cb_server --preset:
+#                                                                                    presets	dm.cfg, the slice); -Map,
+#                                                                                    -Mods and -Option given win over it
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Character critter     everyone plays the critter
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Latency 0 -Loss 0     no network trouble
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Move walk_speed=4     a movement parameter (cb_server --move)
@@ -23,7 +26,8 @@
 param(
 	[string]$Add = "",            # mods that are off by default, to run too: possess, waves, sneak, flight, cannon, grenade
 	[string]$Mods = "",           # exactly these mods instead (cb_server --mods)
-	[string]$Map = "test_ground", # a map in godot/maps, or "" for the built-in sandbox
+	[string]$Map = "test_ground", # a map in godot/maps, or "" for the built-in sandbox (with -ServerPreset: the preset's unless given)
+	[string]$ServerPreset = "",   # a server game in presets\ (cb_server --preset NAME): tdm
 	[string]$Character = "",      # the character everyone plays (cb_server --character)
 	[string]$NetModel = "hybrid", # hybrid or inputs (cb_server --net-model)
 	[string[]]$Option = @(),      # mod options, NAME=VALUE (waves.first=10)
@@ -73,7 +77,9 @@ $relay = $port + 1
 
 $serverArgs = @("--port", $port, "--exit-when-empty", 30, "--record", (Join-Path $Out "session.cbr"),
 	"--record-view", (Join-Path $Out "session.cbview"))
-if ($Map) { $serverArgs += @("--map", $Map) }
+# The preset first: what this script is given after it wins.
+if ($ServerPreset) { $serverArgs = @("--preset", $ServerPreset) + $serverArgs }
+if ($Map -and (-not $ServerPreset -or $PSBoundParameters.ContainsKey("Map"))) { $serverArgs += @("--map", $Map) }
 if ($Mods) { $serverArgs += @("--mods", $Mods) }
 if ($Character) { $serverArgs += @("--character", $Character) }
 if ($NetModel) { $serverArgs += @("--net-model", $NetModel) }

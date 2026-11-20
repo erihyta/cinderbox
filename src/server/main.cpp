@@ -49,6 +49,12 @@
 //   - A character that ships with the game is read from characters/NAME/ next to this executable
 //     (the build copies godot/characters/NAME/ there); players have it in their base game.
 //   - none: the procedural placeholder rig.
+//
+// --preset NAME (M276): the arguments in presets/NAME.cfg, as if written where --preset stands (so
+// what comes after it wins): next to this executable, in the working folder, or in a checkout's
+// presets/. One argument and its value a line ("--map test_ground", "--mod-option deathmatch.kills=20");
+// # starts a comment. A preset names no other preset. Every server game the project ships is one:
+//   cb_server --preset tdm      team deathmatch, the slice (ROADMAP step 4)
 
 #include "game_server.h"
 #include "registry.h"
@@ -61,6 +67,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -80,7 +87,7 @@ void Usage()
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
 				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--every-character] [--state-budget N] [--client-budget KBITS] [--state-threads N] [--lag-compensation MS]\n"
-				 "                 [--character NAME [--workshop DIR]] [--quiet]\n"
+				 "                 [--character NAME [--workshop DIR]] [--preset NAME] [--quiet]\n"
 				 "                 [--fake-players N [--fake-seed N] [--fake-radius M] [--fake-rtt MS] [--fake-fight]] [--bench SEC]\n" );
 }
 
@@ -219,6 +226,64 @@ bool DumpNames( const char* path, const std::string& lookSource )
 }
 
 int g_physicsThreads = -1; // --physics-threads (-1: not given)
+
+// The command line with each --preset NAME replaced by the preset's arguments (see the top). False
+// (and why, printed) for a preset that is not found or names another.
+bool ExpandPresets( int argc, char** argv, const std::filesystem::path& exeDir, std::vector<std::string>& out )
+{
+	out.clear();
+	out.push_back( argv[0] );
+	for ( int i = 1; i < argc; ++i )
+	{
+		if ( std::string( argv[i] ) != "--preset" )
+		{
+			out.push_back( argv[i] );
+			continue;
+		}
+		if ( i + 1 >= argc )
+		{
+			std::printf( "--preset wants a name\n" );
+			return false;
+		}
+		const std::string name = argv[++i];
+		std::vector<std::filesystem::path> places = { exeDir / "presets", std::filesystem::current_path() / "presets" };
+#if defined( CB_PRESETS_SOURCE_DIR )
+		places.push_back( CB_PRESETS_SOURCE_DIR );
+#endif
+		std::filesystem::path file;
+		for ( const std::filesystem::path& place : places )
+		{
+			if ( file.empty() && std::filesystem::exists( place / ( name + ".cfg" ) ) )
+			{
+				file = place / ( name + ".cfg" );
+			}
+		}
+		std::ifstream in( file );
+		if ( file.empty() || !in )
+		{
+			std::printf( "no preset named %s (presets/%s.cfg next to cb_server, in the working folder or the checkout)\n", name.c_str(),
+						 name.c_str() );
+			return false;
+		}
+		std::string line;
+		while ( std::getline( in, line ) )
+		{
+			line = line.substr( 0, line.find( '#' ) );
+			std::istringstream words( line );
+			std::string word;
+			while ( words >> word )
+			{
+				if ( word == "--preset" )
+				{
+					std::printf( "preset %s names another preset: a preset is arguments only\n", name.c_str() );
+					return false;
+				}
+				out.push_back( word );
+			}
+		}
+	}
+	return true;
+}
 
 bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::string>& mods, bool& listMods,
 				std::string& itemsDir, std::string& character, std::string& workshopDir )
@@ -454,6 +519,21 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 
 int main( int argc, char** argv )
 {
+	// --preset NAME: its arguments in its place (and from here on argc and argv are the expanded ones).
+	std::vector<std::string> expanded;
+	if ( ExpandPresets( argc, argv, std::filesystem::absolute( argv[0] ).parent_path(), expanded ) == false )
+	{
+		return 1;
+	}
+	std::vector<char*> expandedArgv;
+	for ( std::string& arg : expanded )
+	{
+		expandedArgv.push_back( arg.data() );
+	}
+	expandedArgv.push_back( nullptr );
+	argc = int( expanded.size() );
+	argv = expandedArgv.data();
+
 	cb::ServerOptions options;
 	// The server's default is the hybrid (since 2026-11-01; ServerOptions' own stays inputs, which the tests
 	// that build a server in place are written for).

@@ -95,7 +95,8 @@ The mods that ship:
 | `chest` | the template `chest` (`declare.ContainerTemplate`: a static box with `chest.slots` slots, its look `prefabs/chest.tscn`); options `chest.count`, `chest.radius`, `chest.slots`, `chest.items` | the example of a [container](items.md#containers-chests): places chests on the ground around the spawn point (`ctx.FindTemplate`, `ctx.SpawnTemplate`, `ctx.CastRay` for the ground) and fills each (`ctx.Containers`, `ctx.PutInContainer`) |
 | `frag` | the item `frag.grenade` from its look (slot 6, key H); events `frag.release`, `frag.thrown`, `frag.grenade.expired`, `frag.blast`; `declare.Slots( 6 )`; options `frag.damage`, `frag.radius`, `frag.push`, `frag.refill_seconds`, `frag.carry`, `frag.break_radius` (the hole: a wall's pieces whose centre is this close go; default half of `frag.radius`; 0: nothing breaks), `frag.rubble_seconds` (pieces go after this long; 0 keeps them); the global fields `frag.radius`, `frag.push`, `frag.break_radius`, `frag.rubble_seconds` (those options, for its sheet) | the fused grenade, the example of [an item's time being up](motions.md#things-that-fly-the-grenades), of [an item's own motion](rules-language.md#examples-the-shipped-sheets) and of a [stack](items.md#stacks): three to a slot, thrown one at a time from the hand; it bounces, and when its time is up its sheet sets it off on every machine (the blast, the hole, what is loose thrown); the mod hurts who is near and gives them back one at a time while a player has fewer than three |
 | `grenade` (off) | the item `grenade.shell` from its look (slot 7); events `grenade.release`, `grenade.thrown`, `grenade.blast`; `declare.Slots( 7 )`; option `grenade.refill_seconds` | the impact grenade, switched off (its `disabled` file; start it by name): thrown from the hand, it goes off on the first hard hit (`ctx.Hits`) |
-| `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; `deathmatch.ending`, how the last round ended, a number the look has [the words](looks.md#saying-things) for; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
+| `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; `deathmatch.ending`, how the last round ended, a number the look has [the words](looks.md#saying-things) for; in teams `deathmatch.team_score_1` to `_4`, `.winning_team`, `.team_kill_limit`; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset. In teams (M276): a kill of another team's player scores for the killer's team too, and a team's 25 (`deathmatch.team_kills`) ends the round |
+| `teams` (off) | `team.id` per player (shared); `teams.count` for the game; option `teams.count` (2, up to 4) | players in teams (M276): each joining goes to the team with the fewest players and stays there. What a team means is the others' (they declare `team.id` too): `combat` spares teammates unless `combat.friendly_fire` is 1, the brawl's finisher does not toss one, `deathmatch` scores teams. Run by the `tdm` preset ([presets](#server-presets)) |
 
 Mods cooperate through the board and through item properties (an item's `slot` tells `inventory` which slot
 it lives in). They also cooperate through events: `gun`, `melee` and `brawl` say `combat.damage`,
@@ -257,6 +258,7 @@ ctx.Emit( m_damage, SlotTarget( slot ), hit.netId, 40, hit.point, push );
 | `combat.respawn_seconds` | 3 | from death to the next life |
 | `combat.ragdoll_seconds`, `combat.ragdoll_cap` | 10, 16 | how long a body lies, and how many at once |
 | `combat.fall_counts` | 1 | falling out of the world is a death (0: it is not) |
+| `combat.friendly_fire` | 0 | teammates (the same `team.id`, not 0: the `teams` mod's) hurt each other (0: they do not; M276) |
 
 - Events are heard a tick after they are sent: damage lands the tick after the hit.
 - Without the mod (`--mods gun,inventory`) weapons fire and report hits, and nobody dies.
@@ -343,6 +345,19 @@ rolls back, so that is what has a size, and the size is the mods' to choose.
 - The numbers are part of what a session is (`SimConfig::fields`, `globalFields`, `motions`, `layers`): they go out in the welcome and in a replay's header, and every simulation sizes its state by them.
 - What is left with a number is what a packet or a file writes it in (a field's number is 16 bits, an item kind's 8), and actions: an input is a record of one size, copied for every player every tick.
 
+## Server presets
+
+A server game the project ships is a preset (M276): `presets/NAME.cfg`, the server's arguments one
+a line, and `cb_server --preset NAME` reads them as if written where `--preset` stands, so what
+comes after it wins (`cb_server --preset tdm --map example_arena`). `#` starts a comment; a preset
+names no other preset. The server looks next to itself (the build copies `presets/` there), in the
+working folder, then in the checkout. In a playtest: `tools\playtest.ps1 -ServerPreset tdm`; in the
+game: `--host-local --preset=tdm`.
+
+| Preset | What |
+|---|---|
+| `tdm` | team deathmatch, the slice ([ROADMAP step 4](../ROADMAP.md#4-the-slice)): `inventory`, `item`, `pickup`, `expire`, `chat`, `combat`, `brawl`, `melee`, `deathmatch`, `teams` on `test_ground`, two teams to 25 |
+
 ## Switched off by default
 
 These ship but do not run unless a server asks for them. Nothing was deleted.
@@ -354,6 +369,7 @@ These ship but do not run unless a server asks for them. Nothing was deleted.
 | The `flight` mod (T flies, Shift glides) | the file `server_mods/flight/disabled`, like `sneak` | name it: `cb_server --mods combat,dash,...,flight`, or delete the file and re-run CMake |
 | The jetpack (motions of the `flight` mod) | the server option `flight.jetpack`, 0 by default: the motions' conditions read `flight.jetpack_on`, and the fuel gauge hides without it | run the `flight` mod, with `--mod-option flight.jetpack=1` |
 | The `grenade` (the impact grenade, J), `cannon` (N), `possess` (P takes over the nearest body) and `waves` (NPCs in waves; run it with `brawl`) mods | their `disabled` files, like `sneak` | name them in `--mods`; in the game, `--host-local=...` or `tools\test_mod.ps1 -Mod waves` |
+| The `teams` mod | its `disabled` file, like `sneak` | the `tdm` preset, or name it in `--mods` |
 
 - **A whole mod**: the `disabled` file. `cb_server --list-mods` marks it, and `--mods` can still name it. Net tests run it only when they name it (`test.mods`); they leave out the `brawl` kit too, which runs by default but takes the hotbar's first slots.
 - **A part of a mod**: a server option the mod publishes as a field, and a condition on it. That is the pattern for any motion a server should be able to switch: the rule is the server's, the motion asks.

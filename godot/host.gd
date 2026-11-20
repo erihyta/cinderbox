@@ -6,6 +6,8 @@ extends RefCounted
 ##   --host-local             start a server with every mod it runs by default, and join it
 ##   --host-local=dash,grenade   only these mods (cb_server --mods)
 ##   --bots=N                 N bots on it too (cb_bot), so a mod can be tried alone
+##   --preset=NAME            a server game (cb_server --preset NAME: presets/NAME.cfg, tdm the slice);
+##                            --host-local=MODS given too wins over its mods
 ##   --server-exe=PATH        which cb_server (default: the one next to the game, else the newest
 ##                            build of this checkout)
 ##   --server-arg=...         one more argument for the server (--server-arg=--map=maps/x.cbmap)
@@ -60,7 +62,10 @@ static func start(args: Dictionary) -> Dictionary:
 	# A port nobody is likely to have: a different one each time, so a server that is still
 	# closing is not in the way.
 	port = FIRST_PORT + (randi() % PORTS)
-	var server_args := PackedStringArray(["--port", str(port), "--quiet", "--exit-when-empty", str(EMPTY_SECONDS)])
+	var server_args := PackedStringArray()
+	if args.has("preset"):
+		server_args.append_array(PackedStringArray(["--preset", String(args["preset"])]))
+	server_args.append_array(PackedStringArray(["--port", str(port), "--quiet", "--exit-when-empty", str(EMPTY_SECONDS)]))
 	var mods := String(args.get("host-local", ""))
 	if mods != "":
 		server_args.append_array(PackedStringArray(["--mods", mods]))
