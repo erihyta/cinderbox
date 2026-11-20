@@ -29,11 +29,11 @@ motion Finisher on use if brawl.combo >= 2 and not motion.brawl.fist.Jab
 	then when brawl.fist.strike within 0.5
 	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 		emit brawl.finisher.hit
-		impulse 14 along facing
+		impulse 70 along facing
 		impulse 5 along up
 	timeout
 	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 		emit brawl.finisher.hit
-		impulse 14 along facing
+		impulse 70 along facing
 		impulse 5 along up
 	then when brawl.fist.ready within 0.9
