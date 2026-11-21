@@ -71,17 +71,18 @@ Which steps launch needs: [the road](#the-road).
 
 | # | Step | State | For launch |
 |---|---|---|---|
-| 0 | [Decisions](#0-decisions) | twenty-one taken; seven open | |
+| 0 | [Decisions](#0-decisions) | twenty-two taken; seven open | |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean. **By hand: to do** | |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
-| 4 | [The slice](#4-the-slice) | **started** (2026-11-20): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
-| 4b | [The alpha](#4b-the-alpha) | after 4: strangers on one official server, official items only | yes, before 9 to 11 |
-| 5 | [Every item a sheet](#5-every-item-a-sheet) | beside the slice | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | after 5 | yes: the sheet's format settled, with a version |
-| 6b | [Cooked items](#6b-cooked-items) | after the slice, with 6 | yes: before anyone else's items reach players |
+| 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
+| 5 | [Every item a sheet](#5-every-item-a-sheet) | **next** (2026-11-21: before the alpha) | yes: one way for every item before modders copy one |
+| 6 | [Sheets improved](#6-sheets-improved) | after 5 (before the alpha) | yes: the sheet's format settled, with a version |
+| 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
+| 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
+| 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
 | 7 | [Timing from the clip](#7-timing-from-the-clip) | when the slice asks | as far as the slice needs |
 | 8 | [Body parts with priorities](#8-body-parts-with-priorities) | when the slice asks | as far as the slice needs |
 | 9 | [Cinderbox Studio](#9-cinderbox-studio) | after the alpha | yes: modding without a compiler |
@@ -97,6 +98,11 @@ Which steps launch needs: [the road](#the-road).
   leans on them.
 - **Cooked items before anyone else's items**: a Godot pack from a stranger can run code today
   (M261.9). Until 6b, the alpha loads official items only.
+- **Steps 5, 6 and 6b before the alpha** (the owner, 2026-11-21): the slice stops after M281 (its
+  map, teams, bots and first weapons are there) and goes on in [4c](#4c-the-slice-continued). The
+  owner's next weapons need the sheets step 6 makes (telekinesis needs `at POINT` and a pull on
+  many bodies), and every item should be written once, the new way, not twice; 6b ends Godot packs
+  from strangers before anyone else's items can reach players. The alpha waits for all three.
 - **The slice next**: steps 5 to 8 are what a fighting game leans on, and the slice says which
   parts matter. Steps 9 to 11 are worth more once there is a game to mod and strangers who played it.
 - **Why the slice came late**: steps 3 and 3b (M244 to M261) went to network models and to 255 and
@@ -124,6 +130,7 @@ Which steps launch needs: [the road](#the-road).
 | **The slice's game** (2026-11-17) | an arena brawler | [step 4](#4-the-slice) |
 | **The slice's network model** (2026-11-20, after playing both) | the **hybrid**; the inputs model is no longer worked on (kept for a while, maybe deleted later) | [step 4](#4-the-slice) |
 | **The slice's mode** (2026-11-20) | **team deathmatch**, a server preset (`--preset tdm`) | [step 4](#4-the-slice) |
+| **Steps 5, 6 and 6b before the alpha** (2026-11-21) | the slice paused after M281, continued in [4c](#4c-the-slice-continued); then the alpha | [the road](#the-road) |
 | **The players an arena is made for** (2026-11-20) | **8 to 10**, in a map big enough that they feel small (tested by 2 or 3) | [step 4](#4-the-slice) |
 | **Avatars before launch** (2026-11-17) | yes; the owner brings a few models when the step starts | [step 11](#11-avatars) |
 | **The Hytale comparison's proposals** (2026-11-17) | 1 and 7 before launch; 5 in step 6, 3 with it; 2, 4 and 6 postponed and kept open | [From the Hytale comparison](#from-the-hytale-comparison) |
@@ -228,6 +235,8 @@ like a Roblox fighting game; **(2026-11-20): team deathmatch**, a server preset:
 tdm` (`presets/tdm.cfg`; `playtest.ps1 -ServerPreset tdm`). Two teams, the brawl kit, the bat and the
 sword, on the arena, rounds to a team's kill limit, a ten-minute session that is fun. The hybrid only (2026-11-20: the
 inputs model is no longer worked on, kept for a while, maybe deleted later). Started 2026-11-20.
+**Paused 2026-11-21** after M281 for steps 5, 6 and 6b; what is left goes on in
+[4c](#4c-the-slice-continued).
 
 **The outline (2026-11-20)**, in order:
 
@@ -256,8 +265,8 @@ inputs model is no longer worked on, kept for a while, maybe deleted later). Sta
   everything found toward that point (today `force` and `link` act on one held thing), a `break`
   there (today around the player), and bodies a player threw that remember it, so their hits hurt.
 - **Done when** the playtest checklist ([docs/playtest.md](docs/playtest.md)) passes by hand and our own ten-minute sessions run clean and are fun.
-  **Time limit: four weeks** from the step's start (2026-11-20); then [the alpha](#4b-the-alpha)
-  goes ahead with what is left.
+  **Time limit: four weeks** of the slice's own work (two days used before the pause), the rest
+  in [4c](#4c-the-slice-continued); then [the alpha](#4b-the-alpha) goes ahead with what is left.
 
 #### Walls that break, for the arena
 
@@ -276,21 +285,6 @@ until its first weld breaks, as a breakable is drawn whole (later; not for the f
 **Done (M280)**: every wall of the arena the Great Wall's way (94 walls, 3424 chunks); no glued
 showpiece yet. Not done: what is broken stays broken all session (rubble a toss makes is never
 cleared; a round does not mend the walls).
-
-### 4b. The alpha
-
-Strangers play the slice on one official server, every week. Steps 9 to 11 come after it.
-
-| Needs | Why |
-|---|---|
-| **Updates**: a build players download, and a way to get the next one (not Steam: 2026-11-17) | the server refuses any other protocol version (`kProtocolVersion`) or build: every protocol change locks out the old game |
-| The official server's address handed out (a link, or typed) | how players find servers is decided later; one server needs no list |
-| The alpha's build joins only the official server's address | a stranger's server is not safe to join until [before launch](#before-launch)'s decoders are fuzzed; a rule players are asked to keep is not a defence |
-| Official items only (the pack check tightened: M262) | a stranger's Godot pack is read by Godot's parsers until [6b](#6b-cooked-items), and no check makes them safe against a malformed file; players' own mods stay a risk they take ("install only what you trust") |
-| A place to hear back from players | what they run into is the next milestone |
-| Proposed by the second review (2026-11-17): crash reports from the game and the server; every official session recorded (`--record`); the server restarted and logged by itself; a refusal that says "update required" with where to download; third-party licence notices in the build | an invariant that fails calls `abort()` and nobody hears of it; a recording replays any bug; the licences of Box3D, flecs, ozz, ENet, Recast, godot-cpp and Godot (MIT and zlib) ask for their notices in what is shipped, and none are today |
-
-**Done when** strangers play sessions and come back for more.
 
 ### 5. Every item a sheet
 
@@ -464,6 +458,34 @@ controls).
   be read by Godot's shader compiler).
 - Once no mod content is a Godot pack, nothing a stranger made reaches GDScript, so removing it from
   the shipped game is not needed for content (postponed: [step 0](#0-decisions)).
+
+### 4c. The slice, continued
+
+Step 4 goes on where M281 left it (paused for steps 5, 6 and 6b, 2026-11-21), its outline's rows
+not done: teammates not shoved (row 7, if it comes back), the owner's weapons and skills on the new
+sheets (row 8; telekinesis among them), played by hand every week (row 10). Also from step 4: the
+walls restored (each round, and some seconds after a wall's last hit, the rubble cleared: proposed
+2026-11-20, not started), a section for the `tdm` preset in the playtest checklist, and what the
+owner's playtests find. The rest of the four weeks' time limit runs here.
+
+**Done when** step 4's "done when" holds: the playtest checklist passes by hand, and ten-minute
+sessions run clean and are fun. Then [the alpha](#4b-the-alpha).
+
+### 4b. The alpha
+
+Strangers play the slice on one official server, every week. After [4c](#4c-the-slice-continued)
+(2026-11-21: steps 5, 6 and 6b come first); steps 9 to 11 come after it.
+
+| Needs | Why |
+|---|---|
+| **Updates**: a build players download, and a way to get the next one (not Steam: 2026-11-17) | the server refuses any other protocol version (`kProtocolVersion`) or build: every protocol change locks out the old game |
+| The official server's address handed out (a link, or typed) | how players find servers is decided later; one server needs no list |
+| The alpha's build joins only the official server's address | a stranger's server is not safe to join until [before launch](#before-launch)'s decoders are fuzzed; a rule players are asked to keep is not a defence |
+| Official items only (the pack check tightened: M262) | a stranger's Godot pack is read by Godot's parsers until [6b](#6b-cooked-items), and no check makes them safe against a malformed file; players' own mods stay a risk they take ("install only what you trust") |
+| A place to hear back from players | what they run into is the next milestone |
+| Proposed by the second review (2026-11-17): crash reports from the game and the server; every official session recorded (`--record`); the server restarted and logged by itself; a refusal that says "update required" with where to download; third-party licence notices in the build | an invariant that fails calls `abort()` and nobody hears of it; a recording replays any bug; the licences of Box3D, flecs, ozz, ENet, Recast, godot-cpp and Godot (MIT and zlib) ask for their notices in what is shipped, and none are today |
+
+**Done when** strangers play sessions and come back for more.
 
 ### 7. Timing from the clip
 
