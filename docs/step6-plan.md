@@ -149,7 +149,7 @@ Each problem is one this conversation or a shipped sheet ran into. The fix is in
 
 | Rule | Means |
 |---|---|
-| **Words over symbols** | `holder` not `^^`, `of` not `:`, `not` not `!` |
+| **Words over symbols** | `holder` not `^^`, `of` not `:` (logic keeps both: `!` and `not`, decided D3) |
 | **One way to say a thing** | the compiler reads one spelling; the converter rewrites the others; the formatter prints the one |
 | **Indentation is the only scope** | a line that opens something (a block, a step's `if`, a `find`, a `cast`, an `at`) has its lines further in; a tab or four spaces |
 | **The first word says what a line is** | every line starts with its verb or its keyword; options follow as `word value` pairs |
@@ -293,7 +293,7 @@ spelling:
 
 | Write | Means | Was |
 |---|---|---|
-| `not a`, `a and b`, `a or b` | logic | also `!`, `&&`, `\|\|` (refused in version 1; the converter rewrites them) |
+| `not a` / `!a`, `a and b` / `a && b`, `a or b` / `a \|\| b` | logic: both spellings, as today (decided D3, 2026-11-21) | unchanged |
 | `known gun.ammo` | the server declared it (its mod runs) | `?gun.ammo` |
 | `combat.health of target`, `combat.dead of holder` | another entity's field | `$other:combat.health`, `^^:combat.dead` |
 | `local` | the viewer's own player is the subject (looks only) | `is_local` |
@@ -986,9 +986,9 @@ same after every converted milestone (M283 to M286) and the same or better after
 | # | Question | Options | Leaning |
 |---|---|---|---|
 | D1 | The simulated block's keyword | `ability` / keep `motion` | **`ability`**: the standard word; `motion` stays the engine's |
-| D2 | Who an event is about, as words | `actor` and `target` / `source` and `target` / `a` and `b` | **`actor` and `target`**: the sim already says `target` for what a find found |
-| D3 | Old spellings (`!`, `&&`, `\|\|`, `^^`, `$at`) after the conversion | refused / accepted quietly | **refused** in version 1: the converter rewrites them; two spellings is the problem |
-| D4 | What an item carries | the sheet's source / a compiled form | **the source**: readable, small, the compiler is the checker; compiled per machine by the same compiler |
+| D2 | Who an event is about, as words | `actor` and `target` / `source` and `target` / `a` and `b` | **decided (2026-11-21): `actor` and `target`** (and `holder`, `me`, `local`, `world` for the other anchors) |
+| D3 | Logic's symbols (`!`, `&&`, `\|\|`) | refused / kept beside the words | **decided (2026-11-21): kept**: `!a` and `not a` both, as today. (The path symbols `^^`, `$at` go with D2) |
+| D4 | What an item carries | the sheet's source / a compiled form | **decided (2026-11-21): the source**, checked by the compiler on the modder's machine when the item is cooked, and again by the store and by every game that loads it; abilities compiled once by the server, looks once by each client, when the item loads |
 | D5 | `effect` or keep `scene` | | **`effect`**: says what it is; after 6b it is not a Godot scene in the game |
 | D6 | Combos as a word (§6.7.7) or as abilities with timers | | **the word**, after timers exist: write the fist both ways and keep the shorter |
 | D7 | The same status applied twice | the newer replaces / the longer wins / they add | **the longer wins** |
@@ -1083,7 +1083,7 @@ expr        := (the expression language: §6.6)
 | `owner item` | `on item` |
 | `found`, `hit` (who) | `target` |
 | `world direction (x, y, z)` | `world (x, y, z)` |
-| `!a`, `a && b`, `a \|\| b` | `not a`, `a and b`, `a or b` |
+| `!a`, `a && b`, `a \|\| b` | unchanged (D3: both spellings kept) |
 | `?name`, `!?name` | `known name`, `not known name` |
 | `^^:combat.dead`, `$other:combat.health` | `combat.dead of holder`, `combat.health of target` |
 | `is_local` | `local` |
