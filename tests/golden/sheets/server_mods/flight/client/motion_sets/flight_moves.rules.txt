@@ -1,0 +1,125 @@
+rule motion line 5 head 0
+  name: text "FlyOn"
+  trigger: text "press"
+  action: text "fly"
+  conditions: texts
+    - "not flight.on"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "flight.on = 1"
+              guard: text ""
+              line: int 6
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "flight.started"
+              guard: text ""
+              line: int 7
+rule motion line 9 head 0
+  name: text "FlyOff"
+  trigger: text "press"
+  action: text "fly"
+  conditions: texts
+    - "flight.on"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "flight.on = 0"
+              guard: text ""
+              line: int 10
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "flight.stopped"
+              guard: text ""
+              line: int 11
+rule motion line 13 head 0
+  name: text "Flying"
+  trigger: text "while"
+  expression: text "flight.on"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "move"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  parameters: dict
+                    walk_speed: float 7
+                    sprint_speed: float 12
+                    air_control: float 1
+                    gravity: float 0
+                    air_friction: float 3
+                    move_frame: float 1
+              guard: text ""
+              line: int 14
+rule motion line 16 head 0
+  name: text "Thrust"
+  trigger: text "while"
+  expression: text "flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "flight.fuel -= 30"
+              guard: text ""
+              line: int 17
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "flight.thrust"
+              guard: text ""
+              line: int 18
+          - dict
+              verb: text "force"
+              kind: text "part"
+              part: dict
+                class: text "CbForce"
+                properties: dict
+                  strength: float 26
+                  frame: int 3
+              guard: text ""
+              line: int 19
+rule motion line 21 head 0
+  name: text "Refuel"
+  trigger: text "while"
+  expression: text "flight.jetpack_on and grounded and flight.fuel < 100"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "flight.fuel += 40"
+              guard: text ""
+              line: int 22
+rule motion line 24 head 0
+  name: text "Glide"
+  trigger: text "while"
+  expression: text "held.sprint and not grounded and vertical_speed < 0 and not flight.on"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "move"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  parameters: dict
+                    air_control: float 0.8
+                    gravity: float 3
+                    max_fall: float 2.5
+              guard: text ""
+              line: int 25

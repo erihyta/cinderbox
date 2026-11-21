@@ -95,5 +95,7 @@ void SplitName( const std::string& name, std::string& path, std::string& plain )
 // Parses a decimal number the same way on every machine (not the C library's, which depends on the
 // locale and the platform's rounding): expressions and graph.cfg feed the simulation.
 bool ParseFloat( const char* text, size_t length, float& out );
+// The same as a double (the sheet compiler's numbers, src/sheet).
+bool ParseDouble( const char* text, size_t length, double& out );
 
 } // namespace cb::expr

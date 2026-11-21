@@ -1,0 +1,28 @@
+rule motion line 3 head 0
+  name: text "DoubleJump"
+  trigger: text "press"
+  action: text "jump"
+  conditions: texts
+    - "not grounded and dash.double_jump_on"
+  uses: int 1
+  refill: text "ground"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "dash.double_jump"
+              guard: text ""
+              line: int 5
+          - dict
+              verb: text "impulse"
+              kind: text "part"
+              part: dict
+                class: text "CbImpulse"
+                properties: dict
+                  speed: float 6.5
+                  frame: int 3
+                  replace: int 1
+              guard: text ""
+              line: int 6

@@ -1,0 +1,61 @@
+rule motion line 3 head 0
+  name: text "Rise"
+  trigger: text "use"
+  conditions: texts
+    - "not linked and brawl.cd_upper <= 0 and grounded"
+  until: texts
+    - "brawl.uppercut.used or pressed.jump"
+  lasts: float 0.05
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "brawl.cd_upper = 4"
+              guard: text ""
+              line: int 6
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "brawl.uppercut.started"
+              guard: text ""
+              line: int 7
+          - dict
+              verb: text "cast"
+              range: float 3
+              along: text "facing"
+              kind: text "cast"
+              shape: dict
+                kind: text "ray"
+              holds: texts
+              statements: list
+                - dict
+                    line: int 9
+                    verb: text "emit"
+                    kind: text "emit"
+                    text: text "brawl.uppercut.hit"
+                - dict
+                    line: int 10
+                    verb: text "impulse"
+                    kind: text "part"
+                    part: dict
+                      class: text "CbImpulse"
+                      properties: dict
+                        speed: float 12
+                        frame: int 3
+                        replace: int 1
+                        target: int 1
+                - dict
+                    line: int 11
+                    verb: text "impulse"
+                    kind: text "part"
+                    part: dict
+                      class: text "CbImpulse"
+                      properties: dict
+                        speed: float 6
+                        target: int 0
+                        frame: int 3
+                        replace: int 1
+              guard: text ""
+              line: int 8

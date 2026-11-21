@@ -1,0 +1,74 @@
+rule CbReaction line 7 head 4
+  when: int 0
+  event: text "brawl.jab.hit"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/brawl_hit.wav"
+  volume_db: float -6
+  pitch_jitter: float 0.1
+  max_distance: float 40
+rule CbReaction line 12 head 9
+  when: int 0
+  event: text "brawl.finisher.hit"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/brawl_hit.wav"
+  pitch_jitter: float 0.1
+  max_distance: float 40
+rule CbReaction line 17 head 14
+  when: int 0
+  event: text "brawl.dash_strike.hit"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/brawl_hit.wav"
+  volume_db: float -2
+  pitch_jitter: float 0.1
+  max_distance: float 40
+rule CbReaction line 22 head 19
+  when: int 0
+  event: text "brawl.uppercut.hit"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/brawl_hit.wav"
+  volume_db: float -2
+  pitch_jitter: float 0.1
+  max_distance: float 40
+rule CbReaction line 27 head 24
+  when: int 0
+  event: text "brawl.dash_strike.started"
+  subject: text "$at"
+  place: int 4
+  place_node: text "$at/RightHand"
+  sound: text "res://assets/sfx/brawl_swing.wav"
+  volume_db: float -6
+  pitch_jitter: float 0.08
+  max_distance: float 30
+rule CbReaction line 32 head 29
+  when: int 0
+  event: text "brawl.uppercut.started"
+  subject: text "$at"
+  place: int 4
+  place_node: text "$at/RightHand"
+  sound: text "res://assets/sfx/brawl_swing.wav"
+  volume_db: float -6
+  pitch_jitter: float 0.08
+  max_distance: float 30
+rule CbReaction line 37 head 34
+  when: int 0
+  event: text "brawl.slam.started"
+  subject: text "$at"
+  place: int 4
+  place_node: text "$at/RightHand"
+  sound: text "res://assets/sfx/brawl_swing.wav"
+  volume_db: float -6
+  pitch_jitter: float 0.08
+  max_distance: float 30
+rule CbReaction line 42 head 39
+  when: int 0
+  event: text "brawl.slam.landed"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/brawl_hit.wav"
+  volume_db: float 4
+  pitch_scale: float 0.5
+  max_distance: float 60

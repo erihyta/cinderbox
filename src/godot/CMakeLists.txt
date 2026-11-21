@@ -34,7 +34,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 target_doc_sources(cinderbox_gd
 	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbPrediction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbNames.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbPromptLabel.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbBody.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItem.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbViewCamera.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbMotionSet.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbLinkLook.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbList.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbKey.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbClick.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbDrag.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemIcon.xml")
 
-target_link_libraries(cinderbox_gd PRIVATE cb_present cb_cue godot::cpp ozz_animation_offline)
+target_link_libraries(cinderbox_gd PRIVATE cb_present cb_cue cb_sheet_bake godot::cpp ozz_animation_offline)
 cb_target_warnings(cinderbox_gd)
 
 get_target_property(CB_GODOTCPP_SUFFIX godot-cpp GODOTCPP_SUFFIX)

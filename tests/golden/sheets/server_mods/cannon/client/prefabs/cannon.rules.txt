@@ -1,0 +1,27 @@
+rule motion line 3 head 0
+  name: text "Use"
+  trigger: text "use"
+  cooldown: float 1.2
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "cannon.fired"
+              guard: text ""
+              line: int 5
+          - dict
+              verb: text "launch"
+              kind: text "part"
+              part: dict
+                class: text "CbLaunch"
+                properties: dict
+                  what: int 0
+                  item_kind: text "cannon.ball"
+                  speed: float 36
+                  lift: float 1
+                  ahead: float 0.9
+                  seconds: float 10
+              guard: text ""
+              line: int 6

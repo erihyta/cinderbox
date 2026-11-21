@@ -1,0 +1,43 @@
+rule motion line 2 head 0
+  name: text "Use"
+  trigger: text "use"
+  conditions: texts
+    - "test.ready"
+  cooldown: float 0.5
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "test.uses += 1"
+              guard: text ""
+              line: int 3
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "test.used"
+              guard: text ""
+              line: int 5
+          - dict
+              verb: text "impulse"
+              kind: text "part"
+              part: dict
+                class: text "CbImpulse"
+                properties: dict
+                  speed: float 3
+                  frame: int 3
+                  replace: int 3
+              guard: text ""
+              line: int 6
+          - dict
+              verb: text "move for"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  duration: float 0.2
+                  parameters: dict
+                    friction: float 0
+              guard: text ""
+              line: int 7

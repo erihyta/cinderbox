@@ -79,7 +79,7 @@ Which steps launch needs: [the road](#the-road).
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | **next** (before the alpha) | yes: the sheet's format settled, with a version |
+| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283) | yes: the sheet's format settled, with a version |
 | 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
@@ -342,6 +342,9 @@ motion Strike on melee.strike
   event. A cast that poses what it passes near is possible later (the pose is deterministic).
 
 ### 6. Sheets improved
+
+**Done**: M283, the compiler as a plain C++ library (`src/sheet`), every shipped sheet parsing and
+baking as before (golden files, the Godot checks' bakes).
 
 **The plan (2026-11-21): [docs/step6-plan.md](docs/step6-plan.md)**: the language as it would be, the
 shipped sheets before and after, the compiler, what the engine has to learn, ten milestones (M283 to

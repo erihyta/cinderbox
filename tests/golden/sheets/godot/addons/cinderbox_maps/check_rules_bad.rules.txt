@@ -1,0 +1,19 @@
+error "line 3: sound <file>"
+error "line 4: on what? on <event> [if <expression>]"
+error "line 6: \"jump\" is not a setting or an action of a rule"
+error "line 12: predict <action> as <cue> [if <expression>]"
+error "line 15: a setting after the last action does nothing (a setting is for the actions below it)"
+error "line 16: show <node> if <expression>"
+error "line 17: bind <node> <property> = <expression> [if <expression>]"
+rule CbReaction line 9 head 8
+  when: int 0
+  event: text "melee.hit"
+  target: text "../Outside"
+  property: text "visible"
+  value: bool false
+rule CbReaction line 11 head 10
+  when: int 0
+  event: text "test.fine"
+  target: text "Timer"
+  method: text "hide"
+  method_args: list

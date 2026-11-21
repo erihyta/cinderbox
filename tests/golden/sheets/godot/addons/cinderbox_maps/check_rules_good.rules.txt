@@ -1,0 +1,67 @@
+rule CbReaction line 3 head 2
+  when: int 1
+  conditions: texts
+    - "melee.hot"
+  target: text "Barrel"
+  property: text "visible"
+  value: bool false
+rule CbReaction line 7 head 5
+  when: int 0
+  event: text "melee.hit"
+  conditions: texts
+    - "$other:combat.health < 50"
+  subject: text "^^"
+  target: text "Timer"
+  method: text "hide"
+  method_args: list
+rule CbReaction line 8 head 5
+  when: int 0
+  event: text "melee.hit"
+  conditions: texts
+    - "$other:combat.health < 50"
+  subject: text "^^"
+  shake: float 0.2
+  shake_time: float 0.1
+rule CbPrediction line 10 head 0 prediction
+  action: text "use"
+  cue: text "melee.swing"
+  conditions: texts
+    - "!combat.dead"
+  cooldown: float 0.5
+  stance: text "melee_swing"
+  stance_layer: text "full"
+  changes: texts
+    - "melee.swings += 1"
+rule CbReaction line 17 head 15
+  when: int 0
+  event: text "test.two"
+  place: int 2
+  target: text "Timer"
+  method: text "hide"
+  method_args: list
+rule CbReaction line 20 head 15
+  when: int 0
+  event: text "test.two"
+  place: int 1
+  delay: float 0.5
+  target: text "Barrel"
+  method: text "hide"
+  method_args: list
+rule CbFieldBinding line 22 head 0
+  conditions: texts
+    - "combat.health > 0"
+  target: text "Panel"
+rule CbFieldBinding line 23 head 0
+  conditions: texts
+    - "combat.health < 50"
+  hides: bool false
+  text_format: text "HP {combat.health}"
+  property: text "tooltip_text"
+  target: text "Panel"
+rule CbFieldBinding line 24 head 0
+  conditions: texts
+    - "?combat.health"
+  hides: bool false
+  property: text "modulate:a"
+  field: text "combat.health / 100"
+  target: text "Panel"

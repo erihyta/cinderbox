@@ -1,0 +1,112 @@
+rule motion line 18 head 0
+  name: text "Throwing"
+  trigger: text "use"
+  item: text "carried"
+  cooldown: float 0.7
+  lasts: float 0.7
+  steps: list
+    - dict
+        statements: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "frag.thrown"
+              guard: text ""
+              line: int 23
+          - dict
+              verb: text "launch"
+              kind: text "part"
+              part: dict
+                class: text "CbLaunch"
+                properties: dict
+                  what: int 1
+                  speed: float 15
+                  lift: float 3
+                  ahead: float 0.8
+                  seconds: float 2.5
+              guard: text ""
+              line: int 24
+        line: int 22
+        within: float 0.3
+        wait: text "frag.release"
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "frag.thrown"
+              guard: text ""
+              line: int 26
+          - dict
+              verb: text "launch"
+              kind: text "part"
+              part: dict
+                class: text "CbLaunch"
+                properties: dict
+                  what: int 1
+                  speed: float 15
+                  lift: float 3
+                  ahead: float 0.8
+                  seconds: float 2.5
+              guard: text ""
+              line: int 27
+        line: int 25
+        timeout: bool true
+rule motion line 29 head 0
+  name: text "Blast"
+  trigger: text "event"
+  event: text "expired"
+  owner: text "item"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "frag.blast"
+              guard: text ""
+              line: int 31
+          - dict
+              verb: text "break"
+              radius: text "frag.break_radius"
+              speed: text "frag.push"
+              seconds: text "frag.rubble_seconds"
+              kind: text "break"
+              guard: text ""
+              line: int 32
+          - dict
+              verb: text "find"
+              kind: text "find"
+              shape: dict
+                kind: text "node"
+                path: text "Blast"
+              who: text "bodies"
+              statements: list
+                - dict
+                    line: int 34
+                    verb: text "impulse"
+                    kind: text "part"
+                    part: dict
+                      class: text "CbImpulse"
+                      properties: dict
+                        speed: float 0
+                        frame: int 6
+                        amounts: dict
+                          2: text "(distance < frag.radius) * frag.push * (1 - distance / frag.radius)"
+                        target: int 3
+                - dict
+                    line: int 35
+                    verb: text "impulse"
+                    kind: text "part"
+                    part: dict
+                      class: text "CbImpulse"
+                      properties: dict
+                        speed: float 0
+                        frame: int 3
+                        amounts: dict
+                          2: text "(distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius)"
+                        target: int 3
+              guard: text ""
+              line: int 33

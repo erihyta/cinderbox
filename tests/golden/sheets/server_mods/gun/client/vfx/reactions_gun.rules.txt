@@ -1,0 +1,7 @@
+rule CbReaction line 8 head 5
+  when: int 0
+  event: text "mark.found"
+  subject: text "$other"
+  place: int 5
+  scene: text "res://vfx/mark_zone.tscn"
+  scene_lifetime: float 3

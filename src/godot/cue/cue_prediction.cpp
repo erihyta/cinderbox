@@ -1,5 +1,7 @@
 #include "cue_prediction.h"
 
+#include "sheet_rules.h"
+
 #include "cue_names.h"
 
 #include "cue_director.h"
@@ -13,38 +15,21 @@ namespace cb::cue
 
 bool ParseChange( const String& text, Change& out, String* error )
 {
-	auto fail = [&]( const String& why ) {
+	// (The sheet compiler's, src/sheet: one reading of a change, M283.)
+	sheet::Change change;
+	std::string why;
+	if ( sheet::ParseChange( std::string( text.utf8().get_data() ), change, &why ) == false )
+	{
 		if ( error != nullptr )
 		{
-			*error = why;
+			*error = String::utf8( why.c_str() );
 		}
 		return false;
-	};
-	String rest = text.strip_edges();
-	int64_t at = rest.find( "=" );
-	if ( at <= 0 )
-	{
-		return fail( "write it as a field, an operator and a number: pistol.ammo -= 1 (operators: -=, +=, =)" );
 	}
 	out = Change();
-	char32_t before = rest[at - 1];
-	String name = rest.substr( 0, at );
-	if ( before == '-' || before == '+' )
-	{
-		out.op = char( before );
-		name = rest.substr( 0, at - 1 );
-	}
-	out.field = name.strip_edges();
-	String number = rest.substr( at + 1 ).strip_edges();
-	if ( out.field.is_empty() || out.field.contains( " " ) )
-	{
-		return fail( "name one field before the operator" );
-	}
-	if ( number.is_valid_float() == false )
-	{
-		return fail( "\"" + number + "\" is not a number" );
-	}
-	out.value = number.to_float();
+	out.field = String::utf8( change.field.c_str() );
+	out.op = change.op;
+	out.value = change.value;
 	return true;
 }
 

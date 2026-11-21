@@ -1,0 +1,116 @@
+rule CbReaction line 10 head 5
+  when: int 0
+  event: text "spawned"
+  subject: text "$at"
+  subject_kind: text "prop"
+  cooldown: float 0.05
+  place: int 1
+  sound: text "res://assets/sfx/prop_spawn.wav"
+  volume_db: float -8
+  pitch_jitter: float 0.15
+  max_distance: float 40
+rule CbReaction line 11 head 5
+  when: int 0
+  event: text "spawned"
+  subject: text "$at"
+  subject_kind: text "prop"
+  cooldown: float 0.05
+  place: int 1
+  scene: text "res://vfx/prop_spawn.tscn"
+  scene_lifetime: float 3
+rule CbReaction line 19 head 14
+  when: int 0
+  event: text "destroying"
+  subject: text "$at"
+  subject_kind: text "prop"
+  cooldown: float 0.08
+  place: int 1
+  sound: text "res://assets/sfx/prop_destroy.wav"
+  volume_db: float -12
+  pitch_jitter: float 0.2
+  max_distance: float 35
+rule CbReaction line 20 head 14
+  when: int 0
+  event: text "destroying"
+  subject: text "$at"
+  subject_kind: text "prop"
+  cooldown: float 0.08
+  place: int 1
+  scene: text "res://vfx/prop_destroy.tscn"
+  scene_lifetime: float 3
+rule CbReaction line 27 head 23
+  when: int 0
+  event: text "jumped"
+  subject: text "$at"
+  subject_kind: text "player"
+  place: int 1
+  sound: text "res://assets/sfx/jump.wav"
+  volume_db: float -14
+  pitch_jitter: float 0.1
+  max_distance: float 25
+rule CbReaction line 28 head 23
+  when: int 0
+  event: text "jumped"
+  subject: text "$at"
+  subject_kind: text "player"
+  place: int 1
+  scene: text "res://vfx/jump.tscn"
+  scene_lifetime: float 2
+rule CbReaction line 35 head 31
+  when: int 0
+  event: text "landed"
+  subject: text "$at"
+  subject_kind: text "player"
+  place: int 1
+  sound: text "res://assets/sfx/land.wav"
+  volume_db: float -10
+  pitch_jitter: float 0.12
+  max_distance: float 30
+rule CbReaction line 36 head 31
+  when: int 0
+  event: text "landed"
+  subject: text "$at"
+  subject_kind: text "player"
+  place: int 1
+  scene: text "res://vfx/land.tscn"
+  scene_lifetime: float 2
+rule CbReaction line 43 head 39
+  when: int 0
+  event: text "spawned"
+  subject: text "$at"
+  subject_template: text "bouncy_ball"
+  place: int 5
+  scene: text "res://vfx/bouncy_trail.tscn"
+  scene_lifetime: float 25
+rule CbReaction line 50 head 46
+  when: int 0
+  event: text "footstep"
+  subject: text "$at"
+  subject_kind: text "player"
+  place: int 1
+  sound: text "res://assets/sfx/footstep.wav"
+  volume_db: float -20
+  pitch_jitter: float 0.18
+  max_distance: float 18
+rule CbReaction line 57 head 53
+  when: int 0
+  event: text "impact"
+  conditions: texts
+    - "event.strength >= 2.5"
+  subject: text "$at"
+  cooldown: float 0.03
+  place: int 1
+  sound: text "res://assets/sfx/impact.wav"
+  volume_db: float -18
+  pitch_jitter: float 0.25
+  max_distance: float 30
+rule CbReaction line 64 head 60
+  when: int 0
+  event: text "impact"
+  conditions: texts
+    - "event.strength >= 8.0"
+  subject: text "$at"
+  cooldown: float 0.1
+  place: int 1
+  scene: text "res://vfx/prop_destroy.tscn"
+  scene_lifetime: float 1.5

@@ -1,0 +1,22 @@
+rule CbFieldBinding line 2 head 0
+  conditions: texts
+    - "brawl.cd_dash <= 0"
+  hides: bool false
+  text_format: text "[{key:slot2}]  DASH STRIKE  READY"
+  target: text "Line"
+rule CbFieldBinding line 3 head 0
+  conditions: texts
+    - "brawl.cd_dash > 0"
+  hides: bool false
+  text_format: text "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s"
+  target: text "Line"
+rule CbFieldBinding line 4 head 0
+  hides: bool false
+  property: text "modulate:r"
+  field: text "1 - 0.45 * (brawl.cd_dash <= 0)"
+  target: text "Line"
+rule CbFieldBinding line 5 head 0
+  hides: bool false
+  property: text "modulate:b"
+  field: text "1 - 0.45 * (brawl.cd_dash <= 0)"
+  target: text "Line"

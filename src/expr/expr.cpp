@@ -550,7 +550,7 @@ void SplitName( const std::string& name, std::string& path, std::string& plain )
 	plain = colon == std::string::npos ? name : name.substr( colon + 1 );
 }
 
-bool ParseFloat( const char* text, size_t length, float& out )
+bool ParseDouble( const char* text, size_t length, double& out )
 {
 	size_t i = 0;
 	bool negative = false;
@@ -622,8 +622,8 @@ bool ParseFloat( const char* text, size_t length, float& out )
 	{
 		return false;
 	}
-	// Plain IEEE double arithmetic in a fixed order, then one rounding to float: the same bits on
-	// every machine.
+	// Plain IEEE double arithmetic in a fixed order: the same bits on every machine (ParseFloat then
+	// rounds once to float).
 	static const double kPowers[] = { 1e0,	1e1,  1e2,	1e3,  1e4,	1e5,  1e6,	1e7,  1e8,	1e9,  1e10, 1e11,
 									  1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22 };
 	double value = double( mantissa );
@@ -648,7 +648,18 @@ bool ParseFloat( const char* text, size_t length, float& out )
 			value = 0.0;
 		}
 	}
-	out = float( negative ? -value : value );
+	out = negative ? -value : value;
+	return true;
+}
+
+bool ParseFloat( const char* text, size_t length, float& out )
+{
+	double value = 0.0;
+	if ( ParseDouble( text, length, value ) == false )
+	{
+		return false;
+	}
+	out = float( value );
 	return true;
 }
 
