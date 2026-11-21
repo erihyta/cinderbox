@@ -71,15 +71,15 @@ Which steps launch needs: [the road](#the-road).
 
 | # | Step | State | For launch |
 |---|---|---|---|
-| 0 | [Decisions](#0-decisions) | twenty-two taken; seven open | |
+| 0 | [Decisions](#0-decisions) | twenty-four taken; six open | |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean. **By hand: to do** | |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
-| 5 | [Every item a sheet](#5-every-item-a-sheet) | **next** (2026-11-21: before the alpha) | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | after 5 (before the alpha) | yes: the sheet's format settled, with a version |
+| 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
+| 6 | [Sheets improved](#6-sheets-improved) | **next** (before the alpha) | yes: the sheet's format settled, with a version |
 | 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
@@ -139,6 +139,8 @@ Which steps launch needs: [the road](#the-road).
 | **Nodes never grow with players** (2026-11-17) | every visual that comes with an entity is drawn through the RenderingServer; nodes are a fixed set (the HUD's frame, menus, the camera) and fixed pools (sound voices); lists make only the rows in view | [step 6b](#6b-cooked-items), DESIGN.md |
 | **Not on Steam** (2026-11-17, the working assumption) | no Steam Workshop: the store is Cinderbox's own | [step 6b](#6b-cooked-items), [parked](#parked) |
 | **The repository out of OneDrive** (2026-11-19) | moved to a plain folder (`C:\Cinderbox_Dev\cinderbox`, a fresh clone of `main`), GitHub the backup; the paid assets copied beside it, still outside git. Every text file is LF in the working copy whatever `core.autocrlf` says (`.gitattributes`): a clone with CRLF published every item under another hash | M261.11 |
+| **Where items are cooked** (2026-11-21) | **on the modder's machine**. What is uploaded is only cooked assets and sheets, the sandbox's own formats: never a Godot project or scene. The store checks every upload with the game's reader and the budgets before anyone can download it (no sandbox in the store: it never reads a stranger's Godot files) | [step 6b](#6b-cooked-items) |
+| **Shaders** (2026-11-21) | **no custom shaders**. Later, materials of the modders' own, made from shaders we ship and have checked (their parameters, textures and colours the modder's) | [step 6b](#6b-cooked-items) |
 | **GDScript stays in the shipped game, for now** (2026-11-17) | taking it out (export templates built without it, the game's own scripts moved into the extension) is postponed: once no mod content is a Godot pack, content cannot reach a script engine. Until then the tightened pack check (M262) is the only guard | [3c](#3c-groundwork), [6b](#6b-cooked-items) |
 
 **Open:**
@@ -151,7 +153,6 @@ Which steps launch needs: [the road](#the-road).
 | **Which servers the game joins at launch** | any; official or listed ones only | none yet: any server needs every decoder of server data fuzzed first. The review's lean: official and listed. Mods are compiled C++, so a community host runs a server program of its own, and Box3D's world bytes were not made to be read from a hostile source | [before launch](#before-launch) |
 | **Players' own avatars at launch** | uploaded by players; a curated set (the owner's models) | none yet: uploads need terms, moderation and budgets. The review's lean: a curated set; with a store of our own (not Steam), moderating uploads is all ours | [step 11](#11-avatars) |
 | **Our own mod editor** (raised 2026-11-17) | Godot's editor with plugins ([step 9](#9-cinderbox-studio)); an editor of our own, closer to the ECS | the review's lean: Godot's editor. Authoring in a tree and baking to an ECS is the usual split (Unity's DOTS authors GameObjects and bakes them to entities); Godot's import, animation, AnimationTree, particle, material and UI editors would each have to be rebuilt. The ECS-native tool worth making is a live tuning panel in the game (the mirror's entities, the board) | [step 9](#9-cinderbox-studio) |
-| **Where items are cooked** (raised 2026-11-17) | on the modder's machine; in the store, from the uploaded project (Roblox converts uploads on its side) | the review's lean: the modder's machine first; the store checks every upload with the client's reader and the budgets before anyone can download it. Cooking in the store lets old items be cooked again when the format changes, but the store then reads strangers' Godot files and needs a sandbox | [step 6b](#6b-cooked-items) |
 
 ### 1. Stabilize M215 to M234
 
@@ -291,6 +292,21 @@ cleared; a round does not mend the walls).
 The fist's way for every item: the item's sheet runs its use in every simulation (predicted), and
 the mod's C++ turns its hit events into damage (`brawl.cpp` is the model, 158 lines).
 
+**Done (M282, 2026-11-21)**, kept small (the owner: convert in today's language; what it cannot
+say stays C++ and goes on [step 6's list](#found-by-step-5)):
+- **The bat**: `bat.rules` swings (the clip's markers say when it strikes and when it ends: its
+  length in one place), its find the nearest player and two loose bodies; `melee.cpp` (272 lines to
+  186) turns a hit into damage, faces the holder to the camera, and keeps the bat's heat. Its
+  stances and the look's guess went. A sheet's find meets capsules, not posed hitboxes.
+- **The guns**: the trigger is the sheet's (`Fire`, `Dry`, `Reload`; the pistol once a press, the
+  rifle while held), so `predict` lines went (the mark mod's scan keeps one); the shot is the
+  server's, heard on the sheet's `item.use`, aimed along the camera the player had when it fired,
+  hit-tested against posed hitboxes, its end said as `item.reach` (the tracer). The rounds and the
+  reload's end stay C++.
+- Left as they are: the mark mod's scan (only the server knows who is marked).
+
+The plan as it was written before (the bat, then the guns):
+
 **The bat today:**
 
 | | |
@@ -326,6 +342,20 @@ motion Strike on melee.strike
   event. A cast that poses what it passes near is possible later (the pose is deterministic).
 
 ### 6. Sheets improved
+
+#### Found by step 5
+
+What the bat and the guns could not say in a sheet (M282), so their C++ still does it:
+
+| Missing | Who needed it | Today |
+|---|---|---|
+| `change` on the item's own fields | the gun's rounds (a magazine is the gun's, in whose hand ever), the bat's heat | the sheet changes the holder's `gun.ammo`; `gun.cpp` keeps the gun's `gun.rounds` and says the count to the holder again wherever they differ |
+| A timer on a carried item | the reload's end, the bat cooling after 2 s | C++ timers |
+| Parameters (`param`), and expressions in `cooldown` | the time between shots: a number in the sheet, once the scene's `gun.fire_seconds` | written in each gun's sheet |
+| Held use as a trigger | the rifle: `when using.gun.rifle ...` with `until` and `every 0.1` (64 times at most) | works for a magazine of 30; a longer one needs a repeat without the cap |
+| An event's value or point from a find | the bat's hit sound was louder on a player (by the server's damage) | one sound for anything hit |
+| A find that prefers players | the bat: the nearest of all was a ball lying closer | two finds (players, then bodies) |
+| A hit test against posed hitboxes in a sheet | the shot (head shots) | the server's, heard on `item.use`; step 7's bone shapes are the start |
 
 The language is right: bounded, deterministic, run by every simulation, so skills are predicted
 (Overwatch does the same with a visual language, Statescript). What changes is how it is attached,
@@ -422,7 +452,8 @@ anyone's items, players' own restyles included.
 - Every version stays fetchable while the store keeps it, so a server pinned to a hash always finds
   its item (Steam would serve only an item's latest version).
 - The store checks every upload with the same reader and the budgets (triangles, materials, texture
-  sizes) before anyone can download it. Where items are cooked is open ([step 0](#0-decisions)).
+  sizes) before anyone can download it. Items are cooked on the modder's machine, and only cooked
+  assets and sheets are uploaded (decided 2026-11-21, [step 0](#0-decisions)).
 - Downloads compressed (Zstd) once items grow; today's items are 1.5 to 88 KB.
 - From Hytale ([docs/hytale-comparison.md](docs/hytale-comparison.md#asset-delivery-looked-at-again-2026-11-17)):
   sizes declared before any byte, a cap per file; not its transfer on join, which a plugin exists
@@ -454,8 +485,10 @@ controls).
 **Also:**
 - The editor's previews (the Cue Preview, an item's, a character's) cook on the fly and draw with
   the game's own code, so a look is the same in the editor and in the game.
-- Shaders are decided with the reader: refused, or a checked subset (a modder's shader source would
-  be read by Godot's shader compiler).
+- Shaders (decided 2026-11-21): **refused**; a modder's shader source would be read by Godot's shader
+  compiler. Materials are ours: later, modders make their own from shaders we ship and checked (a
+  material names one and sets its parameters, textures and colours), so the reader knows every
+  shader a material can ask for.
 - Once no mod content is a Godot pack, nothing a stranger made reaches GDScript, so removing it from
   the shipped game is not needed for content (postponed: [step 0](#0-decisions)).
 

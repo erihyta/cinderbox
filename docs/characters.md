@@ -346,8 +346,8 @@ A mod says what a player is doing; the character says what that looks like.
 | a character | reads stances by name in its state machine's conditions and layer weights | a layer weighted by `crouch`, a transition on `not crouch` |
 
 - **What a held item does with the arms is its pack's**, not a stance's (the pistol's, the bat's
-  and the fist's `UpperBody` swap in while it is out). The bat still sets `melee` and
-  `melee_swing`, which no shipped state machine reads: they go with the bat's sheet (roadmap step 5).
+  and the fist's `UpperBody` swap in while it is out). The bat's stances `melee` and `melee_swing`,
+  which no shipped state machine read, went with its sheet (M282).
 
 - A stance is a name and nothing more: no clip is tied to it. A character whose machine never
   reads `gun` simply does not change when a gun comes out.

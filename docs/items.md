@@ -220,7 +220,7 @@ uint32_t which = ctx.UsedItem( slot, m_gun ); // the copy that was used (0: none
 
 - **The use button is the engine's**, like jump and sprint: no mod declares a `fire` action any more.
 - **`<kind>.used`**: where a mod declares that event (`declare.Event( "gun.pistol.used" )`), every simulation records it on the tick of the use, at the player, with the item as the other entity. The player's own simulation has it at once, so a `CbReaction` on it plays on the click with no `CbPrediction`.
-- **What using it does** is the mod's: the pistol fires (`item.use`), and that answer still comes from the server, so its look predicts it: a `CbPrediction` (action `use`) in the item's own scene.
+- **What using it does** is its sheet's (step 5, M282: every item a sheet): the pistol's `Fire` motion takes a round off and says `item.use` in every simulation, so your own shot is seen and heard on the click; the server mod hears it and does what a sheet cannot (the shot's hit test, the gun's rounds). A `CbPrediction` is left only for what a server mod alone still says (the mark mod's scan).
 - A dead or frozen player uses nothing; a held button is one use.
 
 An item is **in use** (in a hand) or **stowed** (carried, in no hand). A stowed item is in no hand:
@@ -398,11 +398,12 @@ item (the `item` mod's):
 
 | Cue | Means | Who says it |
 |---|---|---|
-| `item.use` | it did what it does: a shot, a swing | the mod that rules the item (`gun`); for an item nobody rules, the `item` mod on the press |
-| `item.use_failed` | it was tried and could not: an empty magazine | the mod that rules it |
+| `item.use` | it did what it does: a shot, a swing | the item's sheet (the pistol's `Fire`); for an item nobody rules, the `item` mod on the press |
+| `item.use_failed` | it was tried and could not: an empty magazine | the item's sheet (`Dry`) |
+| `item.reach` | where the use reached: `b` what, the point where it came from, the vector where it ended (a tracer) | the mod that rules it (`gun`), after the sheet's `item.use` |
 | `item.use2` | its second use (right mouse) | a mod that gives it one (`mark`), or the `item` mod |
 | `item.hit` | the use landed: `event.value` is what it did, the point is where | the mod that rules it |
-| `item.reload` | it is being made ready again | the mod that rules it |
+| `item.reload` | it is being made ready again | the item's sheet (`Reload`, or `Dry`) |
 
 **One cue, three listeners.** They are separate things, and each is authored in its own place:
 

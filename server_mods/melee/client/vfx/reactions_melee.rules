@@ -7,14 +7,9 @@ on melee.swing
 	at $at/RightHand
 	sound res://assets/sfx/melee_swing.wav volume -6 jitter 0.08 range 30
 
-# HitPlayer
-on melee.hit if event.value > 0
+# Hit: whatever the swing found (the sheet's melee.hit, predicted: heard at once). (Until M282 the
+# server said it, louder on a player, by its damage; a find's event has none.)
+on melee.hit
 	subject $at
 	at point
-	sound res://assets/sfx/melee_bat_hit.wav volume -2 jitter 0.1 range 40
-
-# HitProp
-on melee.hit if event.value == 0
-	subject $at
-	at point
-	sound res://assets/sfx/melee_bat_hit.wav volume -10 jitter 0.2 range 25
+	sound res://assets/sfx/melee_bat_hit.wav volume -4 jitter 0.12 range 40

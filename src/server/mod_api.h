@@ -522,19 +522,22 @@ public:
 	int SlotOf( uint32_t netId ) const;
 	// The point above a player's body that a third-person camera orbits, and the direction its
 	// camera looks in. (Mods take the chest from it for things done at arm's length.)
+	// `pressed` (M282), for these and the three below: with the camera the input of the tick before
+	// had, the one the simulation just ran. A mod that hears what a sheet did (a gun's sheet fires:
+	// item.use) answers a tick later, and aims where the player looked when it fired.
 	b3Vec3 EyePosition( PlayerSlot slot ) const;
-	b3Vec3 AimDirection( PlayerSlot slot ) const;
+	b3Vec3 AimDirection( PlayerSlot slot, bool pressed = false ) const;
 	// The head of the player's pose this tick (it bows and leans with the body): what a shot starts
 	// from, whatever camera the player looks through.
-	b3Vec3 HeadPosition( PlayerSlot slot ) const;
+	b3Vec3 HeadPosition( PlayerSlot slot, bool pressed = false ) const;
 	// Where the player's line of sight starts for the camera it looks through (PlayerInput::view):
 	// in first person the character's eye height above its feet (fixed on the mover: the animation
 	// does not move it), in third the camera's pivot (moved to the shoulder, if it is).
-	b3Vec3 ViewPosition( PlayerSlot slot ) const;
+	b3Vec3 ViewPosition( PlayerSlot slot, bool pressed = false ) const;
 	// What the player hits when it shoots at what is under its crosshair, up to `range` metres:
 	// the line of sight says what is aimed at, and the shot goes from the head to that point.
 	// Something between the head and the target stops the shot even when the camera sees past it. `origin` and `direction` are the shot's. False: it hit nothing.
-	bool CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin, b3Vec3& direction ) const;
+	bool CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin, b3Vec3& direction, bool pressed = false ) const;
 
 	const PlayerInput& Input( PlayerSlot slot ) const
 	{

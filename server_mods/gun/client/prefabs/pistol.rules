@@ -1,14 +1,40 @@
-# pistol.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
-# from the scene's root.
+# The pistol (step 5, M282: every item a sheet): pulling its trigger, which every simulation runs
+# (predicted), and how it looks. The shot itself, the rounds and the reload's end are the gun mod's
+# (gun.cpp): it hears item.use, aims along the camera as it was, hit-tests posed bodies, and says
+# item.reach (the tracer) and item.hit. Plain paths are from the scene's root.
 
-# Flash, Tracer, ShotSound
+# Fire: once a press (the item's use), 0.2 s apart at most, while it has rounds and is not
+# reloading: a round off what you see, and item.use (the flash, the sound, the recoil: the pack's
+# Shoot state starts on it).
+motion Fire on use if gun.ammo > 0 and not gun.reloading
+	cooldown 0.2
+	change gun.ammo -= 1
+	emit item.use
+
+# Dry: the trigger on an empty magazine clicks, and the reload begins.
+motion Dry on use if gun.ammo <= 0 and not gun.reloading
+	cooldown 0.2
+	change gun.reloading = 1
+	emit item.use_failed
+	emit item.reload
+
+# Reload: R, while not full.
+motion Reload on press reload if not gun.reloading and gun.ammo < gun.magazine
+	change gun.reloading = 1
+	emit item.reload
+
+# Flash, ShotSound
 on item.use
 	subject ^^
 	scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
-	at beam from Muzzle
-	scene res://vfx/tracer.tscn life 0.06
 	at Muzzle
 	sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70
+
+# Tracer: from the muzzle to where the server's shot ended.
+on item.reach
+	subject ^^
+	at beam from Muzzle
+	scene res://vfx/tracer.tscn life 0.06
 
 # ScanBeam, MarkSound
 on item.use2
@@ -18,16 +44,7 @@ on item.use2
 	at Muzzle
 	sound res://assets/sfx/dry_click.wav volume -4 pitch 1.8 range 25
 
-# PredictFire
-predict use as item.use if gun.ammo > 0 and !gun.reloading and !combat.dead
-	cooldown 0.19
-	change gun.ammo -= 1
-
-# PredictDry
-predict use as item.use_failed if gun.ammo == 0 and !gun.reloading and !combat.dead
-	cooldown 0.19
-
-# PredictScan
+# PredictScan: the mark mod's scan (its use2), still the server's with a guess here
 predict use2 as item.use2 if !gun.reloading and !combat.dead
 	cooldown 0.95
 
