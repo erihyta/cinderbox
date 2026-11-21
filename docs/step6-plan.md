@@ -122,7 +122,8 @@ Each problem is one this conversation or a shipped sheet ran into. The fix is in
 
 - G1. **One language, one compiler**, used by the editor, the server, the cooker (6b) and tests.
 - G2. **Readable by a modder from Roblox, Unity or Godot** without a glossary: words, not symbols;
-  the standard terms (ability, cooldown, charges, status, parameter, client-side prediction).
+  the standard terms (cooldown, charges, status, parameter, client-side prediction; "ability" in the
+  guide's prose for a skill, written as a motion).
 - G3. **What runs where is visible**: a block's first word says whether every machine runs it or only
   the viewer.
 - G4. **One rule for scope**: what a line governs is what is indented under it. Nothing else.
@@ -179,8 +180,8 @@ cbsheet 1                                   # the format's version: always the f
 - **A resource on a node**, not a string: `CbSheet` (plain text, its own loader and saver, as `.gd`
   and `.gdshader` are), set on the node it belongs to: `CbItem.sheet`, `CbMotionSet.sheet`, the
   world reactions root's, a HUD root's. It may be saved inside the scene. `CbRules` goes.
-- **What a sheet may hold is the node's to say**: an item's sheet abilities, reactions, predictions,
-  its declarations; a motion set's abilities and declarations; world reactions only reactions; a
+- **What a sheet may hold is the node's to say**: an item's sheet motions, reactions, predictions,
+  its declarations; a motion set's motions and declarations; world reactions only reactions; a
   HUD's sheet HUD blocks and reactions. A block in the wrong sheet is an error at its line. A map's
   things (doors, pads, regions: [Hytale proposal 4, kept open](../ROADMAP.md#postponed-kept-open))
   become one more such node later.
@@ -192,18 +193,20 @@ The first word of a block says who runs it:
 
 | Block | Runs | Was |
 |---|---|---|
-| `ability NAME TRIGGER [if COND]` | **every simulation** (predicted, rolled back) | `motion NAME ...` |
-| `use [if COND]` | the same: an item's use, short for `ability Use on use [if COND]` | `use` (unchanged) |
+| `motion NAME TRIGGER [if COND]` | **every simulation** (predicted, rolled back) | unchanged (D1) |
+| `use [if COND]` | the same: an item's use, short for `motion Use on use [if COND]` | `use` (unchanged) |
 | `react TRIGGER [if COND]` | **the viewer only**: effects, sounds, properties, shakes | `on EVENT` / `while COND` at the top of a sheet |
 | `predict ACTION as CUE [if COND]` | the viewer: a guess of what a server mod will say | `predict` (unchanged) |
 | `hud PATH` | the viewer: one control's lines (`show`, `text`, `bind`) | `show PATH ...`, `text PATH ...`, `bind PATH ...` |
 | `field`, `event`, `action`, `status`, `param`, `let` | declarations: the compiler and the server read them | C++ `declare.*`, `CbItem.properties` |
 
-- **Why `ability`** (decision D1): it is the word Roblox, Unreal (GAS) and Overwatch modders know,
-  and the ROADMAP asks for standard words. A flight mode is an ability too ("Glide while sprint is
-  held in the air"). `motion` stays the engine's word in C++ and in the debug HUD.
+- **Why `motion`** (decided D1, 2026-11-21): a simulated block is anything every machine runs, an
+  impulse, a find, a field change, an event, a refuel, a gun's rounds, a grenade's blast, and not
+  only a player's skill: `ability` fit the skills and not the rest. `motion` is the engine's word
+  already (the C++, the debug HUD, the docs) and is defined as "what every machine simulates". A
+  block type of its own for state that is not a skill (timers, refills) may come later; not now.
 - **The trigger words are the same in both worlds**: `on EVENT`, `while COND`, `when COND` mean
-  what they mean for an ability and for a reaction. Only the block's first word differs.
+  what they mean for a motion and for a reaction. Only the block's first word differs.
 
 ### 6.3 Indentation and scope
 
@@ -212,15 +215,15 @@ One rule: **a line governs what is indented under it, and nothing else.**
 ```
 react on item.use                         # a reaction: its lines are under it
     at Muzzle                             # a place: the actions under it go there
-        effect muzzle_flash under Muzzle for 0.3
+        create muzzle_flash under Muzzle for 0.3
         sound gunshot volume -5 jitter 0.06 range 70
     at beam from Muzzle to end            # another place, for the action under it
-        effect tracer for 0.06
+        create tracer for 0.06
 ```
 
 | Opens a scope | Its lines |
 |---|---|
-| a block (`ability`, `react`, `predict`, `hud`) | the block's |
+| a block (`motion`, `react`, `predict`, `hud`) | the block's |
 | `if COND` / `else` | happen or not |
 | `find ...`, `cast ...`, `grab ...` (**new**) | act on what it found or holds |
 | `at PLACE`, `after S` (a delay), `chance P`, `as SUBJECT` (reactions) | settings for the actions under it |
@@ -285,6 +288,12 @@ param range 80 m
   item kind's mod).
 - **Numbers, always**: a parameter is a constant, compiled in; nothing changes it while a game runs.
   A number a server wants to change at run time is a field the server sets (`frag.radius` today).
+- **A server may override a parameter** (decided with D4, 2026-11-21): a server option names it
+  (`--mod-option gun.rifle.magazine=50`), the server compiles the item's motions with it, and sends
+  them in the schema as always, so every machine runs the server's numbers. The item and its hash
+  do not change: players download nothing. Looks cannot be changed this way (they are the item's,
+  and a server never sends files). It is one more named setting of a game ([Hytale proposal 6, kept
+  open](../ROADMAP.md#postponed-kept-open)).
 
 ### 6.6 Expressions
 
@@ -299,7 +308,7 @@ spelling:
 | `local` | the viewer's own player is the subject (looks only) | `is_local` |
 | `first_person` | the viewer looks out of its own eyes (looks only) | unchanged |
 | `actor is player`, `actor is prop`, `holder is melee.bat` | what kind an entity is, or which item kind (**new** `is`) | the reaction settings `kind`, `template` |
-| `ready Fire`, `cooldown Fire`, `uses Fire`, `active Fire` | an ability's state: ready to start, seconds of cooldown left, uses left, on now (6.7.5) | only `motion.NAME` (on now) |
+| `ready Fire`, `cooldown Fire`, `uses Fire`, `active Fire` | a motion's state: ready to start, seconds of cooldown left, uses left, on now (6.7.5) | only `motion.NAME` (on now) |
 | `remaining stunned` | seconds a status has left (6.7.6) | |
 | everything else | as today: numbers, fields, `+ - * /`, comparisons, `( )`, `grounded`, `speed`, `held.jump`, `pressed.dash`, `using.gun.rifle`, `carried.KIND`, `hand.FIELD`, `event.value`, `time`, `distance`, `reach`, `curve(...)` | |
 
@@ -311,15 +320,15 @@ spelling:
 - **Units** (decision D8, leaning yes): a number may carry `s`, `m`, `m/s`, `deg`; the compiler checks
   it against what the word takes (`cooldown 0.4 m` is an error) and drops it. Without a unit, the
   word's own (seconds for times, metres, m/s) as today.
-- **Rates said**: in a `while` ability, `change flight.fuel -= 30 per second` (**new**: today `-=` in a
+- **Rates said**: in a `while` motion, `change flight.fuel -= 30 per second` (**new**: today `-=` in a
   `while` is silently per second and `=` is once). Without `per second`, once.
 
-### 6.7 Abilities (every simulation)
+### 6.7 Motions (every simulation)
 
 #### 6.7.1 Triggers and settings
 
 ```
-ability NAME TRIGGER [if COND]
+motion NAME TRIGGER [if COND]
     SETTINGS
     LINES
 ```
@@ -330,18 +339,18 @@ ability NAME TRIGGER [if COND]
 | `on press ACTION` | the action goes down | unchanged |
 | `on release ACTION` (**new**) | it comes up; `held` reads how long it was down (a charge) | |
 | `on tap ACTION` / `on hold ACTION S` (**new**) | released before S seconds / still down after S (S: `0.25 s` by default) | |
-| `on EVENT` | the event was said at the owner (a server mod's, a clip's marker, another ability's) | unchanged |
+| `on EVENT` | the event was said at the owner (a server mod's, a clip's marker, another motion's) | unchanged |
 | `while COND` | every tick it holds | unchanged |
 | `when COND` | once, on the tick it turns true | unchanged |
 
 | Setting | Means | Was |
 |---|---|---|
-| `cooldown S [shared NAME]` | seconds between two starts; `shared`: every ability with that name waits for it | (`shared` **new**) |
+| `cooldown S [shared NAME]` | seconds between two starts; `shared`: every motion with that name waits for it | (`shared` **new**) |
 | `uses N [refill ground \| refill after S]` | charges | unchanged |
 | `lasts S` | it ends S seconds after it starts | unchanged |
 | `until COND` | it ends when this holds | unchanged |
 | `tags NAME, ...` (**new**) | what kind of thing it is, for others to block or cancel (`attack`, `movement`) | |
-| `blocked by NAME, ...` (**new**) | it does not start while one of these is on: a tag, an ability, a status | `if not motion.brawl.fist.Finisher` |
+| `blocked by NAME, ...` (**new**) | it does not start while one of these is on: a tag, a motion, a status | `if not motion.brawl.fist.Finisher` |
 | `cancels NAME, ...` (**new**) | starting it ends these (a dodge cancels an attack's recovery) | |
 | `for holder` / `for carrier` | in an item's sheet: whoever has it out (the default) / carries it | `item hand` / `item carried` |
 | `on item` | the item runs it, where it lies, in one tick | `owner item` |
@@ -349,7 +358,7 @@ ability NAME TRIGGER [if COND]
 #### 6.7.2 Steps and waits
 
 ```
-ability Swing on use
+motion Swing on use
     cooldown 0.4 s
     emit sword.swing
     wait for sword.strike or 0.5 s           # the clip's marker, or go on after 0.5 s without it
@@ -364,7 +373,7 @@ ability Swing on use
 | `wait S` | the next step starts S seconds after this one did | `after S` |
 | `wait for COND` | ... once this holds | `then when COND` |
 | `wait for COND or S` (**new**) | ... once this holds, or after S seconds, whichever first: **the step after runs either way** | `then when COND within S` + a `timeout` with the same lines again |
-| `wait for COND within S` + `timeout` | ... once this holds; after S it gives up: the `timeout` lines run and the ability ends | unchanged |
+| `wait for COND within S` + `timeout` | ... once this holds; after S it gives up: the `timeout` lines run and the motion ends | unchanged |
 | `end` | it ends here | unchanged |
 | `if COND` / `else` | decided when its step starts | unchanged |
 | `every S` | the lines under it, when the step starts and every S seconds while it is the step; no cap (P18): a repetition costs its own tick only | 64 at most |
@@ -378,7 +387,7 @@ ability Swing on use
 | `impulse`, `force`, `move`, `move for`, `link`, `launch`, `follow`, `remove self` | as today | |
 | `break radius R [speed S] [seconds S] [at POINT]` | breakable walls near the owner, **or near a point** | `at` (**new**) |
 | `apply STATUS for S [on WHO]` (**new**) | a status on the owner or on what a find found (6.7.6) | |
-| `start NAME` (**new**) | starts another ability of the same sheet, as if its trigger had come (its `if`, cooldown and uses still decide) | |
+| `start NAME` (**new**) | starts another motion of the same sheet, as if its trigger had come (its `if`, cooldown and uses still decide) | |
 | `throw VALUE along DIR [marks EVENT for S]` (**new**) | an impulse that marks the body as thrown by the owner: if it strikes a player within S seconds, EVENT is said (A the thrower, B the one struck, value its speed) | |
 
 #### 6.7.4 Finding, holding, and where
@@ -395,7 +404,7 @@ ability Swing on use
 |---|---|
 | `(x, y, z)` | metres right, up and ahead of the owner's feet (today's `at`) |
 | `look N` | N metres along the look from the chest, stopped by the level: a point the player steers |
-| `hit` | where the ability's cast holds |
+| `hit` | where the motion's cast holds |
 | `NODE` | a marker of the sheet's scene, as drawn |
 | `target` | what the find found (in its lines) |
 
@@ -403,7 +412,7 @@ ability Swing on use
 away | world (x, y, z) | NODE` [`turn (yaw, pitch)`]), plus **new**: `toward POINT` (from the target
 to a point), `toward owner` (from the target back to the owner: a pull).
 
-#### 6.7.5 An ability's state, readable
+#### 6.7.5 A motion's state, readable
 
 | Read | Is |
 |---|---|
@@ -411,7 +420,7 @@ to a point), `toward owner` (from the target back to the owner: a pull).
 | `ready Fire` | it could start now (not on, off cooldown, a use left; its `if` not asked) |
 | `cooldown Fire` | seconds of cooldown left (0 when none) |
 | `uses Fire` | uses left |
-| `cooldown brawl.dash_strike.Use` | another item's ability, by its item kind (for a HUD, a condition) |
+| `cooldown brawl.dash_strike.Use` | another item's motion, by its item kind (for a HUD, a condition) |
 
 The simulation has all of it already (each motion's record: its last start, its uses); the
 expression reader learns the names, and the HUD reads them through the frame like fields. **So
@@ -423,11 +432,11 @@ A status is a named, timed flag on a player: `stunned`, `rooted`, `silenced`, `s
 Declared in a sheet (`status stunned`), applied by a sheet (`apply stunned for 0.8 s on target`,
 predicted: the one who hits sees it at once) or by a server mod (`ctx.ApplyStatus( target, stunned,
 seconds )`, the sword's parry), read as a condition (`stunned`, `stunned of target`,
-`remaining stunned`), blocking abilities (`blocked by stunned`), and drawn by looks (`react while
+`remaining stunned`), blocking motions (`blocked by stunned`), and drawn by looks (`react while
 stunned`).
 
 - **Why not "a sheet may change another player's fields"** (the open question): a field can be health;
-  a status is only a flag with a time, which the target's own abilities read. Health stays a mod's.
+  a status is only a flag with a time, which the target's own motions read. Health stays a mod's.
 - **Bounded**: a player holds up to 8 statuses at once (the oldest goes), as moves given are 6 today
   (decision D7: the newer replaces the same status, or the longer wins: leaning the longer).
 - **It replaces**: `sword.stunned` (C++ field and timer), the guard's `move` while held stays a move.
@@ -435,7 +444,7 @@ stunned`).
 #### 6.7.7 Combos (new)
 
 ```
-ability Punch on use
+motion Punch on use
     cooldown 0.3 s
     combo window 1.5 s                       # the run resets 1.5 s after its last hit
     hit 1, 2                                 # the first and second presses: a jab
@@ -449,10 +458,10 @@ ability Punch on use
         ...
 ```
 
-A combo is one ability whose presses count up while each comes within the window of the last, the
+A combo is one motion whose presses count up while each comes within the window of the last, the
 count readable (`combo Punch`) by HUDs and state machines. **It replaces** brawl's `combo` and
-`combo_left` fields, two count-down abilities and the `not motion.brawl.fist.Finisher` guards.
-(Decision D6: this shape, or the fist kept as abilities with timers. Leaning: this shape, after
+`combo_left` fields, two count-down motions and the `not motion.brawl.fist.Finisher` guards.
+(Decision D6: this shape, or the fist kept as motions with timers. Leaning: this shape, after
 timers exist, so the kit can be written either way and the shorter wins.)
 
 ### 6.8 Reactions (the viewer)
@@ -460,7 +469,7 @@ timers exist, so the kit can be written either way and the shorter wins.)
 ```
 react on item.use                          # subject: the holder (an item's sheet's default)
     at Muzzle
-        effect muzzle_flash under Muzzle for 0.3
+        create muzzle_flash under Muzzle for 0.3
         sound gunshot volume -5 jitter 0.06 range 70
 
 react on item.hit if event.value > 0 and local
@@ -480,7 +489,7 @@ react while melee.hot_left > 0
 | `chance P`, `cooldown S` | `chance P` (a scope), `cooldown S` (a setting of the block: not more often than) |
 | `wait` / `wait off` | `server only` (a setting: act on the server's cue, not a predicted press) |
 | `at here` | (gone: no `at` is "here") |
-| `scene PATH [under NODE] [life S]` | `effect NAME [under NODE] [for S]` (6.10) |
+| `scene PATH [under NODE] [life S]` | `create NAME [under NODE] [for S]` (6.10) |
 | `sound PATH ...` | `sound NAME ...` (6.10) |
 | `play`, `set`, `call`, `shake`, `flash` | unchanged |
 | paths `^^/RightHand`, `$other/Head`, `$local@pickup.target` | `holder/RightHand`, `target/Head`, `local@pickup.target` (an entity named by a field keeps `@`) |
@@ -500,10 +509,10 @@ The control's path is written once (today on every line). The lines are today's.
 ### 6.10 Assets and effects
 
 - **Short names** (P15): `sound gunshot` looks for `assets/sfx/gunshot.wav` (or `.ogg`) in the
-  sheet's own project; `effect muzzle_flash` for `vfx/muzzle_flash.tscn`. A full `res://` path still
+  sheet's own project; `create muzzle_flash` for `vfx/muzzle_flash.tscn`. A full `res://` path still
   works (a sound shared from elsewhere). The compiler checks that the file is there and says the
   nearest name if not.
-- **`effect`, not `scene`** (P16): until 6b an effect is a Godot scene the scene guard lets through,
+- **`create`, not `scene`** (P16; the word is D5's): until 6b what it creates is a Godot scene the scene guard lets through,
   as today. After 6b the cooker turns the effect's scene into cooked parts (emitters, lights,
   meshes, sounds: a fixed list of kinds, [6b](../ROADMAP.md#6b-cooked-items)), the game draws them
   through the RenderingServer, and **no Godot scene reaches a player**. The modder keeps authoring
@@ -524,13 +533,13 @@ param reload_time 1.5 s
 param automatic 0
 field gun.rounds int on item = magazine
 ...
-ability Fire on use if gun.rounds > 0 and not gun.reloading
+motion Fire on use if gun.rounds > 0 and not gun.reloading
     ...
 ```
 ```
 # prefabs/rifle.cbsheet
 cbsheet 1
-uses gun.cbsheet                             # its params, fields, abilities and reactions
+uses gun.cbsheet                             # its params, fields, motions and reactions
 param damage 14                              # numbers of its own
 param magazine 30
 param fire_interval 0.1 s
@@ -540,11 +549,11 @@ replace react on item.use                    # a block of its own instead of the
 ```
 
 - **`uses FILE`** brings another sheet's blocks; `param` overrides its numbers; `replace` swaps a block
-  by its name (an ability's NAME, or a reaction's first line). Not a chain: a sheet uses at most one.
+  by its name (a motion's NAME, or a reaction's first line). Not a chain: a sheet uses at most one.
 - Or in the inspector: a scene's `CbItem` points at `gun.cbsheet` and overrides `damage` there,
   without a sheet of its own. Both compile to the same thing.
 - **It replaces** the fist's four copies of its box (with `let` and 6.7.7), the pistol's and the
-  rifle's three copied abilities.
+  rifle's three copied motions.
 
 ### 6.12 Text and rows from the server (Hytale proposal 3)
 
@@ -562,7 +571,7 @@ offers written twice (`hud_shop.tscn` and `kOffers` in `shop.cpp`).
 | things a grab holds | | 8 (**new**) |
 | times an `every` repeats | 64 | none (each repetition is one tick's work) |
 | `if`s a step decides | 16 | 16 |
-| steps an ability has | 64 | 64 |
+| steps a motion has | 64 | 64 |
 | moves a player is given at once | 6 | 6 |
 | statuses a player has at once | | 8 (**new**) |
 | combo length | | 8 (**new**) |
@@ -612,39 +621,39 @@ param range 80 m
 
 field gun.rounds int on item = magazine     # the gun's own: half empty on the hip, half empty in any hand
 
-ability Fire on use if gun.rounds > 0 and not active Reload
+motion Fire on use if gun.rounds > 0 and not active Reload
     cooldown fire_interval
     change gun.rounds -= 1
     emit item.use                           # the server hears it and shoots (posed hitboxes)
 
-ability Dry on use if gun.rounds <= 0 and not active Reload
+motion Dry on use if gun.rounds <= 0 and not active Reload
     cooldown fire_interval
     emit item.use_failed
-    start Reload                            # new: starts another ability of the sheet
+    start Reload                            # new: starts another motion of the sheet
 
-ability Reload on press reload if gun.rounds < magazine and not active Reload
+motion Reload on press reload if gun.rounds < magazine and not active Reload
     emit item.reload
     wait reload_time
     change gun.rounds = magazine            # put away before this, it is not reloaded: as today
 
 react on item.use
     at Muzzle
-        effect muzzle_flash under Muzzle for 0.3
+        create muzzle_flash under Muzzle for 0.3
         sound gunshot volume -5 jitter 0.06 range 70
 
 react on item.reach
     at beam from Muzzle to end
-        effect tracer for 0.06
+        create tracer for 0.06
 
 react on item.hit if event.value == 0
     at point
         sound ricochet volume -16 jitter 0.3 range 30
-        effect bullet_spark for 1
+        create bullet_spark for 1
 
 react on item.hit if event.value > 0
     at point
         sound body_hit volume -8 jitter 0.15 range 40
-        effect hit_puff for 1
+        create hit_puff for 1
 
 react on item.hit if event.value > 0 and local
     at holder/Head
@@ -654,7 +663,7 @@ react on item.hit if event.value > 0 and local
 - **No copy on the player**: the HUD reads the gun's own rounds (`hand.gun.rounds`, as it can today)
   and whether it reloads (`active gun.pistol.Reload`); `gun.ammo`, `gun.magazine` and
   `gun.reloading` go, and so does `gun.cpp`'s correcting of them.
-- **A reload is an ability that waits**: `wait reload_time` in its own steps, no timer field.
+- **A reload is a motion that waits**: `wait reload_time` in its own steps, no timer field.
 - **`start NAME`** is the one new word here (decision D9).
 
 ### The fist (rewritten: combo, let, statuses)
@@ -667,7 +676,7 @@ After (sketch):
 cbsheet 1
 let box = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look
 
-ability Punch on use
+motion Punch on use
     cooldown 0.3 s
     blocked by stunned
     combo window 1.5 s
@@ -696,7 +705,7 @@ use if brawl.cd_dash <= 0
 	...
 ```
 ```
-# after: the ability's own cooldown, read by the HUD
+# after: the motion's own cooldown, read by the HUD
 use
     cooldown 3 s
     blocked by stunned
@@ -725,15 +734,15 @@ field flight.on bool
 field flight.fuel float
 action fly key T
 
-ability FlyOn on press fly if not flight.on
+motion FlyOn on press fly if not flight.on
     change flight.on = 1
     emit flight.started
-ability FlyOff on press fly if flight.on
+motion FlyOff on press fly if flight.on
     change flight.on = 0
     emit flight.stopped
-ability Flying while flight.on
+motion Flying while flight.on
     move walk_speed 7 sprint_speed 12 air_control 1 gravity 0 air_friction 3 move_frame 1
-ability Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
+motion Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
     change flight.fuel -= 30 per second
     emit flight.thrust
     force 26 along up
@@ -758,7 +767,7 @@ react on brawl.dash_strike.started
 ### The frag (converted, then `let` and `wait ... or`)
 
 ```
-ability Throwing on use
+motion Throwing on use
     for carrier
     cooldown 0.7 s
     lasts 0.7 s
@@ -766,7 +775,7 @@ ability Throwing on use
     emit frag.thrown
     launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
 
-ability Blast on expired
+motion Blast on expired
     on item
     let falloff = (distance < frag.radius) * (1 - distance / frag.radius)
     emit frag.blast
@@ -791,7 +800,7 @@ param zone_reach 6 m
 param throw_speed 30 m/s
 
 # On a player: pulled into melee range, staggered (no attacks while pulled).
-ability Pull on use if not active Hold
+motion Pull on use if not active Hold
     cooldown 4 s
     cast sphere 0.4 range 18 holds players
         emit tk.pulled
@@ -801,13 +810,13 @@ ability Pull on use if not active Hold
 
 # On the world: a sphere the player steers pulls loose bodies (a wall's pieces, broken loose) to
 # its middle while the right button is held.
-ability Hold while held.use2
+motion Hold while held.use2
     break radius 2 speed 2 at look zone_reach
     grab sphere 3 bodies max 8 at look zone_reach
         force 40 kind velocity top 12 toward look zone_reach
 
 # Left button while holding: what it holds is thrown, and hurts whoever it strikes.
-ability Throw on use if active Hold
+motion Throw on use if active Hold
     grab sphere 3 bodies max 8 at look zone_reach
         throw throw_speed along look marks tk.struck for 2 s
 ```
@@ -827,7 +836,7 @@ text ──lex──> tokens (with INDENT / DEDENT, each with its line and colum
      ──resolve──> names: the sheet's declarations, the engine's words, the server's schema if given
      ──check──> the placement table, limits, units, types, files that must exist
      ──lower──> four outputs:
-                  abilities   -> sim::MotionSet (the structs the simulation runs: motions.h)
+                  motions   -> sim::MotionSet (the structs the simulation runs: motions.h)
                   reactions   -> ReactionSet (plain data: what CbReaction nodes hold today)
                   predictions -> PredictionSet
                   hud         -> HudBindings
@@ -849,17 +858,17 @@ text ──lex──> tokens (with INDENT / DEDENT, each with its line and colum
 | Caller | What for |
 |---|---|
 | **the editor** (a thin GDExtension wrapper, `CbSheet` resource) | errors as you type, colours, names offered, the inspector's parameters; building the viewer's nodes from `ReactionSet` / `HudBindings` until 6b |
-| **the server** | reading every mod item's sheets when it starts: declarations into the schema, abilities into motion sets (sent to clients in the schema, as today), parameters into item properties |
-| **the client** | the looks of the items it has: reactions, predictions, HUD (the abilities come from the server's schema, so every machine runs the server's copy) |
+| **the server** | reading every mod item's sheets when it starts: declarations into the schema, motions into motion sets (sent to clients in the schema, as today), parameters into item properties |
+| **the client** | the looks of the items it has: reactions, predictions, HUD (the motions come from the server's schema, so every machine runs the server's copy) |
 | **the cooker** (6b) | the sheet source goes into the cooked item as text; the reader compiles it with this library: **the compiler is the reader for sheets**, fuzzed in CI with the rest |
 | **`cb_sheet`** (a command line tool) | `check`, `fmt`, `convert`, `test` ([§11](#11-tools)) |
 
 ### 8.3 What travels
 
 - **The sheet's source, not a compiled form** (decision D4, leaning source): it is small, a person can
-  read what an item does, and the compiler is the checker anyway. The server compiles the abilities
+  read what an item does, and the compiler is the checker anyway. The server compiles the motions
   and sends them in the schema as today, so every machine runs the server's copy and a client never
-  runs an ability the server did not; each client compiles the looks (reactions, predictions, HUD)
+  runs a motion the server did not; each client compiles the looks (reactions, predictions, HUD)
   for itself, which only it sees.
 - **The motions `.cfg` text goes**: it exists to carry what `BakeSheetMotion` made from the sheet to
   the server. When the server compiles sheets itself it has no use. One milestone keeps both and
@@ -886,12 +895,12 @@ What the new words need below the compiler, with the cost each adds to the simul
 
 | Word | Engine change | Cost per tick |
 |---|---|---|
-| item fields (`on item`) | `change` writes an item entity's board (items have boards: `gun.rounds` is one today); conditions in an item's abilities read the item's fields by name | none new |
+| item fields (`on item`) | `change` writes an item entity's board (items have boards: `gun.rounds` is one today); conditions in an item's motions read the item's fields by name | none new |
 | `timer` fields | a field type that the simulation counts down each tick (players' and items' boards) | one subtraction per timer field per entity that has one |
 | `emit ... value` | the event record carries a value (it does: `ModEventRecord::value`); a find's emit fills it | none |
-| ability state readable | the expression reader resolves `ready/cooldown/uses/active NAME` from each motion's record; the frame capture gives the HUD the local player's records | none in the simulation |
-| statuses | a small list per player (up to 8: id, ends at tick), in the snapshot and the hash; `apply` from a find; `ctx.ApplyStatus` | a list walk when abilities check `blocked by` |
-| `tags`, `blocked by`, `cancels` | resolved at compile time into bit masks; starting an ability checks masks against the player's active abilities and statuses | a mask test |
+| motion state readable | the expression reader resolves `ready/cooldown/uses/active NAME` from each motion's record; the frame capture gives the HUD the local player's records | none in the simulation |
+| statuses | a small list per player (up to 8: id, ends at tick), in the snapshot and the hash; `apply` from a find; `ctx.ApplyStatus` | a list walk when motions check `blocked by` |
+| `tags`, `blocked by`, `cancels` | resolved at compile time into bit masks; starting a motion checks masks against the player's active motions and statuses | a mask test |
 | `on release`, `on tap`, `on hold` | the press tracking motions have (`prevActions`) plus how long an action has been down (per player, per action: a small array) | none |
 | `combo` | the count and the window's end in the motion's record (fits the 28 bytes: `used` and `untilTick` are there) | none |
 | `wait for X or S` | a step's wait with a time limit that goes on instead of giving up (one flag on the step) | none |
@@ -931,7 +940,7 @@ are registered with the snapshot (and the protocol version says so: [versions.md
 | `cb_sheet check FILE...` | compiles, prints errors as `file:line:col: why`; non-zero on any |
 | `cb_sheet fmt FILE...` | rewrites in the one style: tabs, block order, spacing, brackets where precedence surprises (`not (a == 2)`) |
 | `cb_sheet convert FILE...` | version 0 to 1 ([§10](#10-moving-every-sheet-over)) |
-| `cb_sheet test FILE.cbtest` | runs an ability on a stand-in simulation (a flat floor, a player, its items) with scripted input, and checks what happened (below) |
+| `cb_sheet test FILE.cbtest` | runs a motion on a stand-in simulation (a flat floor, a player, its items) with scripted input, and checks what happened (below) |
 | the editor | the `.cbsheet` script editor: colours from the compiler's tokens, errors under the word as you type, names (the sheet's, the schema's) offered, a parameter's value and unit on hover; the inspector shows parameters |
 | VS Code | a small grammar (colours) for people who write sheets outside Godot, and `cb_sheet check` as its problem matcher |
 
@@ -962,9 +971,9 @@ each says what its tests prove. Sizes are guesses, in the M-numbers' usual size.
 |---|---|---|---|
 | **M283** | **One compiler, today's language** | `src/sheet/`: lexer, parser, resolver, checker, lowering for version 0, producing what the two parsers produce; `ParseRules` and `BakeSheetMotion` become calls into it; golden tests of every shipped sheet | every shipped sheet's motions cfg is byte-identical and every reaction equal through the new compiler; the old parsing code deleted; the Godot checks pass |
 | **M284** | **The file and the node** | `CbSheet` resource (`.cbsheet`, loader and saver), the `sheet` property on `CbItem`, `CbMotionSet`, world reactions and HUD roots (each saying which blocks it allows); `CbRules` goes; publish, bake and the pack check read it | every scene points at its sheet by resource; a renamed sheet keeps working; `CbRules` gone from the code |
-| **M285** | **Version 1: one spelling** | the language of [§6.1 to 6.3, 6.6 (words), 6.8, 6.9, 6.10](#6-the-language): block keywords, indentation scopes, `wait for X or S`, word anchors, `of`, `is`, words-only logic, short asset names, `effect`; `cb_sheet convert` and `fmt`; every shipped sheet converted | every shipped sheet is version 1 and compiles to the same output as before; `rules-language.md` rewritten as `sheets.md` |
+| **M285** | **Version 1: one spelling** | the language of [§6.1 to 6.3, 6.6 (words), 6.8, 6.9, 6.10](#6-the-language): block keywords, indentation scopes, `wait for X or S`, word anchors, `of`, `is`, words-only logic, short asset names, `create`; `cb_sheet convert` and `fmt`; every shipped sheet converted | every shipped sheet is version 1 and compiles to the same output as before; `rules-language.md` rewritten as `sheets.md` |
 | **M286** | **Names and parameters in the sheet** | [§6.4, 6.5](#64-names-declared-in-the-sheet): `field`, `event`, `action`, `param`; the server reads them from mod items; `CbItem.properties` become parameters; the C++ looks names up; the editor needs no server build for a sheet's own names | the gun, the bat, the sword, brawl and flight declare their names in their sheets; no mod declares a name a sheet declares with another type; the pistol's numbers are in its sheet only |
-| **M287** | **State in the sheet** | [§6.4 item fields, `timer`; 6.7.3 `emit value`, `start`; 6.7.5 readable ability state](#6-the-language); the pistol's rounds and reload (`start`, `wait`), the bat's heat (`field melee.hot_left timer on item`, set in its find), brawl's cooldowns and combo window move into sheets | `gun.cpp` keeps only the shot, the damage and the aim; `melee.cpp` only damage and facing; `brawl_moves.rules` and brawl's `cd_*` fields gone; the HUD lines read cooldowns; the `rifle`, `melee`, `brawl` tests pass |
+| **M287** | **State in the sheet** | [§6.4 item fields, `timer`; 6.7.3 `emit value`, `start`; 6.7.5 readable motion state](#6-the-language); the pistol's rounds and reload (`start`, `wait`), the bat's heat (`field melee.hot_left timer on item`, set in its find), brawl's cooldowns and combo window move into sheets | `gun.cpp` keeps only the shot, the damage and the aim; `melee.cpp` only damage and facing; `brawl_moves.rules` and brawl's `cd_*` fields gone; the HUD lines read cooldowns; the `rifle`, `melee`, `brawl` tests pass |
 | **M288** | **How skills meet** | [§6.7.1 tags, `blocked by`, `cancels`, shared cooldowns, `on release / tap / hold`; 6.7.6 statuses; 6.7.7 combos](#6-the-language) | the fist is one `Punch` with a combo; the sword's stun is a status; the guard and the block block attacks by tag; the bots still fight (their test passes) |
 | **M289** | **One sheet, many items** | [§6.11](#611-one-sheet-for-many-items): `uses`, parameter overrides, `replace`, `let` | the pistol and the rifle share `gun.cbsheet`; the fist's box written once |
 | **M290** | **Where and on what** | [§6.7.4](#674-finding-holding-and-where): `of target`, points (`look N`, `hit`, markers), `find`/`break at`, `players first`, `grab`, `toward`, `throw ... marks`; a cast in a later step | the telekinesis sheet of §7 works in a playtest (the owner's weapon, or a test mod until the owner's look is there); the bat finds with `players first` in one find |
@@ -985,15 +994,15 @@ same after every converted milestone (M283 to M286) and the same or better after
 
 | # | Question | Options | Leaning |
 |---|---|---|---|
-| D1 | The simulated block's keyword | `ability` / keep `motion` | **`ability`**: the standard word; `motion` stays the engine's |
+| D1 | The simulated block's keyword | `ability` / keep `motion` | **decided (2026-11-21): `motion`**, for every simulated block (skills, refuels, rounds, blasts); a separate block type for non-skill state may come later |
 | D2 | Who an event is about, as words | `actor` and `target` / `source` and `target` / `a` and `b` | **decided (2026-11-21): `actor` and `target`** (and `holder`, `me`, `local`, `world` for the other anchors) |
 | D3 | Logic's symbols (`!`, `&&`, `\|\|`) | refused / kept beside the words | **decided (2026-11-21): kept**: `!a` and `not a` both, as today. (The path symbols `^^`, `$at` go with D2) |
-| D4 | What an item carries | the sheet's source / a compiled form | **decided (2026-11-21): the source**, checked by the compiler on the modder's machine when the item is cooked, and again by the store and by every game that loads it; abilities compiled once by the server, looks once by each client, when the item loads |
-| D5 | `effect` or keep `scene` | | **`effect`**: says what it is; after 6b it is not a Godot scene in the game |
-| D6 | Combos as a word (§6.7.7) or as abilities with timers | | **the word**, after timers exist: write the fist both ways and keep the shorter |
+| D4 | What an item carries | the sheet's source / a compiled form | **decided (2026-11-21): the source**, checked by the compiler on the modder's machine when the item is cooked, and again by the store and by every game that loads it; motions compiled once by the server, looks once by each client, when the item loads (well under a millisecond a sheet; nothing per tick). A server may override an item's parameters as options ([§6.5](#65-parameters)) |
+| D5 | The word that puts a visual thing in the world (today `scene`) | `effect` / `spawn` / `create`; one word for sounds too, or `sound` kept | **`create`** for anything visual placed for a while (an effect, a prompt, a light), which may carry its own sounds; **`sound`** kept for a lone sound; `play` for animations. One word for everything is refused: `jump` is both `assets/sfx/jump.wav` and `vfx/jump.tscn` in the game today, and a sound's options are not a visual's |
+| D6 | Combos as a word (§6.7.7) or as motions with timers | | **the word**, after timers exist: write the fist both ways and keep the shorter |
 | D7 | The same status applied twice | the newer replaces / the longer wins / they add | **the longer wins** |
-| D8 | Units on numbers (`0.4 s`, `16 m/s`) | optional and checked / not at all | **optional and checked** |
-| D9 | One ability starting another (`start Reload` from `Dry`) | `start NAME` / a block with two triggers (`on press reload or use if ...`) | **`start NAME`**: the started ability keeps its own `if`, cooldown and uses, so nothing is written twice |
+| D8 | Units on numbers (`0.4 s`, `16 m/s`) | optional and checked / not at all | **decided (2026-11-21): optional and checked**: the compiler checks a unit against the word (`cooldown 0.4 m` is an error) and changes no value; a number without one means what it means today |
+| D9 | One motion starting another (`start Reload` from `Dry`) | `start NAME` / a block with two triggers (`on press reload or use if ...`) | **`start NAME`**: the started motion keeps its own `if`, cooldown and uses, so nothing is written twice |
 | D10 | A sheet that may say `apply` on another player | statuses only / fields too | **statuses only**; fields of another player stay a server mod's |
 | D11 | Tests beside sheets (`.cbtest`) | in step 6 / later | **in step 6** (M291): the format is settled now, and tests are how a modder learns it |
 | D12 | Who plans and builds | | the owner's call; this file is meant to be enough for either |
@@ -1024,8 +1033,8 @@ decl        := "field" NAME type [ "on" ( "player" | "item" | "world" ) ] [ "sha
              | "param" NAME number [ unit ] | "let" NAME "=" expr | "uses" PATH
              | "replace" block
 type        := "int" | "float" | "bool" | "timer" | "text"
-block       := ability | use | react | predict | hud
-ability     := "ability" NAME trigger [ "if" expr ] NEWLINE INDENT { setting } body DEDENT
+block       := motion | use | react | predict | hud
+motion     := "motion" NAME trigger [ "if" expr ] NEWLINE INDENT { setting } body DEDENT
 use         := "use" [ "if" expr ] NEWLINE INDENT { setting } body DEDENT
 trigger     := "on use" | "on" ( "press" | "release" | "tap" ) ACTION | "on hold" ACTION [ number [ unit ] ]
              | "on" EVENT | "while" expr | "when" expr
@@ -1051,7 +1060,7 @@ line        := "change" FIELD ( "=" | "+=" | "-=" ) amount [ "per second" ]
 react       := "react" ( "on" EVENT | "while" expr ) [ "if" expr ] NEWLINE INDENT { rsetting } { rline } DEDENT
 rsetting    := "cooldown" amount | "server only"
 rline       := ( "at" place | "as" subject | "after" amount | "chance" number ) NEWLINE INDENT { rline } DEDENT
-             | "sound" ASSET { sound-option } | "effect" ASSET [ "under" PATH ] [ "for" amount ]
+             | "sound" ASSET { sound-option } | "create" ASSET [ "under" PATH ] [ "for" amount ]
              | "play" PATH ANIMATION | "set" PATH PROPERTY value [ "blend" amount ]
              | "call" PATH METHOD { value } | "shake" amount [ "for" amount ] | "flash" COLOR [ "for" amount ]
 predict     := "predict" ACTION "as" EVENT [ "if" expr ] NEWLINE INDENT { "cooldown" amount | "held" | "change" FIELD op amount } DEDENT
@@ -1073,7 +1082,6 @@ expr        := (the expression language: §6.6)
 | Version 0 (`.rules`) | Version 1 (`.cbsheet`) |
 |---|---|
 | (no header) | `cbsheet 1` |
-| `motion NAME ...` | `ability NAME ...` |
 | `on EVENT` / `while COND` (at the top of a sheet) | `react on EVENT` / `react while COND` |
 | `show PATH ...`, `text PATH ...`, `bind PATH ...` | `hud PATH` with `show ...`, `text ...`, `bind ...` under it |
 | `then when COND` | `wait for COND` |
@@ -1094,7 +1102,7 @@ expr        := (the expression language: §6.6)
 | `wait` / `wait off` | `server only` / (nothing) |
 | `at here` | (nothing) |
 | `at X` holding for the actions below it | `at X` with the actions indented under it |
-| `scene res://vfx/NAME.tscn [under N] life S` | `effect NAME [under N] for S` |
+| `scene res://vfx/NAME.tscn [under N] life S` | `create NAME [under N] for S` |
 | `sound res://assets/sfx/NAME.wav ...` | `sound NAME ...` |
 | `$at/RightHand`, `$other/Head`, `^^/Head` | `actor/RightHand`, `target/Head`, `holder/Head` |
 | `motion.NAME` | `active NAME` (`motion.NAME` read until M285's conversion) |
