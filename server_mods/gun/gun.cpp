@@ -5,30 +5,38 @@
 //
 //   gun.damage           what a hit does (the head doubles it: --mod-option gun.zone.<zone>=<x>)
 //   gun.magazine         rounds
-//   gun.fire_seconds     between two shots
-//   gun.automatic        1: it fires for as long as the use button is held; 0: once a press
 //   gun.reload_seconds   how long a reload takes
 //   gun.range            metres
 //   gun.kill_push, gun.prop_push   how hard a hit shoves the body it kills, and what is loose
 //
-// The scene also says what the gun is like to hold (its animation pack), where it hangs (its
-// holster), its slot, and what a shot looks and sounds like: its CbReaction nodes on the item
-// mod's cues, which do not name the gun (see item.cpp):
+// Since M282 (step 5: every item a sheet) pulling the trigger is the gun's sheet (its scene's
+// CbRules, prefabs/pistol.rules), which every simulation runs, so a shot is predicted, not guessed:
+//   Fire     on use, while it has rounds and is not reloading: a round off what the holder sees
+//            (change gun.ammo -= 1) and item.use (the flash, the sound, the recoil). Its cooldown is
+//            the time between two shots; the item's `use` says whether it fires once a press or
+//            while held (an automatic)
+//   Dry      on use, empty: item.use_failed (the click) and item.reload; it starts reloading
+//   Reload   on R (the action "reload"), not full: item.reload; it starts reloading
+// This file is what a sheet cannot say:
+//   - the shot: hearing item.use from a gun's holder, it aims along the camera the player had when
+//     it fired (the input of the tick before: Context::CastAim's `pressed`), hit-tests posed bodies
+//     (hit zones), and says item.reach (a = shooter, b = what it reached, 0: nothing; point = where it
+//     came from, vector = where it ended: the tracer) and item.hit (a = shooter, b = what was hit,
+//     value = damage done, point, vector = normal); the damage goes out as combat.damage
+//   - the rounds: a gun's own field, gun.rounds (its scene declares it with the full count), so a
+//     magazine put away half empty comes out half empty in whose hand ever. The language has no
+//     field of an item to change (ROADMAP step 6): the sheet takes a round off the holder's
+//     gun.ammo, and this file off the gun, and says the gun's count to the holder again (gun.ammo,
+//     gun.magazine, gun.reloading: the HUD's, and the sheet's conditions) whenever they differ, so
+//     a shot the server refused (reloading, empty) is put right
+//   - the reload's end: gun.reload_seconds after it began, the gun is full again (no timer on a
+//     carried item either)
+//   - out, the body faces where the camera looks and the arm points the gun there (Aim)
+// Health and death are the combat mod's; a new life or a new round fills every gun the player
+// carries.
 //
-//   item.use          a shot: a = shooter, b = what the ray hit (0: nothing), point = where it
-//                     came from, vector = where it ended
-//   item.use_failed   the trigger on an empty magazine
-//   item.hit          a = shooter, b = what was hit, value = damage done, point, vector = normal
-//   item.reload       a reload began
-//
-// A magazine is the gun's own: put away half empty, it is half empty when it comes out, in whose
-// hand ever. Its rounds are the gun's own field, "gun.rounds", which the gun's scene declares with
-// the full count (CbItem.fields): simulation state, in every copy, read by looks as
-// "hand.gun.rounds". What the holder's HUD and the look's predictions read is also on the player:
-// the gun in the hand's "gun.ammo", "gun.magazine" and "gun.reloading" (all 0 with no gun out).
-//
-// Health and death are the combat mod's: a hit on a player goes out as "combat.damage", and a new
-// life or a new round fills every gun the player carries.
+// Until M282 this file pulled the trigger itself (gun.fire_seconds, gun.automatic), and the look
+// guessed the shot (predict use as item.use, change gun.ammo -= 1).
 
 #include "mod_api.h"
 
@@ -47,8 +55,6 @@ struct GunKind
 {
 	int32_t damage = 10;
 	int32_t magazine = 10;
-	float fireSeconds = 0.2f;
-	bool automatic = false;
 	float reloadSeconds = 1.5f;
 	float range = 80.0f;
 	float killPush = 6.0f;
@@ -60,18 +66,13 @@ struct GunKind
 struct Gun
 {
 	int32_t ammo = 0;
-	uint32_t nextShotTick = 0;
 	uint32_t reloadDoneTick = 0; // 0: not reloading
-	bool wentDry = false;		 // the trigger is held on an empty magazine: one click, not ten a second
 };
 
-// What each player was last told, and whether its body is in a shooter's stance.
+// Whether a player's body is in a shooter's stance.
 struct Shooter
 {
 	bool aiming = false;
-	int32_t ammo = -1;
-	int32_t magazine = -1;
-	int32_t reloading = -1;
 };
 
 uint32_t Ticks( const Context& ctx, float seconds )
@@ -89,13 +90,15 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		m_reload = declare.Action( "reload", "R" );
+		declare.Action( "reload", "R" ); // (the sheet's Reload motion presses it)
 		m_ammo = declare.Field( "gun.ammo", BoardType::Int );
 		m_magazine = declare.Field( "gun.magazine", BoardType::Int );
 		m_reloading = declare.Field( "gun.reloading", BoardType::Bool );
-		// The item mod's (item.cpp): what a use is called, whatever the item.
+		// The item mod's (item.cpp): what a use is called, whatever the item. item.use, item.use_failed
+		// and item.reload are the gun's sheet's; item.reach and item.hit this file's.
 		m_use = declare.Event( "item.use" );
-		m_useFailed = declare.Event( "item.use_failed" );
+		declare.Event( "item.use_failed" );
+		m_reach = declare.Event( "item.reach" );
 		m_hit = declare.Event( "item.hit" );
 		m_reloadEvent = declare.Event( "item.reload" );
 		// The combat mod's (combat.cpp), and a game-mode mod's round start.
@@ -121,8 +124,6 @@ public:
 			GunKind kind;
 			kind.damage = int32_t( number( "gun.damage", 10.0f ) );
 			kind.magazine = std::max( int32_t( number( "gun.magazine", 10.0f ) ), 1 );
-			kind.fireSeconds = std::max( number( "gun.fire_seconds", 0.2f ), 0.02f );
-			kind.automatic = number( "gun.automatic", 0.0f ) != 0.0f;
 			kind.reloadSeconds = std::max( number( "gun.reload_seconds", 1.5f ), 0.0f );
 			kind.range = number( "gun.range", 80.0f );
 			kind.killPush = number( "gun.kill_push", 6.0f );
@@ -148,9 +149,23 @@ public:
 		for ( const ModEventRecord& e : ctx.RecentEvents() )
 		{
 			newRound |= int( e.type ) == m_roundStart.index;
-			if ( int( e.type ) == m_respawned.index && ctx.SlotOf( e.netIdA ) >= 0 )
+			const int slot = ctx.SlotOf( e.netIdA );
+			if ( slot < 0 )
 			{
-				Refill( ctx, PlayerSlot( ctx.SlotOf( e.netIdA ) ) );
+				continue;
+			}
+			if ( int( e.type ) == m_respawned.index )
+			{
+				Refill( ctx, PlayerSlot( slot ) );
+			}
+			// A gun's sheet fired, or began a reload (by R, or on an empty click).
+			if ( int( e.type ) == m_use.index )
+			{
+				Shoot( ctx, PlayerSlot( slot ), tick );
+			}
+			else if ( int( e.type ) == m_reloadEvent.index )
+			{
+				Reload( ctx, PlayerSlot( slot ), tick );
 			}
 		}
 		for ( int i = 0; i < kMaxPlayers; ++i )
@@ -221,25 +236,68 @@ private:
 		}
 	}
 
-	// The player's fields say what the gun in its hand has (0 with none): written when they change.
+	// The player's fields say what the gun in its hand has (0 with none), written where the board
+	// has something else: the sheet changes gun.ammo and gun.reloading too, and a shot or a reload
+	// this file refused is put right.
 	void Publish( Context& ctx, PlayerSlot slot, int32_t ammo, int32_t magazine, bool reloading )
 	{
-		Shooter& s = m_shooters[size_t( slot )];
-		uint32_t target = SlotTarget( slot );
-		if ( s.ammo != ammo )
+		const uint32_t netId = ctx.PlayerNetId( slot );
+		const uint32_t target = SlotTarget( slot );
+		auto put = [&]( FieldHandle field, int32_t value ) {
+			if ( ctx.Get( netId, field ) != value )
+			{
+				ctx.Set( target, field, value );
+			}
+		};
+		put( m_ammo, ammo );
+		put( m_magazine, magazine );
+		put( m_reloading, reloading ? 1 : 0 );
+	}
+
+	// The gun in the player's hand, and its kind (null: none, or the player is dead).
+	const GunKind* Holding( Context& ctx, PlayerSlot slot, uint32_t& item ) const
+	{
+		const Character* c = ctx.PlayerCharacter( slot );
+		item = c != nullptr && c->dead == 0 ? ctx.HeldItem( slot, m_hand ) : 0;
+		return KindOf( ctx, item );
+	}
+
+	// The sheet fired (item.use): a round off the gun, and the shot, unless it is reloading or empty
+	// (then the board is put right: Publish).
+	void Shoot( Context& ctx, PlayerSlot slot, uint32_t tick )
+	{
+		uint32_t item = 0;
+		const GunKind* kind = Holding( ctx, slot, item );
+		if ( kind == nullptr )
 		{
-			s.ammo = ammo;
-			ctx.Set( target, m_ammo, ammo );
+			return; // (another item's use)
 		}
-		if ( s.magazine != magazine )
+		Gun& gun = GunOf( ctx, item, *kind );
+		if ( gun.reloadDoneTick != 0 && tick < gun.reloadDoneTick )
 		{
-			s.magazine = magazine;
-			ctx.Set( target, m_magazine, magazine );
+			return;
 		}
-		if ( s.reloading != int32_t( reloading ) )
+		if ( gun.ammo <= 0 )
 		{
-			s.reloading = int32_t( reloading );
-			ctx.Set( target, m_reloading, reloading ? 1 : 0 );
+			return;
+		}
+		SetRounds( ctx, item, gun, gun.ammo - 1 );
+		Fire( ctx, slot, *kind );
+	}
+
+	// The sheet began a reload (item.reload: by R, or an empty click): unless it is full or reloading.
+	void Reload( Context& ctx, PlayerSlot slot, uint32_t tick )
+	{
+		uint32_t item = 0;
+		const GunKind* kind = Holding( ctx, slot, item );
+		if ( kind == nullptr )
+		{
+			return;
+		}
+		Gun& gun = GunOf( ctx, item, *kind );
+		if ( gun.reloadDoneTick == 0 && gun.ammo < kind->magazine )
+		{
+			gun.reloadDoneTick = tick + std::max( Ticks( ctx, kind->reloadSeconds ), 1u );
 		}
 	}
 
@@ -286,51 +344,7 @@ private:
 			gun.reloadDoneTick = 0;
 			SetRounds( ctx, inHand, gun, kind->magazine );
 		}
-		bool reloading = gun.reloadDoneTick != 0;
-		Publish( ctx, slot, gun.ammo, kind->magazine, reloading );
-
-		ItemKindHandle handle = ctx.ItemKindOf( inHand );
-		bool trigger = kind->automatic ? ctx.Using( slot, handle ) : ctx.Used( slot, handle );
-		if ( ( kind->automatic ? ctx.Using( slot, handle ) : true ) == false )
-		{
-			gun.wentDry = false;
-		}
-		if ( c->frozen )
-		{
-			return;
-		}
-		if ( ctx.Pressed( slot, m_reload ) && reloading == false && gun.ammo < kind->magazine )
-		{
-			StartReload( ctx, slot, gun, *kind, tick );
-			return;
-		}
-		if ( trigger == false || reloading || tick < gun.nextShotTick )
-		{
-			return;
-		}
-		if ( gun.ammo <= 0 )
-		{
-			// Empty: one click and a reload for each pull of the trigger, however long it is held.
-			if ( gun.wentDry == false )
-			{
-				gun.wentDry = kind->automatic;
-				ctx.Emit( m_useFailed, target );
-				StartReload( ctx, slot, gun, *kind, tick );
-			}
-			return;
-		}
-		SetRounds( ctx, inHand, gun, gun.ammo - 1 );
-		gun.wentDry = false; // (it fires again: the next empty magazine clicks again)
-		gun.nextShotTick = tick + Ticks( ctx, kind->fireSeconds );
-		Publish( ctx, slot, gun.ammo, kind->magazine, false );
-		Fire( ctx, slot, *kind );
-	}
-
-	void StartReload( Context& ctx, PlayerSlot slot, Gun& gun, const GunKind& kind, uint32_t tick )
-	{
-		gun.reloadDoneTick = tick + std::max( Ticks( ctx, kind.reloadSeconds ), 1u );
-		Publish( ctx, slot, gun.ammo, kind.magazine, true );
-		ctx.Emit( m_reloadEvent, SlotTarget( slot ) );
+		Publish( ctx, slot, gun.ammo, kind->magazine, gun.reloadDoneTick != 0 );
 	}
 
 	bool IsLivingPlayer( Context& ctx, uint32_t netId ) const
@@ -348,9 +362,9 @@ private:
 		// At what is under the crosshair, from the eye: whatever camera the player looks through.
 		b3Vec3 eye, dir;
 		RayHit hit;
-		bool found = ctx.CastAim( slot, kind.range, hit, eye, dir );
+		bool found = ctx.CastAim( slot, kind.range, hit, eye, dir, true );
 		b3Vec3 end = found ? hit.point : b3MulAdd( eye, kind.range, dir );
-		ctx.Emit( m_use, shooter, found ? hit.netId : 0, 0, eye, end );
+		ctx.Emit( m_reach, shooter, found ? hit.netId : 0, 0, eye, end );
 		if ( found == false )
 		{
 			return;
@@ -384,13 +398,12 @@ private:
 	std::map<int, GunKind> m_kinds; // by item kind
 	std::map<uint32_t, Gun> m_guns; // by the item's NetId
 	Shooter m_shooters[kMaxPlayers];
-	ActionHandle m_reload;
 	FieldHandle m_ammo;
 	FieldHandle m_magazine;
 	FieldHandle m_reloading;
 	FieldHandle m_rounds;
 	EventHandle m_use;
-	EventHandle m_useFailed;
+	EventHandle m_reach;
 	EventHandle m_hit;
 	EventHandle m_reloadEvent;
 	EventHandle m_damage;

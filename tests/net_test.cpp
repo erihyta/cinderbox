@@ -2479,10 +2479,9 @@ void TestMelee()
 	ActionBits bat = kKeySlot2;
 	ActionBits pistol = kKeySlot1;
 	ActionBits hands = kKeyHands;
-	int full = schema.FindLayer( "full" );
-	int ready = schema.FindStance( "melee" );
-	int swing = schema.FindStance( "melee_swing" );
-	CHECK( fire != 0 && bat != 0 && pistol != 0 && full >= 0 && ready >= 0 && swing >= 0 );
+	// (The swing is the bat's sheet since M282: no stances; its event says it swung.)
+	const int swingEvent = schema.FindEvent( "melee.swing" );
+	CHECK( fire != 0 && bat != 0 && pistol != 0 && swingEvent >= 0 );
 
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
@@ -2495,11 +2494,13 @@ void TestMelee()
 		{
 			in.actions = bat;
 		}
-		else if ( tick >= 245 && tick < 255 )
+		else if ( tick >= 275 && tick < 285 )
 		{
-			in.actions = hands; // the bat goes on the back, still hot from the first hit
+			// The bat goes on the back, still hot from the first hit (the swing pressed at 225 strikes
+			// at 261: this body has no clip marker, so its sheet's timeout, 0.6 s, strikes).
+			in.actions = hands;
 		}
-		else if ( tick >= 365 && tick < 375 )
+		else if ( tick >= 405 && tick < 415 )
 		{
 			in.actions = bat;
 		}
@@ -2513,8 +2514,8 @@ void TestMelee()
 	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
 
 	Simulation& server = h.server.Sim();
-	bool sawReady = false;
-	bool sawSwing = false;
+	int swings = 0;
+	uint32_t seenEvents = 0;
 	// The pistol and then the bat are items in the attacker's right hand (the swap is one tick: the
 	// pistol mod takes its gun away as the melee mod puts the bat there). The bat has its own state:
 	// hot after a hit.
@@ -2536,10 +2537,7 @@ void TestMelee()
 	std::map<uint32_t, bool> counted;
 	h.RunUntil( 11.0, [&]( double ) {
 		uint32_t attacker = server.PlayerNetId( h.bots[0].client->Slot() );
-		if ( AnimStateCopy a = server.EntityAnimState( attacker ) )
 		{
-			sawReady |= a->stances[full] == ready + 1;
-			sawSwing |= a->stances[full] == swing + 1;
 			if ( uint32_t bat = server.HeldItemOf( attacker, uint32_t( hand ) ) )
 			{
 				flecs::entity e = server.FindEntity( bat );
@@ -2556,11 +2554,16 @@ void TestMelee()
 			if ( hotBat != 0 && server.HeldItemOf( attacker, uint32_t( hand ) ) != hotBat && server.FindEntity( hotBat ).is_valid() )
 			{
 				bool isHot = server.BoardValue( hotBat, hot->slot ) != 0;
-				hotOnTheBack |= isHot && server.Tick() < 300;
-				coldOnTheBack |= isHot == false && server.Tick() >= 356 && server.Tick() < 364;
+				hotOnTheBack |= isHot && server.Tick() < 330;
+				coldOnTheBack |= isHot == false && server.Tick() >= 386 && server.Tick() < 400;
 			}
 		}
 		const SimGlobals& g = server.Globals();
+		for ( ; seenEvents < g.modEventCount; ++seenEvents )
+		{
+			const ModEventRecord& e = g.modEvents[seenEvents % kModEventHistory];
+			swings += int( e.type ) == swingEvent && e.netIdA == attacker ? 1 : 0;
+		}
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
 		{
 			const ModEventRecord& e = g.modEvents[i];
@@ -2572,9 +2575,8 @@ void TestMelee()
 		}
 	} );
 	h.Report();
-	std::printf( "    ready stance %d, swing stance %d, kills by the bat %u\n", int( sawReady ), int( sawSwing ), kills );
-	CHECK( sawReady );
-	CHECK( sawSwing );
+	std::printf( "    swings %d, kills by the bat %u\n", swings, kills );
+	CHECK( swings >= 5 );
 	std::printf( "    the pistol: held %d, still there after the bat %d; the bat: held %d, hot after a hit %d\n", int( heldGun ),
 				 int( gunAfterBat ), int( heldBat ), int( batWasHot ) );
 	CHECK( heldGun );

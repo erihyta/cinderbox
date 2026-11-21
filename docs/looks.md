@@ -15,7 +15,7 @@ other, so two mods add effects without fighting over one list; a mod replaces
 PistolReactions                      (prefabs/pistol.tscn)
 ├── Fired         on item.use     subject $at                         muzzle flash + gunshot at $at/RightHand
 ├── Kick          on item.use     subject $at      is_local           camera shake
-├── Tracer        on item.use     subject $at                         beam from $at/RightHand to the cue's end
+├── Tracer        on item.reach   subject $at                         beam from $at/RightHand to the cue's end
 └── Hurt          on item.hit       subject $other   is_local           camera shake + red flash
 ```
 
@@ -57,19 +57,14 @@ A mod's rules run on the server, so what your own press did comes back a round t
 it at once:
 
 ```
-PredictFire   CbPrediction   action "use"    cue "item.use"                (in prefabs/pistol.tscn, under its CbItem)
-                             conditions gun.ammo > 0, !gun.reloading, !combat.dead
-                             cooldown 0.19
-                             changes    gun.ammo -= 1
-
-PredictSwing  CbPrediction   action "use"    cue "melee.swing"   cooldown 0.58       (in prefabs/bat.tscn)
-                             stance "melee_swing" on stance_layer "full"
-
-PredictFire   CbPrediction   action "use"    cue "item.use"         (the rifle: automatic)
-                             conditions gun.ammo > 0, !gun.reloading, !combat.dead
-                             cooldown 0.1   while_held
-                             changes    gun.ammo -= 1
+PredictScan   CbPrediction   action "use2"   cue "item.use2"               (in prefabs/pistol.tscn: the mark mod's scan)
+                             conditions !gun.reloading, !combat.dead
+                             cooldown 0.95
 ```
+
+**A use a sheet can say needs no prediction** (step 5, M282): the pistol's shot, the rifle's and
+the bat's swing are motions in their sheets, which every simulation runs, so your own is seen at
+once and is never a guess. A prediction is for what only a server mod says (the mark mod's scan).
 
 | Step | What happens |
 |---|---|
@@ -101,10 +96,11 @@ PredictFire   CbPrediction   action "use"    cue "item.use"         (the rifle: 
 
   So an item's scene carries what using it looks like, and a hundred pistols in the world are one prediction. Reactions already work this way inside an item (`subject` `^^`: whoever holds it).
 - **`use` is the engine's button** (the left mouse button): a prediction names it like an action a mod declared.
-- **Held fire is two lines**: the server mod asks `ctx.Using( slot, kind )` where a press-based one
-  asks `ctx.Used`, and the look's prediction is `while_held` with the mod's time between shots
-  as its `cooldown`. The predictions are counted from the press, not from the frames, so they keep
-  the server's rate at any frame rate (`gun.cpp`, `prefabs/rifle.tscn`).
+- **Held fire**: a server mod asks `ctx.Using( slot, kind )` where a press-based one asks
+  `ctx.Used`, and its look's prediction is `while_held` with the mod's time between uses as its
+  `cooldown`. The predictions are counted from the press, not from the frames, so they keep the
+  server's rate at any frame rate. (The guns did so until M282; their sheets fire now: the item's
+  `use` "while held" and the motion's `cooldown`.)
 - **A wrong guess is taken back**: once the server has confirmed the tick of the press, and 8
   ticks more (`CbDirector.answer_ticks`), without sending the cue, the guess was wrong. Then:
 
@@ -498,17 +494,21 @@ while melee.hot
 
 ```
 # prefabs/pistol.rules
-predict use as item.use if gun.ammo > 0 and !gun.reloading and !combat.dead
-    cooldown 0.19
+motion Fire on use if gun.ammo > 0 and not gun.reloading
+    cooldown 0.2
     change gun.ammo -= 1
+    emit item.use
 
 on item.use
     subject ^^
     scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
-    at beam from Muzzle
-    scene res://vfx/tracer.tscn life 0.06
     at Muzzle
     sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70
+
+on item.reach
+    subject ^^
+    at beam from Muzzle
+    scene res://vfx/tracer.tscn life 0.06
 ```
 
 - **Every action is a `CbReaction`** under the `CbRules` node (never saved with the scene), so the

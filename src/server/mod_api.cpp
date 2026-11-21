@@ -553,14 +553,14 @@ b3Vec3 Context::EyePosition( PlayerSlot slot ) const
 	return m_sim.ViewPivot( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ), t->position );
 }
 
-b3Vec3 Context::HeadPosition( PlayerSlot slot ) const
+b3Vec3 Context::HeadPosition( PlayerSlot slot, bool pressed ) const
 {
 	// Its character's eye as posed (its first-person camera's place in its scene, or its Eye
 	// marker's), a little ahead, as the camera sits.
 	b3Vec3 eye;
 	if ( m_hits != nullptr && m_hits->BakedEyePosition( m_sim, slot, eye ) )
 	{
-		return b3Add( eye, b3MulSV( kEyeAhead, AimDirection( slot ) ) );
+		return b3Add( eye, b3MulSV( kEyeAhead, AimDirection( slot, pressed ) ) );
 	}
 	b3Vec3 head;
 	if ( m_hits == nullptr || m_hits->JointPosition( m_sim, slot, "Head", head ) == false )
@@ -581,17 +581,17 @@ b3Vec3 Context::HeadPosition( PlayerSlot slot ) const
 		return b3Add( t->position, b3Vec3{ 0.0f, body.halfHeight + body.radius, 0.0f } );
 	}
 	// A little ahead of the face and above the joint, as the first-person camera sits.
-	b3Vec3 forward = AimDirection( slot );
-	const PlayerInput& in = m_frame.inputs[slot];
+	b3Vec3 forward = AimDirection( slot, pressed );
+	const PlayerInput& in = pressed ? m_previous[slot] : m_frame.inputs[slot];
 	b3Vec3 flat = detmath::YawForward( detmath::YawToRadians( in.cameraYaw ) );
 	b3CosSin p = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
 	b3Vec3 up = { -flat.x * p.sine, p.cosine, -flat.z * p.sine };
 	return b3Add( head, b3Add( b3MulSV( kEyeAhead, forward ), b3MulSV( kEyeUp, up ) ) );
 }
 
-b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
+b3Vec3 Context::ViewPosition( PlayerSlot slot, bool pressed ) const
 {
-	const PlayerInput& in = m_frame.inputs[slot];
+	const PlayerInput& in = pressed ? m_previous[slot] : m_frame.inputs[slot];
 	ViewMode view = ViewMode( in.view );
 	if ( view == ViewMode::FirstPerson &&
 		 m_sim.SeenInFirstPerson( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) ) == false )
@@ -610,7 +610,7 @@ b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 			const uint16_t character = m_sim.CharacterOf( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) );
 			const Simulation::CharacterBody& body = m_sim.Body( character );
 			b3Vec3 feet = b3Sub( t->position, b3Vec3{ 0.0f, mover::FeetBelowCenter( body.radius, body.halfHeight ), 0.0f } );
-			return b3Add( b3Add( feet, b3Vec3{ 0.0f, m_hits->EyeHeight( character ), 0.0f } ), b3MulSV( kEyeAhead, AimDirection( slot ) ) );
+			return b3Add( b3Add( feet, b3Vec3{ 0.0f, m_hits->EyeHeight( character ), 0.0f } ), b3MulSV( kEyeAhead, AimDirection( slot, pressed ) ) );
 		}
 		case ViewMode::ShoulderRight:
 		case ViewMode::ShoulderLeft:
@@ -625,16 +625,16 @@ b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 	}
 }
 
-bool Context::CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin, b3Vec3& direction ) const
+bool Context::CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin, b3Vec3& direction, bool pressed ) const
 {
 	uint32_t self = m_sim.PlayerNetId( slot );
-	b3Vec3 look = AimDirection( slot );
-	origin = HeadPosition( slot );
+	b3Vec3 look = AimDirection( slot, pressed );
+	origin = HeadPosition( slot, pressed );
 	direction = look;
 	{
 		// What is under the crosshair: the first thing along the camera's line, from where that
 		// line passes the player (nothing between the camera and there is in the way).
-		b3Vec3 view = ViewPosition( slot );
+		b3Vec3 view = ViewPosition( slot, pressed );
 		RayHit seen;
 		b3Vec3 target = CastRay( view, b3MulSV( range, look ), self, seen ) ? seen.point : b3MulAdd( view, range, look );
 		// From the eye to it. Something right in front of the face gives no sensible direction:
@@ -649,9 +649,9 @@ bool Context::CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin
 	return CastRay( origin, b3MulSV( range, direction ), self, hit );
 }
 
-b3Vec3 Context::AimDirection( PlayerSlot slot ) const
+b3Vec3 Context::AimDirection( PlayerSlot slot, bool pressed ) const
 {
-	const PlayerInput& in = m_frame.inputs[slot];
+	const PlayerInput& in = pressed ? m_previous[slot] : m_frame.inputs[slot];
 	float yaw = detmath::YawToRadians( in.cameraYaw );
 	float pitch = float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f );
 	b3CosSin p = detmath::CosSin( pitch );

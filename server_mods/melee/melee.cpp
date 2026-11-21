@@ -1,27 +1,29 @@
-// Melee: a bat.
+// Melee: a bat (a sheet since M282, step 5: every item a sheet).
 //
-// What is in the right hand decides: a "melee.bat" there is out, wherever it came from. Who has
-// one, and when it is out, is the inventory mod's: this mod only says a bat lives in slot 3, that a
-// life starts with one, and that it hangs on the back while it is put away.
+// What the bat is and does to bodies is its look's (client/prefabs/bat.tscn and its sheet,
+// bat.rules), so it is predicted:
+//   left mouse button   a swing: the pack (melee.hold, its clip's markers) plays it, and at its
+//                       melee.strike marker a box where the player looks, pitch and all, finds the
+//                       first it meets: melee.hit (a = who swung, b = what it hit), and shoves it.
+//                       The next swing waits for melee.done: how long a swing lasts is the clip's
+// The scene says the rest of what a bat is: slot 3, each life starts with one, on the back put
+// away, its pack (inventory.start, holster, animation_pack). This file is what a sheet cannot say:
+//   - while a bat is in the hand, its holder faces where the camera looks, so the upper body bends
+//     with the pitch and the swing goes where it is drawn
+//   - damage: a hit on a player is combat.damage (40); combat applies it and credits the kill
+//     (mods cooperate by event, not by call)
+//   - heat: a bat that hurt someone glows for 2 s (melee.hot, a field on the bat itself: it cools
+//     the same on a back, on the ground or in someone else's hand). The language has no field of a
+//     carried item to change, nor a timer on one (ROADMAP step 6)
 //
-// How it is held and swung is the bat's own: its look brings an animation pack for the upper body
-// (client/animation_packs/bat_hold.tscn, "melee.hold"), which plays instead of the holder's own
-// upper body while a bat is in the hand. The legs keep the character's walk.
-//
-// Out, the "melee" stance is set and the body faces where the camera looks. The left mouse button
-// swings: "melee.swing", which the pack's Swing state starts on, and at the strike a fan of short
-// rays in front of the chest looks for someone to hit. Hits are posed like everything else, so a
-// swing lands where it is drawn. How long a swing lasts is the animation's: its "melee.strike"
-// marker is the hit, its "melee.done" marker the end, after which the next may start (the pack
-// goes back to Ready on the same marker). A character without the markers swings by the timers.
-//
-// Health is not kept here. A hit goes out as "combat.damage", and the combat mod applies it and
-// credits the kill: mods cooperate by event, not by call.
+// Until M282 the swing was this file's: five rays fanned from the chest at the strike, against the
+// posed hitboxes, the stances "melee" and "melee_swing" (read by nothing), and the look guessed the
+// swing (predict use as melee.swing, cooldown 1.1). A sheet's find meets capsules, as the fist's
+// and the sword's do.
 
 #include "mod_api.h"
 
 #include <algorithm>
-#include <array>
 #include <vector>
 
 namespace
@@ -31,30 +33,10 @@ using namespace cb;
 using namespace cb::mods;
 
 constexpr int32_t kDamage = 40;
-constexpr float kSwingSeconds = 0.45f;	// how long a swing lasts, unless the animation says (melee.done)
-constexpr float kStrikeSeconds = 0.2f;	// when in the swing the hit is tested, unless the animation says
-constexpr float kCooldownSeconds = 0.6f; // from a swing's start to the next, at least
-constexpr float kHotSeconds = 2.0f; // how long the bat glows after it hits someone
-constexpr float kReach = 1.8f;			// metres from the chest
-constexpr float kFan = 0.45f;			// radians either side of straight ahead
-constexpr float kPush = 7.0f;			// m/s given to whatever it knocks over
+constexpr float kHotSeconds = 2.0f; // how long the bat glows after it hurts someone
+constexpr float kShove = 7.0f;		// m/s: what the sheet shoves with (the ragdoll's last hit)
 
-uint32_t Ticks( const Context& ctx, float seconds )
-{
-	return uint32_t( seconds * float( ctx.Config().tickRate ) + 0.5f );
-}
-
-struct Swinger
-{
-	bool out = false;
-	bool swinging = false;
-	bool struck = false;
-	uint32_t swingStart = 0;
-	uint32_t nextSwing = 0;
-};
-
-// A bat that hit someone, and when it cools. By the item, not by who held it: it cools the same
-// on a back, on the ground or in someone else's hand.
+// A bat that hurt someone, and when it cools. By the item, not by who held it.
 struct HotBat
 {
 	uint32_t netId = 0;
@@ -71,44 +53,29 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		// The bat is an item of its own in the right hand: the swing animation plays its "slash",
-		// and it has its own state (hot for a while after it hits someone).
-		// Its body when it lies in the world is authored in its scene (client/prefabs/bat.tscn, the
-		// CbItem) and baked to client/items/melee.bat.cfg.
-		m_bat = declare.ItemKind( "melee.bat" );
-		// The bat brings its own upper body: while it is held (from the slot or picked up), the
-		// pack's "UpperBody" layer plays instead of the holder's own: ready, and the swing.
-		declare.ItemLayers( m_bat, declare.AnimPack( "melee.hold" ) );
-		// (That a bat takes half a second to pick up is authored with the item: the CbItem's
-		// properties, "pickup.hold_seconds".)
+		// The bat is its look's: kind melee.bat, its pack, its holster, its sheet.
+		for ( const Declarations::OwnItem& item : declare.ItemsOfLook() )
+		{
+			m_bat = item.look.kind == "melee.bat" ? item.kind : m_bat;
+		}
 		m_hand = declare.Socket( "RightHand" );
-		declare.ItemProperty( m_bat, "inventory.start", 1.0f );
-		// (This mod says when a bat is used: the item mod's own cue on the press is not wanted.)
-		declare.ItemProperty( m_bat, "item.ruled", 1.0f );
-		declare.ItemProperty( m_bat, "holster", declare.Socket( "Back" ) );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool, BoardScope::Entity, true ); // (shared: the bat glows on others too)
-		m_full = declare.Layer( "full" );
-		m_ready = declare.Stance( "melee" );
-		m_swingStance = declare.Stance( "melee_swing" );
-		// a = who swings.
-		m_swing = declare.Event( "melee.swing" );
-		// a = who swung, b = who or what was hit, value = damage, point = where, vector = normal.
+		// What the sheet says: a swing starting, its hit; the clip's markers.
+		declare.Event( "melee.swing" );
 		m_hit = declare.Event( "melee.hit" );
+		declare.Event( "melee.strike" );
+		declare.Event( "melee.done" );
 		m_damage = declare.Event( "combat.damage" );
-		// A marker in the character's swing animation: the frame it connects (a = who swings).
-		m_strike = declare.Event( "melee.strike" );
-		// Another: the swing is over, the follow-through too; the next may start.
-		m_done = declare.Event( "melee.done" );
+	}
+
+	void Start( Context& ctx ) override
+	{
+		m_hotTicks = uint32_t( kHotSeconds * float( ctx.Config().tickRate ) + 0.5f );
 	}
 
 	void Tick( Context& ctx ) override
 	{
-		uint32_t tick = ctx.Tick();
-		// A swing that carries a strike marker (the pack's, or a character's own) hits on it; one
-		// without, on the timer.
-		bool marked = ctx.AnimationEmits( m_strike );
-		bool endMarked = ctx.AnimationEmits( m_done );
-		std::vector<ModEventRecord> recent = marked || endMarked ? ctx.RecentEvents() : std::vector<ModEventRecord>();
+		const uint32_t tick = ctx.Tick();
 		for ( size_t i = 0; i < m_hotBats.size(); )
 		{
 			if ( tick >= m_hotBats[i].until )
@@ -123,145 +90,92 @@ public:
 		}
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
-			PlayerSlot slot = PlayerSlot( i );
-			Swinger& s = m_swingers[size_t( i )];
+			const PlayerSlot slot = PlayerSlot( i );
 			if ( ctx.Joining( slot ) || ctx.Leaving( slot ) )
 			{
-				s = Swinger{};
+				m_out[size_t( i )] = false;
 			}
-			uint32_t netId = ctx.PlayerNetId( slot );
 			const Character* c = ctx.PlayerCharacter( slot );
-			if ( netId == 0 || c == nullptr )
+			if ( c == nullptr || ctx.PlayerNetId( slot ) == 0 )
 			{
 				continue;
 			}
-			uint32_t target = SlotTarget( slot );
-
-			uint32_t inHand = ctx.HeldItem( slot, m_hand );
-			bool batInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_bat.index;
-
-			bool holding = batInHand && c->dead == 0;
-			if ( holding != s.out )
+			const bool holding = c->dead == 0 && BatOf( ctx, slot ) != 0;
+			if ( holding != m_out[size_t( i )] )
 			{
-				s.out = holding;
-				s.swinging = false;
-				ctx.SetStance( target, m_full, holding ? m_ready : StanceHandle{} );
+				m_out[size_t( i )] = holding;
+				// Out: it faces where it looks (and so bends with the pitch). Put away, the inventory mod
+				// lets it go.
 				if ( holding )
 				{
-					ctx.FaceCamera( target, true );
+					ctx.FaceCamera( SlotTarget( slot ), true );
 				}
 			}
-			if ( holding == false )
+		}
+
+		for ( const ModEventRecord& e : ctx.RecentEvents() )
+		{
+			if ( int( e.type ) == m_hit.index )
 			{
-				continue;
-			}
-			if ( s.swinging )
-			{
-				uint32_t elapsed = tick - s.swingStart;
-				bool strike = marked == false && elapsed >= Ticks( ctx, kStrikeSeconds );
-				for ( const ModEventRecord& e : recent )
-				{
-					strike |= e.type == uint16_t( m_strike.index ) && e.netIdA == netId;
-				}
-				if ( s.struck == false && strike )
-				{
-					s.struck = true;
-					if ( Strike( ctx, slot, netId ) )
-					{
-						// A hit heats the bat: one field on the bat itself, until it cools.
-						ctx.Set( inHand, m_hot, 1 );
-						uint32_t until = tick + Ticks( ctx, kHotSeconds );
-						auto hot = std::find_if( m_hotBats.begin(), m_hotBats.end(), [&]( const HotBat& b ) { return b.netId == inHand; } );
-						if ( hot != m_hotBats.end() )
-						{
-							hot->until = until;
-						}
-						else
-						{
-							m_hotBats.push_back( { inHand, until } );
-						}
-					}
-				}
-				bool done = endMarked == false && elapsed >= Ticks( ctx, kSwingSeconds );
-				for ( const ModEventRecord& e : recent )
-				{
-					done |= e.type == uint16_t( m_done.index ) && e.netIdA == netId;
-				}
-				if ( done )
-				{
-					s.swinging = false;
-					ctx.SetStance( target, m_full, m_ready );
-				}
-				continue;
-			}
-			if ( ctx.Used( slot, m_bat ) && c->frozen == 0 && tick >= s.nextSwing )
-			{
-				s.swinging = true;
-				s.struck = false;
-				s.swingStart = tick;
-				s.nextSwing = tick + Ticks( ctx, kCooldownSeconds );
-				ctx.SetStance( target, m_full, m_swingStance );
-				ctx.Emit( m_swing, target );
+				Hit( ctx, e.netIdA, e.netIdB, e.point );
 			}
 		}
 	}
 
 private:
-	// True when it hit a player.
-	bool Strike( Context& ctx, PlayerSlot slot, uint32_t netId )
+	// The bat in the player's hand (0: none).
+	uint32_t BatOf( Context& ctx, PlayerSlot slot ) const
 	{
-		uint32_t target = SlotTarget( slot );
-		// From the chest, fanned out sideways across where the player looks, and as far up or down
-		// as it looks: the upper body bows with the camera, and the bat goes where the body does.
-		b3Vec3 chest = b3Sub( ctx.EyePosition( slot ), b3Vec3{ 0.0f, 0.45f, 0.0f } );
-		b3Vec3 aim = ctx.AimDirection( slot );
-		float level = b3Length( b3Vec3{ aim.x, 0.0f, aim.z } ); // the cosine of the pitch
-		if ( level < 1e-4f )
-		{
-			return false;
-		}
-		b3Vec3 flat = b3MulSV( 1.0f / level, b3Vec3{ aim.x, 0.0f, aim.z } );
-		for ( float angle : { 0.0f, -kFan, kFan, -0.5f * kFan, 0.5f * kFan } )
-		{
-			b3Quat turn = b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, angle );
-			b3Vec3 side = b3RotateVector( turn, flat );
-			// What it knocks away still goes along the ground (`side`), not into it.
-			b3Vec3 dir = { side.x * level, aim.y, side.z * level };
-			RayHit hit;
-			if ( ctx.CastRay( chest, b3MulSV( kReach, dir ), netId, hit ) == false )
-			{
-				continue;
-			}
-			if ( ctx.IsPlayer( hit.netId ) )
-			{
-				b3Vec3 push = b3Add( b3MulSV( kPush, side ), b3Vec3{ 0.0f, 2.0f, 0.0f } );
-				ctx.Emit( m_hit, target, hit.netId, kDamage, hit.point, hit.normal );
-				ctx.Emit( m_damage, target, hit.netId, kDamage, hit.point, push );
-				return true; // one player per swing
-			}
-			if ( ctx.IsDynamic( hit.netId ) )
-			{
-				ctx.Emit( m_hit, target, hit.netId, 0, hit.point, hit.normal );
-				ctx.Push( hit.netId, hit.point, b3MulSV( kPush, side ), ImpulseVelocity );
-				return false;
-			}
-		}
-		return false;
+		const uint32_t inHand = ctx.HeldItem( slot, m_hand );
+		return inHand != 0 && m_bat.Valid() && ctx.ItemKindOf( inHand ).index == m_bat.index ? inHand : 0;
 	}
 
-	std::array<Swinger, kMaxPlayers> m_swingers{};
+	void Hit( Context& ctx, uint32_t attacker, uint32_t victim, b3Vec3 point )
+	{
+		const int slot = ctx.SlotOf( attacker );
+		if ( victim == 0 || victim == attacker || slot < 0 || ctx.IsPlayer( victim ) == false )
+		{
+			return; // (a prop: the sheet's shove is all)
+		}
+		const Transform* from = ctx.EntityTransform( attacker );
+		const Transform* to = ctx.EntityTransform( victim );
+		if ( from == nullptr || to == nullptr )
+		{
+			return;
+		}
+		b3Vec3 away = b3Sub( to->position, from->position );
+		away.y = 0.0f;
+		const float length = b3Length( away );
+		away = length > 0.01f ? b3MulSV( 1.0f / length, away ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+		// (Combat spares a teammate itself.)
+		ctx.Emit( m_damage, attacker, victim, kDamage, point, b3Add( b3MulSV( kShove, away ), b3Vec3{ 0.0f, 2.0f, 0.0f } ) );
+		// A hit heats the bat: one field on the bat itself, until it cools.
+		const uint32_t bat = BatOf( ctx, PlayerSlot( slot ) );
+		if ( bat == 0 )
+		{
+			return;
+		}
+		ctx.Set( bat, m_hot, 1 );
+		const uint32_t until = ctx.Tick() + m_hotTicks;
+		auto hot = std::find_if( m_hotBats.begin(), m_hotBats.end(), [&]( const HotBat& b ) { return b.netId == bat; } );
+		if ( hot != m_hotBats.end() )
+		{
+			hot->until = until;
+		}
+		else
+		{
+			m_hotBats.push_back( { bat, until } );
+		}
+	}
+
+	std::vector<bool> m_out = std::vector<bool>( kMaxPlayers, false );
 	std::vector<HotBat> m_hotBats;
 	ItemKindHandle m_bat;
 	SocketHandle m_hand;
 	FieldHandle m_hot;
-	LayerHandle m_full;
-	StanceHandle m_ready;
-	EventHandle m_done;
-	StanceHandle m_swingStance;
-	EventHandle m_swing;
 	EventHandle m_hit;
 	EventHandle m_damage;
-	EventHandle m_strike;
+	uint32_t m_hotTicks = 120;
 };
 
 } // namespace

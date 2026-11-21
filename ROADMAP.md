@@ -78,8 +78,8 @@ Which steps launch needs: [the road](#the-road).
 | 3b | [Many players](#3b-many-players) | done (M251 to M261) | |
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
-| 5 | [Every item a sheet](#5-every-item-a-sheet) | **next** (2026-11-21: before the alpha) | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | after 5 (before the alpha) | yes: the sheet's format settled, with a version |
+| 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
+| 6 | [Sheets improved](#6-sheets-improved) | **next** (before the alpha) | yes: the sheet's format settled, with a version |
 | 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
@@ -292,6 +292,21 @@ cleared; a round does not mend the walls).
 The fist's way for every item: the item's sheet runs its use in every simulation (predicted), and
 the mod's C++ turns its hit events into damage (`brawl.cpp` is the model, 158 lines).
 
+**Done (M282, 2026-11-21)**, kept small (the owner: convert in today's language; what it cannot
+say stays C++ and goes on [step 6's list](#found-by-step-5)):
+- **The bat**: `bat.rules` swings (the clip's markers say when it strikes and when it ends: its
+  length in one place), its find the nearest player and two loose bodies; `melee.cpp` (272 lines to
+  186) turns a hit into damage, faces the holder to the camera, and keeps the bat's heat. Its
+  stances and the look's guess went. A sheet's find meets capsules, not posed hitboxes.
+- **The guns**: the trigger is the sheet's (`Fire`, `Dry`, `Reload`; the pistol once a press, the
+  rifle while held), so `predict` lines went (the mark mod's scan keeps one); the shot is the
+  server's, heard on the sheet's `item.use`, aimed along the camera the player had when it fired,
+  hit-tested against posed hitboxes, its end said as `item.reach` (the tracer). The rounds and the
+  reload's end stay C++.
+- Left as they are: the mark mod's scan (only the server knows who is marked).
+
+The plan as it was written before (the bat, then the guns):
+
 **The bat today:**
 
 | | |
@@ -327,6 +342,20 @@ motion Strike on melee.strike
   event. A cast that poses what it passes near is possible later (the pose is deterministic).
 
 ### 6. Sheets improved
+
+#### Found by step 5
+
+What the bat and the guns could not say in a sheet (M282), so their C++ still does it:
+
+| Missing | Who needed it | Today |
+|---|---|---|
+| `change` on the item's own fields | the gun's rounds (a magazine is the gun's, in whose hand ever), the bat's heat | the sheet changes the holder's `gun.ammo`; `gun.cpp` keeps the gun's `gun.rounds` and says the count to the holder again wherever they differ |
+| A timer on a carried item | the reload's end, the bat cooling after 2 s | C++ timers |
+| Parameters (`param`), and expressions in `cooldown` | the time between shots: a number in the sheet, once the scene's `gun.fire_seconds` | written in each gun's sheet |
+| Held use as a trigger | the rifle: `when using.gun.rifle ...` with `until` and `every 0.1` (64 times at most) | works for a magazine of 30; a longer one needs a repeat without the cap |
+| An event's value or point from a find | the bat's hit sound was louder on a player (by the server's damage) | one sound for anything hit |
+| A find that prefers players | the bat: the nearest of all was a ball lying closer | two finds (players, then bodies) |
+| A hit test against posed hitboxes in a sheet | the shot (head shots) | the server's, heard on `item.use`; step 7's bone shapes are the start |
 
 The language is right: bounded, deterministic, run by every simulation, so skills are predicted
 (Overwatch does the same with a visual language, Statescript). What changes is how it is attached,

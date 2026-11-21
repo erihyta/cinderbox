@@ -1,10 +1,8 @@
 [gd_scene format=3]
 
 ; How the melee mod sounds, as world reactions (the sheet beside it, reactions_melee.rules); the
-; bat's own glow and sparks are rules of prefabs/bat.rules. The Bat node says how the "melee.bat"
-; item looks. PredictSwing, in the bat's own sheet, says what the server answers to the viewer's own press of the use button with the bat in
-; the hand, so the swing is heard at once, and which stance the server will set, so the body
-; swings at once too.
+; bat's own swing, glow and sparks are prefabs/bat.rules (the swing a motion every simulation runs
+; since M282, so it is seen and heard at once without a guess).
 
 [node name="MeleeReactions" type="Node3D"]
 
