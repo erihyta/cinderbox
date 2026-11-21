@@ -387,7 +387,6 @@ motion Swing on use
 | `impulse`, `force`, `move`, `move for`, `link`, `launch`, `follow`, `remove self` | as today | |
 | `break radius R [speed S] [seconds S] [at POINT]` | breakable walls near the owner, **or near a point** | `at` (**new**) |
 | `apply STATUS for S [on WHO]` (**new**) | a status on the owner or on what a find found (6.7.6) | |
-| `start NAME` (**new**) | starts another motion of the same sheet, as if its trigger had come (its `if`, cooldown and uses still decide) | |
 | `throw VALUE along DIR [marks EVENT for S]` (**new**) | an impulse that marks the body as thrown by the owner: if it strikes a player within S seconds, EVENT is said (A the thrower, B the one struck, value its speed) | |
 
 #### 6.7.4 Finding, holding, and where
@@ -441,28 +440,38 @@ stunned`).
   (decision D7: the newer replaces the same status, or the longer wins: leaning the longer).
 - **It replaces**: `sword.stunned` (C++ field and timer), the guard's `move` while held stays a move.
 
-#### 6.7.7 Combos (new)
+#### 6.7.7 Combos: timed motions (decided D6, 2026-11-21)
+
+No word of its own: a combo is motions and a `timer` field (6.4), which every machine runs.
 
 ```
-motion Punch on use
+field brawl.combo int
+field brawl.combo_left timer                 # counts down by itself: the window
+
+motion Jab on use if brawl.combo < 2 and not active Finisher
     cooldown 0.3 s
-    combo window 1.5 s                       # the run resets 1.5 s after its last hit
-    hit 1, 2                                 # the first and second presses: a jab
-        emit brawl.fist.jab
-        wait for brawl.fist.strike or 0.35 s
-        find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
-            emit brawl.jab.hit
-            impulse 4 along facing
-        wait for brawl.fist.ready or 0.7 s
-    hit 3                                    # the third: the finisher; the run starts again
-        ...
+    blocked by stunned
+    change brawl.combo += 1
+    change brawl.combo_left = 1.5
+    wait for brawl.fist.strike or 0.35 s
+    find hitbox max 1                        # (`let hitbox = box ...`: the box written once)
+        emit brawl.jab.hit
+        impulse 4 along facing
+    wait for brawl.fist.ready or 0.7 s
+
+motion Finisher on use if brawl.combo >= 2 and not active Jab
+    ...
+
+motion ComboOver when brawl.combo_left <= 0 and brawl.combo > 0
+    change brawl.combo = 0
 ```
 
-A combo is one motion whose presses count up while each comes within the window of the last, the
-count readable (`combo Punch`) by HUDs and state machines. **It replaces** brawl's `combo` and
-`combo_left` fields, two count-down motions and the `not motion.brawl.fist.Finisher` guards.
-(Decision D6: this shape, or the fist kept as motions with timers. Leaning: this shape, after
-timers exist, so the kit can be written either way and the shorter wins.)
+- **It replaces** brawl's C++ counting of the window and three of `brawl_moves.rules`' count-down
+  motions (the timer counts itself). What stays is what the fist says today, in fewer lines.
+- **The timing will come from the clip** ([step 7](../ROADMAP.md#7-timing-from-the-clip)): a combo's
+  window is best drawn on the animation (a "next hit may start" window, two markers), as fighting
+  games author cancel windows. Today's `wait for brawl.fist.ready` is already that, with one marker;
+  step 7's windows make the window's end a marker too, and the `1.5` above goes.
 
 ### 6.8 Reactions (the viewer)
 
@@ -574,7 +583,6 @@ offers written twice (`hud_shop.tscn` and `kOffers` in `shop.cpp`).
 | steps a motion has | 64 | 64 |
 | moves a player is given at once | 6 | 6 |
 | statuses a player has at once | | 8 (**new**) |
-| combo length | | 8 (**new**) |
 | a sheet's `uses` | | one, not chained |
 
 ## 7. Before and after: the shipped sheets
@@ -629,10 +637,12 @@ motion Fire on use if gun.rounds > 0 and not active Reload
 motion Dry on use if gun.rounds <= 0 and not active Reload
     cooldown fire_interval
     emit item.use_failed
-    start Reload                            # new: starts another motion of the sheet
+    emit item.reload                        # the reload below hears it (the sound too)
 
-motion Reload on press reload if gun.rounds < magazine and not active Reload
+motion ReloadKey on press reload if gun.rounds < magazine and not active Reload
     emit item.reload
+
+motion Reload on item.reload if gun.rounds < magazine and not active Reload
     wait reload_time
     change gun.rounds = magazine            # put away before this, it is not reloaded: as today
 
@@ -664,36 +674,24 @@ react on item.hit if event.value > 0 and local
   and whether it reloads (`active gun.pistol.Reload`); `gun.ammo`, `gun.magazine` and
   `gun.reloading` go, and so does `gun.cpp`'s correcting of them.
 - **A reload is a motion that waits**: `wait reload_time` in its own steps, no timer field.
-- **`start NAME`** is the one new word here (decision D9).
+- **No new word for one motion starting another** (decided D9): it emits an event and the other
+  starts `on` it, the tick after, as any event is heard. `emit` stays the one way a motion says
+  something, to looks, to the server's C++, and to other motions.
 
-### The fist (rewritten: combo, let, statuses)
+### The fist (rewritten: timers, let, statuses)
 
 Today, 39 lines in `fist.rules`, two guards on each other's motions, the box written four times,
 the combo and its window in two C++ fields counted down by two motions in `brawl_moves.rules`.
-After (sketch):
+After:
 
 ```
 cbsheet 1
-let box = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look
-
-motion Punch on use
-    cooldown 0.3 s
-    blocked by stunned
-    combo window 1.5 s
-    hit 1, 2
-        wait for brawl.fist.strike or 0.35 s
-        find box max 1
-            emit brawl.jab.hit
-            impulse 4 along facing
-        wait for brawl.fist.ready or 0.7 s
-    hit 3
-        wait for brawl.fist.strike or 0.5 s
-        find box max 1
-            emit brawl.finisher.hit
-            impulse 70 along facing
-            impulse 5 along up
-        wait for brawl.fist.ready or 0.9 s
+let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look
+    ...
 ```
+
+(The fist as timed motions is [§6.7.7](#677-combos-timed-motions-decided-d6-2026-11-21): two motions
+and a timer, its box written once, no C++ window.)
 
 ### The dash strike and its HUD line (rewritten: readable cooldowns)
 
@@ -724,7 +722,7 @@ hud Line
     bind modulate:b = 1 - 0.45 * ready brawl.dash_strike.Use
 ```
 
-`brawl_moves.rules` and brawl's five `cd_*`/`combo*` fields go.
+`brawl_moves.rules`' three cooldown motions and brawl's `cd_*` fields go (the combo's are §6.7.7's).
 
 ### Flight (converted: words only)
 
@@ -902,7 +900,6 @@ What the new words need below the compiler, with the cost each adds to the simul
 | statuses | a small list per player (up to 8: id, ends at tick), in the snapshot and the hash; `apply` from a find; `ctx.ApplyStatus` | a list walk when motions check `blocked by` |
 | `tags`, `blocked by`, `cancels` | resolved at compile time into bit masks; starting a motion checks masks against the player's active motions and statuses | a mask test |
 | `on release`, `on tap`, `on hold` | the press tracking motions have (`prevActions`) plus how long an action has been down (per player, per action: a small array) | none |
-| `combo` | the count and the window's end in the motion's record (fits the 28 bytes: `used` and `untilTick` are there) | none |
 | `wait for X or S` | a step's wait with a time limit that goes on instead of giving up (one flag on the step) | none |
 | `every` without a cap | the repetition already comes from time; drop the constant | none |
 | `at POINT`, `look N` | finds and breaks take a centre other than the owner's feet; `look N` a ray cast to stop at the level | one ray per use |
@@ -910,7 +907,6 @@ What the new words need below the compiler, with the cost each adds to the simul
 | `toward POINT`, `toward owner` | two more directions in `MotionFrame` | none |
 | `throw ... marks` | a thrown mark on a body (who, until when, which event): a component, snapshotted; impacts of marked bodies with players say the event | one check per impact of a marked body |
 | `per second` | already how `while` changes work; the flag becomes explicit | none |
-| `start NAME` | starts another motion of the same set on this tick, through its own checks (its `if`, cooldown, uses) | none |
 
 Every one goes through the determinism CI (six compilers) and the hash; new snapshot components
 are registered with the snapshot (and the protocol version says so: [versions.md](versions.md)).
@@ -973,8 +969,8 @@ each says what its tests prove. Sizes are guesses, in the M-numbers' usual size.
 | **M284** | **The file and the node** | `CbSheet` resource (`.cbsheet`, loader and saver), the `sheet` property on `CbItem`, `CbMotionSet`, world reactions and HUD roots (each saying which blocks it allows); `CbRules` goes; publish, bake and the pack check read it | every scene points at its sheet by resource; a renamed sheet keeps working; `CbRules` gone from the code |
 | **M285** | **Version 1: one spelling** | the language of [§6.1 to 6.3, 6.6 (words), 6.8, 6.9, 6.10](#6-the-language): block keywords, indentation scopes, `wait for X or S`, word anchors, `of`, `is`, words-only logic, short asset names, `create`; `cb_sheet convert` and `fmt`; every shipped sheet converted | every shipped sheet is version 1 and compiles to the same output as before; `rules-language.md` rewritten as `sheets.md` |
 | **M286** | **Names and parameters in the sheet** | [§6.4, 6.5](#64-names-declared-in-the-sheet): `field`, `event`, `action`, `param`; the server reads them from mod items; `CbItem.properties` become parameters; the C++ looks names up; the editor needs no server build for a sheet's own names | the gun, the bat, the sword, brawl and flight declare their names in their sheets; no mod declares a name a sheet declares with another type; the pistol's numbers are in its sheet only |
-| **M287** | **State in the sheet** | [§6.4 item fields, `timer`; 6.7.3 `emit value`, `start`; 6.7.5 readable motion state](#6-the-language); the pistol's rounds and reload (`start`, `wait`), the bat's heat (`field melee.hot_left timer on item`, set in its find), brawl's cooldowns and combo window move into sheets | `gun.cpp` keeps only the shot, the damage and the aim; `melee.cpp` only damage and facing; `brawl_moves.rules` and brawl's `cd_*` fields gone; the HUD lines read cooldowns; the `rifle`, `melee`, `brawl` tests pass |
-| **M288** | **How skills meet** | [§6.7.1 tags, `blocked by`, `cancels`, shared cooldowns, `on release / tap / hold`; 6.7.6 statuses; 6.7.7 combos](#6-the-language) | the fist is one `Punch` with a combo; the sword's stun is a status; the guard and the block block attacks by tag; the bots still fight (their test passes) |
+| **M287** | **State in the sheet** | [§6.4 item fields, `timer`; 6.7.3 `emit value`; 6.7.5 readable motion state](#6-the-language); the pistol's rounds and reload (`emit`, `on EVENT`, `wait`), the bat's heat (`field melee.hot_left timer on item`, set in its find), brawl's cooldowns and combo window move into sheets | `gun.cpp` keeps only the shot, the damage and the aim; `melee.cpp` only damage and facing; `brawl_moves.rules` and brawl's `cd_*` fields gone; the HUD lines read cooldowns; the `rifle`, `melee`, `brawl` tests pass |
+| **M288** | **How skills meet** | [§6.7.1 tags, `blocked by`, `cancels`, shared cooldowns, `on release / tap / hold`; 6.7.6 statuses; 6.7.7 combos as timed motions](#6-the-language) | the fist's window is a timer (no C++); the sword's stun is a status; the guard and the block block attacks by tag; the bots still fight (their test passes) |
 | **M289** | **One sheet, many items** | [§6.11](#611-one-sheet-for-many-items): `uses`, parameter overrides, `replace`, `let` | the pistol and the rifle share `gun.cbsheet`; the fist's box written once |
 | **M290** | **Where and on what** | [§6.7.4](#674-finding-holding-and-where): `of target`, points (`look N`, `hit`, markers), `find`/`break at`, `players first`, `grab`, `toward`, `throw ... marks`; a cast in a later step | the telekinesis sheet of §7 works in a playtest (the owner's weapon, or a test mod until the owner's look is there); the bat finds with `players first` in one find |
 | **M291** | **Tools** | `cb_sheet test` and `.cbtest` files in CI; errors as you type in the editor; the formatter in the editor; the VS Code grammar | every shipped item has a `.cbtest`; a mistake typed in the editor is underlined before saving |
@@ -999,13 +995,13 @@ same after every converted milestone (M283 to M286) and the same or better after
 | D3 | Logic's symbols (`!`, `&&`, `\|\|`) | refused / kept beside the words | **decided (2026-11-21): kept**: `!a` and `not a` both, as today. (The path symbols `^^`, `$at` go with D2) |
 | D4 | What an item carries | the sheet's source / a compiled form | **decided (2026-11-21): the source**, checked by the compiler on the modder's machine when the item is cooked, and again by the store and by every game that loads it; motions compiled once by the server, looks once by each client, when the item loads (well under a millisecond a sheet; nothing per tick). A server may override an item's parameters as options ([§6.5](#65-parameters)) |
 | D5 | The word that puts a visual thing in the world (today `scene`) | `effect` / `spawn` / `create`; one word for sounds too, or `sound` kept | **`create`** for anything visual placed for a while (an effect, a prompt, a light), which may carry its own sounds; **`sound`** kept for a lone sound; `play` for animations. One word for everything is refused: `jump` is both `assets/sfx/jump.wav` and `vfx/jump.tscn` in the game today, and a sound's options are not a visual's |
-| D6 | Combos as a word (§6.7.7) or as motions with timers | | **the word**, after timers exist: write the fist both ways and keep the shorter |
-| D7 | The same status applied twice | the newer replaces / the longer wins / they add | **the longer wins** |
+| D6 | Combos as a word or as motions with timers | | **decided (2026-11-21): timed motions** (§6.7.7); their windows from the clip in step 7 |
+| D7 | The same status applied twice | the newer replaces / the longer wins / they add | **decided (2026-11-21): the longer wins** (most statuses will be a server mod's: `ctx.ApplyStatus`) |
 | D8 | Units on numbers (`0.4 s`, `16 m/s`) | optional and checked / not at all | **decided (2026-11-21): optional and checked**: the compiler checks a unit against the word (`cooldown 0.4 m` is an error) and changes no value; a number without one means what it means today |
-| D9 | One motion starting another (`start Reload` from `Dry`) | `start NAME` / a block with two triggers (`on press reload or use if ...`) | **`start NAME`**: the started motion keeps its own `if`, cooldown and uses, so nothing is written twice |
-| D10 | A sheet that may say `apply` on another player | statuses only / fields too | **statuses only**; fields of another player stay a server mod's |
-| D11 | Tests beside sheets (`.cbtest`) | in step 6 / later | **in step 6** (M291): the format is settled now, and tests are how a modder learns it |
-| D12 | Who plans and builds | | the owner's call; this file is meant to be enough for either |
+| D9 | One motion starting another | `start NAME` / `trigger NAME` / `emit` and `on EVENT` | **decided (2026-11-21): no new word**: `emit` an event, the other motion starts `on` it (a tick later); `emit` stays. ("trigger" is already the docs' word for `on use`, `on press`, `while`) |
+| D10 | A sheet that may say `apply` on another player | statuses only / fields too | **decided (2026-11-21): statuses only**; fields of another player (health) stay a server mod's. Not a cheat: the server runs the same sheet and its result wins; a client changing its copy only mispredicts its own screen |
+| D11 | Tests beside sheets (`.cbtest`) | in step 6 / later | **decided (2026-11-21): in step 6** (M291) |
+| D12 | Who plans and builds | | **decided (2026-11-21): Claude builds it** |
 
 ## 14. Risks
 
@@ -1013,7 +1009,7 @@ same after every converted milestone (M283 to M286) and the same or better after
 |---|---|
 | **A converted sheet behaves differently** | compiled output compared for every shipped sheet at every conversion; golden files in CI; a playtest per milestone |
 | **The step takes long** (ten milestones before 4c and the alpha) | M283 to M285 are mechanical; M286 to M290 each delete C++; the owner can stop after M288 and move M289 to M292 after the alpha |
-| **New words cost rollback time** | every new piece of state is bounded (8 statuses, 8 held, combo 8) and in the snapshot; the crowd bench (`--fake-players`) before and after M287 and M288 |
+| **New words cost rollback time** | every new piece of state is bounded (8 statuses, 8 held) and in the snapshot; the crowd bench (`--fake-players`) before and after M287 and M288 |
 | **Editor integration** (a script editor for a non-script resource) | the editor already opens `.rules` coloured with names (M166 and on); `CbSheet` keeps that path |
 | **Names in two places during the move** (C++ and sheets) | M286 makes a mismatch an error at server start; the bots mod's lookup pattern for C++ |
 | **Modders' sheets break** | none exist outside this repository yet; version 0 is refused only once nothing ships it |
@@ -1040,7 +1036,7 @@ trigger     := "on use" | "on" ( "press" | "release" | "tap" ) ACTION | "on hold
              | "on" EVENT | "while" expr | "when" expr
 setting     := "cooldown" amount [ "shared" NAME ] | "uses" INT [ "refill" ( "ground" | "after" amount ) ]
              | "lasts" amount | "until" expr | "tags" names | "blocked by" names | "cancels" names
-             | "for" ( "holder" | "carrier" ) | "on item" | "combo window" amount
+             | "for" ( "holder" | "carrier" ) | "on item"
 body        := { line } { wait { line } }
 wait        := "wait" amount | "wait for" expr [ ( "or" | "within" ) amount ]
 line        := "change" FIELD ( "=" | "+=" | "-=" ) amount [ "per second" ]
@@ -1050,13 +1046,12 @@ line        := "change" FIELD ( "=" | "+=" | "-=" ) amount [ "per second" ]
              | "launch" ( "new" KIND | "carried" ) { launch-option } | "follow" NODE "over" amount
              | "break" { break-option } | "apply" STATUS "for" amount [ "on" who ]
              | "throw" amount "along" direction [ "marks" EVENT "for" amount ]
-             | "start" NAME | "remove self" | "end" | "let" NAME "=" expr
+             | "remove self" | "end" | "let" NAME "=" expr
              | "if" expr NEWLINE INDENT body DEDENT [ "else" NEWLINE INDENT body DEDENT ]
              | "every" amount NEWLINE INDENT body DEDENT
              | "timeout" NEWLINE INDENT body DEDENT
              | ( "find" | "grab" ) shape { find-option } NEWLINE INDENT { line } DEDENT
              | "cast" shape "range" number { cast-option } NEWLINE INDENT { line } DEDENT
-             | "hit" INT { "," INT } NEWLINE INDENT body DEDENT                     (in a combo)
 react       := "react" ( "on" EVENT | "while" expr ) [ "if" expr ] NEWLINE INDENT { rsetting } { rline } DEDENT
 rsetting    := "cooldown" amount | "server only"
 rline       := ( "at" place | "as" subject | "after" amount | "chance" number ) NEWLINE INDENT { rline } DEDENT
