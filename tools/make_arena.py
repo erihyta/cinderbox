@@ -20,7 +20,8 @@
 #                  outside; the parapets, the rails and the ramps' outer wall break
 #   cover          brick walls that break in the plazas beside the streets
 #   the edge       a skyline of tall blocks all round: the city goes on, nobody leaves
-#   spawns         the map's own in the park; "team1" at the west street's end, "team2" at the east's
+#   spawns         the map's own in the park; "team1" on the ring road's west side, "team2" on its east
+#                  side (the owner moved them in from the streets' ends, 2026-11-21)
 #
 # What breaks them in the team deathmatch: a body the brawl finisher throws (brawl.toss_break).
 
@@ -322,7 +323,7 @@ def park():
         node("Leaves", "MeshInstance3D", t, {"mesh": 'SubResource("%s")' % sphere_mesh(big, "Leaves")}, (0, 2.6, 0))
         node("Leaves", "MeshInstance3D", t, {"mesh": 'SubResource("%s")' % sphere_mesh(big * 0.65, "LeavesLight")}, (0.6, 3.9, -0.4))
     # Benches along the paths.
-    for x, z, yaw in [(5, 2.6, 0), (-5, 2.6, 0), (5, -2.6, math.pi), (-5, -2.6, math.pi), (2.6, 9, math.pi / 2), (-2.6, -9, -math.pi / 2)]:
+    for x, z, yaw in [(6, 2.6, 0), (-6, 2.6, 0), (6, -2.6, math.pi), (-6, -2.6, math.pi), (2.6, 9, math.pi / 2), (-2.6, -9, -math.pi / 2)]:
         b = solid("Bench", g, (x, 0.25, z), (2.2, 0.5, 0.6), "Bench", yaw=yaw)
         deco("Back", b, (0, 0.45, 0.25), (2.2, 0.5, 0.1), "Bench")
 
@@ -485,9 +486,9 @@ def skyline():
 
 def spawns():
     node("Spawn", "CbSpawn", ".", {"radius": "4.0"}, (0, 1.5, -14))
-    # Team 1 at the west street's end, facing the middle (east); team 2 at the east's, facing west.
-    node("Team1", "CbSpawn", ".", {"radius": "3.5", "tag": '"team1"'}, (-60, 1.5, 0), math.pi / 2)
-    node("Team2", "CbSpawn", ".", {"radius": "3.5", "tag": '"team2"'}, (60, 1.5, 0), -math.pi / 2)
+    # Team 1 on the ring road's west side, facing the middle (east); team 2 on its east side, facing west.
+    node("Team1", "CbSpawn", ".", {"radius": "3.5", "tag": '"team1"'}, (-29, 1.5, 0), math.pi / 2)
+    node("Team2", "CbSpawn", ".", {"radius": "3.5", "tag": '"team2"'}, (29, 1.5, 0), -math.pi / 2)
 
 
 def main():

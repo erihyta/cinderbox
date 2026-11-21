@@ -26,7 +26,7 @@ The markers carry the collision the simulation needs; everything else in the sce
    is the slice's map: a city block for 8 to 10 players, 140 m across inside a skyline of tall
    blocks (a park with trees and a fountain in the middle, a ring road and four streets, two
    towers, two open garages with ramps, brick walls for cover, street lamps, team spawns at the west
-   and east streets' ends). Its walls break, cut into chunks ([below](#the-arenas-walls)).
+   and east sides of the ring road). Its walls break, cut into chunks ([below](#the-arenas-walls)).
    `tools/make_arena.py` wrote its first draft; once it is edited in Godot, edit it there.
 2. Place `CbStatic` nodes for the collision (boxes, or [shapes](#collision-shapes) under them), and
    your own meshes, lights and effects for the look.
