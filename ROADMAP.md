@@ -71,7 +71,7 @@ Which steps launch needs: [the road](#the-road).
 
 | # | Step | State | For launch |
 |---|---|---|---|
-| 0 | [Decisions](#0-decisions) | twenty-two taken; seven open | |
+| 0 | [Decisions](#0-decisions) | twenty-four taken; six open | |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | unattended: clean. **By hand: to do** | |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | done (M243) | |
 | 3 | [Two network models](#3-two-network-models) | done (M244 to M250) | |
@@ -139,6 +139,8 @@ Which steps launch needs: [the road](#the-road).
 | **Nodes never grow with players** (2026-11-17) | every visual that comes with an entity is drawn through the RenderingServer; nodes are a fixed set (the HUD's frame, menus, the camera) and fixed pools (sound voices); lists make only the rows in view | [step 6b](#6b-cooked-items), DESIGN.md |
 | **Not on Steam** (2026-11-17, the working assumption) | no Steam Workshop: the store is Cinderbox's own | [step 6b](#6b-cooked-items), [parked](#parked) |
 | **The repository out of OneDrive** (2026-11-19) | moved to a plain folder (`C:\Cinderbox_Dev\cinderbox`, a fresh clone of `main`), GitHub the backup; the paid assets copied beside it, still outside git. Every text file is LF in the working copy whatever `core.autocrlf` says (`.gitattributes`): a clone with CRLF published every item under another hash | M261.11 |
+| **Where items are cooked** (2026-11-21) | **on the modder's machine**. What is uploaded is only cooked assets and sheets, the sandbox's own formats: never a Godot project or scene. The store checks every upload with the game's reader and the budgets before anyone can download it (no sandbox in the store: it never reads a stranger's Godot files) | [step 6b](#6b-cooked-items) |
+| **Shaders** (2026-11-21) | **no custom shaders**. Later, materials of the modders' own, made from shaders we ship and have checked (their parameters, textures and colours the modder's) | [step 6b](#6b-cooked-items) |
 | **GDScript stays in the shipped game, for now** (2026-11-17) | taking it out (export templates built without it, the game's own scripts moved into the extension) is postponed: once no mod content is a Godot pack, content cannot reach a script engine. Until then the tightened pack check (M262) is the only guard | [3c](#3c-groundwork), [6b](#6b-cooked-items) |
 
 **Open:**
@@ -151,7 +153,6 @@ Which steps launch needs: [the road](#the-road).
 | **Which servers the game joins at launch** | any; official or listed ones only | none yet: any server needs every decoder of server data fuzzed first. The review's lean: official and listed. Mods are compiled C++, so a community host runs a server program of its own, and Box3D's world bytes were not made to be read from a hostile source | [before launch](#before-launch) |
 | **Players' own avatars at launch** | uploaded by players; a curated set (the owner's models) | none yet: uploads need terms, moderation and budgets. The review's lean: a curated set; with a store of our own (not Steam), moderating uploads is all ours | [step 11](#11-avatars) |
 | **Our own mod editor** (raised 2026-11-17) | Godot's editor with plugins ([step 9](#9-cinderbox-studio)); an editor of our own, closer to the ECS | the review's lean: Godot's editor. Authoring in a tree and baking to an ECS is the usual split (Unity's DOTS authors GameObjects and bakes them to entities); Godot's import, animation, AnimationTree, particle, material and UI editors would each have to be rebuilt. The ECS-native tool worth making is a live tuning panel in the game (the mirror's entities, the board) | [step 9](#9-cinderbox-studio) |
-| **Where items are cooked** (raised 2026-11-17) | on the modder's machine; in the store, from the uploaded project (Roblox converts uploads on its side) | the review's lean: the modder's machine first; the store checks every upload with the client's reader and the budgets before anyone can download it. Cooking in the store lets old items be cooked again when the format changes, but the store then reads strangers' Godot files and needs a sandbox | [step 6b](#6b-cooked-items) |
 
 ### 1. Stabilize M215 to M234
 
@@ -422,7 +423,8 @@ anyone's items, players' own restyles included.
 - Every version stays fetchable while the store keeps it, so a server pinned to a hash always finds
   its item (Steam would serve only an item's latest version).
 - The store checks every upload with the same reader and the budgets (triangles, materials, texture
-  sizes) before anyone can download it. Where items are cooked is open ([step 0](#0-decisions)).
+  sizes) before anyone can download it. Items are cooked on the modder's machine, and only cooked
+  assets and sheets are uploaded (decided 2026-11-21, [step 0](#0-decisions)).
 - Downloads compressed (Zstd) once items grow; today's items are 1.5 to 88 KB.
 - From Hytale ([docs/hytale-comparison.md](docs/hytale-comparison.md#asset-delivery-looked-at-again-2026-11-17)):
   sizes declared before any byte, a cap per file; not its transfer on join, which a plugin exists
@@ -454,8 +456,10 @@ controls).
 **Also:**
 - The editor's previews (the Cue Preview, an item's, a character's) cook on the fly and draw with
   the game's own code, so a look is the same in the editor and in the game.
-- Shaders are decided with the reader: refused, or a checked subset (a modder's shader source would
-  be read by Godot's shader compiler).
+- Shaders (decided 2026-11-21): **refused**; a modder's shader source would be read by Godot's shader
+  compiler. Materials are ours: later, modders make their own from shaders we ship and checked (a
+  material names one and sets its parameters, textures and colours), so the reader knows every
+  shader a material can ask for.
 - Once no mod content is a Godot pack, nothing a stranger made reaches GDScript, so removing it from
   the shipped game is not needed for content (postponed: [step 0](#0-decisions)).
 
