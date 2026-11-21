@@ -343,6 +343,10 @@ motion Strike on melee.strike
 
 ### 6. Sheets improved
 
+**The plan (2026-11-21): [docs/step6-plan.md](docs/step6-plan.md)**: the language as it would be, the
+shipped sheets before and after, the compiler, what the engine has to learn, ten milestones (M283 to
+M292), and the owner's decisions it needs (D1 to D12). What follows is the step's summary.
+
 #### Found by step 5
 
 What the bat and the guns could not say in a sheet (M282), so their C++ still does it:
