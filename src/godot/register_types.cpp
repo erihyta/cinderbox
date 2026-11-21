@@ -17,6 +17,7 @@
 #include "cue_rules.h"
 #include "cinderbox_rules_editor.h"
 #include "cinderbox_skeleton.h"
+#include "cinderbox_sheet.h"
 #include "move_params.h"
 
 #include <gdextension_interface.h>
@@ -43,9 +44,11 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 		// A character is baked when its scene is saved.
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbMotionInspector );
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbAutoBakePlugin );
-		// A rules sheet in the script editor: colours, names offered, mistakes marked.
+		// A sheet in the Sheet screen: colours, names offered, mistakes marked.
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbRulesHighlighter );
 		EditorPlugins::add_by_type<cb::gd::CbAutoBakePlugin>();
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbSheetEditorPlugin );
+		EditorPlugins::add_by_type<cb::gd::CbSheetEditorPlugin>();
 		return;
 	}
 	if ( level != MODULE_INITIALIZATION_LEVEL_SCENE )
@@ -71,6 +74,11 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbAnimPack );
 	GDREGISTER_CLASS( cb::gd::CbDirector );
 	GDREGISTER_CLASS( cb::gd::CbReaction );
+	// A sheet: a .cbsheet file, read and written by the extension's own loader and saver.
+	GDREGISTER_CLASS( cb::gd::CbSheet );
+	GDREGISTER_INTERNAL_CLASS( cb::gd::CbSheetLoader );
+	GDREGISTER_INTERNAL_CLASS( cb::gd::CbSheetSaver );
+	cb::gd::AddSheetFormats();
 	GDREGISTER_CLASS( cb::gd::CbRules );
 	GDREGISTER_CLASS( cb::gd::CbPrediction );
 	GDREGISTER_CLASS( cb::gd::CbNames );
@@ -105,8 +113,12 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbPromptLabel );
 }
 
-void UninitializeCinderbox( ModuleInitializationLevel )
+void UninitializeCinderbox( ModuleInitializationLevel level )
 {
+	if ( level == MODULE_INITIALIZATION_LEVEL_SCENE )
+	{
+		cb::gd::RemoveSheetFormats();
+	}
 }
 
 } // namespace

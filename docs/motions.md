@@ -49,7 +49,7 @@ ctx.Set( SlotTarget( slot ), m_charges, charges + 1 );   // one back every 2 s
 
 ```
 Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/dash_moves.tscn)
-└── Rules    CbRules       motion_sets/dash_moves.rules:
+└── Rules    CbRules       motion_sets/dash_moves.cbsheet:
 
 motion DoubleJump on press jump if not grounded and dash.double_jump_on
     uses 1 refill ground
@@ -78,7 +78,7 @@ under them (*what happens to whom*): [rules-language.md](rules-language.md#a-mot
 Under a `CbItem`, a sheet's `use` rule is what using the item does (its own key, or the use button
 with it in the hand), if its **When used** rules allow:
 
-The boots' sheet (`server_mods/dash/client/prefabs/boots.rules`, a `CbRules` under the item):
+The boots' sheet (`server_mods/dash/client/prefabs/boots.cbsheet`, a `CbRules` under the item):
 
 ```
 use if dash.charges > 0
@@ -100,7 +100,7 @@ motion as text: steps that wait (`then when grounded`, `after 0.5`, a
 (`when`). The grammar: [rules-language.md](rules-language.md).
 
 ```
-# prefabs/slam.rules: a dive, and where it lands said on the tick after it touches the ground
+# prefabs/slam.cbsheet: a dive, and where it lands said on the tick after it touches the ground
 motion Slam on use if brawl.cd_slam <= 0 and not grounded
     lasts 3
     change brawl.cd_slam = 5
@@ -111,7 +111,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 ```
 
 ```
-# prefabs/boots.rules
+# prefabs/boots.cbsheet
 use if dash.charges > 0
     change dash.charges -= 1
     cooldown 0.4
@@ -259,7 +259,7 @@ starts on that event, and ends on the same event, so the throw is predicted like
 ```
 Hook          CbItem     kind "grapple.hook", use: once a press, use_key Q, slot 4   (prefabs/hook.tscn)
 │                        animation_pack grapple.hook_arm: the left arm's throw, while motion.grapple.hook.Throwing
-└── Rules     CbRules    prefabs/hook.rules:
+└── Rules     CbRules    prefabs/hook.cbsheet:
 
 motion Throw on use if not linked
     until grapple.hook.used or pressed.jump        # using it again, or a jump, lets go
@@ -352,7 +352,7 @@ Frag    CbItem   kind "frag.grenade"   use: once a press   slot 6   use_key H   
 ├── Body  CollisionShape3D   a sphere, 9 cm
 ├── Ball, Band  MeshInstance3D
 ├── Blast       Area3D     a ball 8 m round: where its blast throws things (not its body)
-└── Rules       CbRules    frag.rules:
+└── Rules       CbRules    frag.cbsheet:
 
 motion Throwing on use                 # the arm's throw (its pack reads it); its clip says frag.release
     item carried
@@ -381,7 +381,7 @@ mod declares `frag.grenade.expired`) at where it is, with the item as the first 
 threw it as the second. It is the simulation's, so the thrower's own game has it on the same tick
 (`net_frag`: 240 ticks of flight, bounces and the fuse, the server's exactly). Before it goes, its
 own motions that answer it run (a sheet's [`owner item`](rules-language.md#settings)):
-the grenade's `frag.rules` says `frag.blast`, breaks the walls near it and throws what is loose, on
+the grenade's `frag.cbsheet` says `frag.blast`, breaks the walls near it and throws what is loose, on
 that tick on every machine. The frag mod hears the event (`ctx.RecentEvents()`) and hurts who was
 near, and flings the bodies it killed.
 
@@ -439,7 +439,7 @@ The double jump and the jetpack ship this way, off by default
 player its first tank; everything else is the set.
 
 ```
-# motion_sets/flight_moves.rules (the sheet of flight_moves.tscn's CbMotionSet, "flight.moves")
+# motion_sets/flight_moves.cbsheet (the sheet of flight_moves.tscn's CbMotionSet, "flight.moves")
 motion FlyOn on press fly if not flight.on
     change flight.on = 1
     emit flight.started

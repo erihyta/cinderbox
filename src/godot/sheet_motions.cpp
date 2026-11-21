@@ -1,5 +1,6 @@
 #include "sheet_motions.h"
 
+#include "cue_rules.h"
 #include "sheet_bake.h"
 #include "sheet_rules.h"
 
@@ -10,7 +11,6 @@
 #include <godot_cpp/classes/convex_polygon_shape3d.hpp>
 #include <godot_cpp/classes/cylinder_shape3d.hpp>
 #include <godot_cpp/classes/curve3d.hpp>
-#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/path3d.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
@@ -281,13 +281,14 @@ bool BakeSheetMotions( const Node* node, const String& kind, std::string& lines,
 	TypedArray<Node> sheets = node->find_children( "*", "CbRules", true, false );
 	for ( int64_t s = 0; s < sheets.size(); ++s )
 	{
-		String file = Object::cast_to<Node>( sheets[s] )->get( "file" );
-		if ( file.is_empty() || FileAccess::file_exists( file ) == false )
+		const CbRules* holder = Object::cast_to<CbRules>( sheets[s] );
+		if ( holder == nullptr || holder->get_sheet().is_null() )
 		{
 			continue;
 		}
+		String file = holder->SheetName();
 		sheet::Strings problems;
-		const String text = FileAccess::get_file_as_string( file );
+		const String text = holder->SheetText();
 		const std::vector<sheet::Rule> rules = sheet::ParseRules( Std( text ), problems );
 		// A sheet with motion blocks bakes only without a mistake: one it could not read would be a
 		// motion silently left out.

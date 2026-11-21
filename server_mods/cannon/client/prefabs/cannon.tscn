@@ -1,5 +1,7 @@
 [gd_scene format=3 uid="uid://o6sh7ttyhysd"]
 
+[ext_resource type="CbSheet" path="res://prefabs/cannon.cbsheet" id="sheet"]
+
 [sub_resource type="CylinderShape3D" id="Body"]
 height = 0.9
 radius = 0.14
@@ -35,4 +37,4 @@ transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0
 mesh = SubResource("Barrel")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/cannon.rules"
+sheet = ExtResource("sheet")

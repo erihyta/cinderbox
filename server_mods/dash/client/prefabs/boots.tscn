@@ -4,13 +4,15 @@
 ; the hand like any item, or by their own key, V (use_key), wherever they are carried: nothing
 ; changes hands. Players choose their own key on the Keys page.
 ;
-; What a use does is the "use" rule of its sheet (boots.rules): it bakes with the item into one
+; What a use does is the "use" rule of its sheet (boots.cbsheet): it bakes with the item into one
 ; motion, "Use" (items/dash.boots.cfg, motions/dash.boots.cfg).
 ; Its pose is its pack's (animation_packs/boots_dash.tscn, dash.boots_dash): a layer laid over the
 ; whole body while motion.dash.boots.Use is on.
 ;
 ; The server mod (server_mods/dash/dash.cpp) takes the item from here (declare.ItemsOfLook()),
 ; declares the fields and events the use reads and says, and gives the charges back.
+
+[ext_resource type="CbSheet" path="res://prefabs/boots.cbsheet" id="sheet"]
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.12, 0.14, 0.28)
@@ -55,4 +57,4 @@ mesh = SubResource("Shaft")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09, 0.08)
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/boots.rules"
+sheet = ExtResource("sheet")

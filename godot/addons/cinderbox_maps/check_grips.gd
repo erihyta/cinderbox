@@ -157,9 +157,9 @@ func _initialize() -> void:
 	made[0].hud = "ui/test_hud.tscn"
 	_check("a HUD that is not res:// is refused", made[0].bake().text == "" and String(made[0].bake().error).contains("hud"), made[0].bake().error)
 	made[0].hud = ""
-	# What using it does, as a use rule of its sheet (check_rules_use.rules): baked into its motions.
+	# What using it does, as a use rule of its sheet (check_rules_use.cbsheet): baked into its motions.
 	var sheet := CbRules.new()
-	sheet.file = "res://addons/cinderbox_maps/check_rules_use.rules"
+	sheet.sheet = load("res://addons/cinderbox_maps/check_rules_use.cbsheet")
 	made[0].add_child(sheet)
 	made[0].kind = "test.item"
 	var motions: Dictionary = made[0].bake_motions()

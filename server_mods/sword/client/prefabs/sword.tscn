@@ -4,9 +4,11 @@
 ;   Sword       CbItem     once a press; its pack sword.hold (animation_packs/sword_hold.tscn); hangs
 ;                          on the back while put away; each life starts with one
 ;     Model     the blade, its guard, grip and pommel; Sparks, started by the sheet's reactions
-;     Rules     CbRules    sword.rules: the swing (left mouse button: a box where the player looks,
+;     Rules     CbRules    sword.cbsheet: the swing (left mouse button: a box where the player looks,
 ;                          at the clip's sword.strike marker) and the block (right button held)
 ; Damage, blocks and parries are the server mod's (sword.cpp).
+
+[ext_resource type="CbSheet" path="res://prefabs/sword.cbsheet" id="sheet"]
 
 [sub_resource type="StandardMaterial3D" id="Steel"]
 albedo_color = Color(0.82, 0.84, 0.88, 1)
@@ -127,4 +129,4 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.4)
 shape = SubResource("Body")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/sword.rules"
+sheet = ExtResource("sheet")

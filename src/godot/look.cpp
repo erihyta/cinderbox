@@ -1405,9 +1405,8 @@ namespace
 {
 // Whether a rules sheet has anything the viewer runs: a reaction (on, while) or a prediction. A
 // motion is the simulation's.
-bool RulesDoSomething( const String& path )
+bool RulesDoSomething( const String& text )
 {
-	const String text = FileAccess::get_file_as_string( path );
 	const PackedStringArray lines = text.split( "\n" );
 	for ( const String& line : lines )
 	{
@@ -1456,7 +1455,7 @@ std::shared_ptr<ItemLook> ItemLook::FromScene( Node* root )
 		}
 		else if ( auto* rules = Object::cast_to<CbRules>( n ) )
 		{
-			if ( RulesDoSomething( rules->get_file() ) && look->m_why.is_empty() )
+			if ( RulesDoSomething( rules->SheetText() ) && look->m_why.is_empty() )
 			{
 				look->m_why = path + String( " reacts or predicts" );
 			}

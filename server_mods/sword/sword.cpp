@@ -1,7 +1,7 @@
 // Sword (M279): a blade, the slice's first weapon made for it.
 //
 // What the sword is and does to bodies is its look's (client/prefabs/sword.tscn and its sheet,
-// sword.rules), so it is predicted:
+// sword.cbsheet), so it is predicted:
 //   left mouse button   a swing: the pack (sword.hold, the mannequin's sword clips) plays it, and at
 //                       its sword.strike marker a box where the player looks, pitch and all (the
 //                       upper body bends with the camera: it can hit above and below), finds whom it

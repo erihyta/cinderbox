@@ -2,7 +2,6 @@
 
 #include "cinderbox_character.h"
 #include "cinderbox_item_look.h"
-#include "cinderbox_rules_editor.h"
 #include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
 #include "cinderbox_skeleton.h"
 
@@ -15,7 +14,6 @@
 #include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/classes/editor_paths.hpp>
 #include <godot_cpp/classes/editor_settings.hpp>
-#include <godot_cpp/classes/script_editor.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -259,22 +257,22 @@ void CbAutoBakePlugin::_enter_tree()
 	connect( "scene_saved", Callable( this, "on_scene_saved" ) );
 	m_motionInspector.instantiate();
 	add_inspector_plugin( m_motionInspector );
-	// .rules files: coloured, names offered while typing, mistakes marked on their lines.
-	if ( ScriptEditor* scripts = EditorInterface::get_singleton()->get_script_editor() )
-	{
-		m_rulesHighlighter = Ref<CbRulesHighlighter>( memnew( CbRulesHighlighter ) );
-		scripts->register_syntax_highlighter( m_rulesHighlighter );
-	}
 	OfferNodes();
 	OfferTest();
 	MakeViewPanel();
-	// A rules sheet (CbRules) is text: the editor opens .rules files in its script editor.
+	// Before M284 a sheet was a .cbsheet text file the script editor opened (this added "rules" to the
+	// editor's text files); a sheet is a .cbsheet resource now, opened in the Sheet screen
+	// (cinderbox_sheet.h). Taken out of an older editor's settings.
 	Ref<EditorSettings> settings = EditorInterface::get_singleton()->get_editor_settings();
 	const String key = "docks/filesystem/textfile_extensions";
-	String extensions = settings.is_valid() && settings->has_setting( key ) ? String( settings->get_setting( key ) ) : String();
-	if ( settings.is_valid() && extensions.split( "," ).has( "rules" ) == false )
+	if ( settings.is_valid() && settings->has_setting( key ) )
 	{
-		settings->set_setting( key, extensions.is_empty() ? String( "rules" ) : extensions + ",rules" );
+		PackedStringArray extensions = String( settings->get_setting( key ) ).split( "," );
+		if ( extensions.has( "rules" ) )
+		{
+			extensions.remove_at( extensions.find( "rules" ) );
+			settings->set_setting( key, String( "," ).join( extensions ) );
+		}
 	}
 	set_process( true );
 }
@@ -284,11 +282,6 @@ void CbAutoBakePlugin::_exit_tree()
 	disconnect( "scene_saved", Callable( this, "on_scene_saved" ) );
 	remove_inspector_plugin( m_motionInspector );
 	m_motionInspector.unref();
-	if ( ScriptEditor* scripts = EditorInterface::get_singleton()->get_script_editor(); scripts != nullptr && m_rulesHighlighter.is_valid() )
-	{
-		scripts->unregister_syntax_highlighter( m_rulesHighlighter );
-	}
-	m_rulesHighlighter.unref();
 	if ( m_viewPanel != nullptr )
 	{
 		remove_control_from_container( CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, m_viewPanel );

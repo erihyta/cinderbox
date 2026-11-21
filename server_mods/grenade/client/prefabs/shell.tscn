@@ -7,11 +7,13 @@
 ; The impact grenade: it goes off on the first hard hit (the fused one is the frag mod's). It is
 ; carried in slot 7 if it is free, out of sight; its own key (J, use_key) throws it from wherever it
 ; is, or select it and press the use button (use: a press): what is thrown is the one carried. The mod gives a new one a little after (grenade.cpp).
-;   Rules      CbRules    shell.rules: Throwing (the press, 0.7 s: the left arm's throw, its
+;   Rules      CbRules    shell.cbsheet: Throwing (the press, 0.7 s: the left arm's throw, its
 ;                         pack's; its clip says grenade.release at 0.27 s) and Release (the one
 ;                         carried, where the camera looks at 17 m/s and 3 up, 4 s to live)
 ;
 ; Saving this scene bakes it into res://items/grenade.shell.cfg.
+
+[ext_resource type="CbSheet" path="res://prefabs/shell.cbsheet" id="sheet"]
 
 [sub_resource type="SphereShape3D" id="Body"]
 radius = 0.09
@@ -65,4 +67,4 @@ mesh = SubResource("Ball")
 mesh = SubResource("BandMesh")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/shell.rules"
+sheet = ExtResource("sheet")

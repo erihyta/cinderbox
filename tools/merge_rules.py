@@ -5,7 +5,7 @@ going back to the default where the next needs it, so the merged rule does exact
 did. A rule nothing merges with is left as it is, and so are comments and predictions. The sheet is
 rewritten: look at it before you commit.
 
-    python tools/merge_rules.py <sheet.rules> [<sheet.rules> ...]
+    python tools/merge_rules.py <sheet.cbsheet> [<sheet.cbsheet> ...]
 """
 import io
 import re

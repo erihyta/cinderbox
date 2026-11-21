@@ -56,7 +56,7 @@ server_mods/gun/client/vfx/rifle_*
 server_mods/gun/client/assets/sfx/rifle_*
 server_mods/gun/client/anim/gun.rifle_hold/
 server_mods/gun/client/items/gun.rifle.cfg
-server_mods/gun/client/prefabs/rifle.rules
+server_mods/gun/client/prefabs/rifle.cbsheet*
 server_mods/gun/client/motions/gun.rifle.cfg
 server_mods/gun/client_item.cfg
 # The character built from the paid Source pack (its glb, scene, baked clips): local only.

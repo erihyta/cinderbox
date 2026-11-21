@@ -3,10 +3,12 @@
 ; The fist: the kit's click attack, in slot 1. Select it, click: a jab. Three in a row: the third is
 ; a finisher that sends the target flying. No script: the combo is a field of the player's.
 ;   Fist        CbItem     once a press
-;     Rules     CbRules    fist.rules: the Jab (brawl.combo < 2; a line 2.8 m along the look, 4 m/s
+;     Rules     CbRules    fist.cbsheet: the Jab (brawl.combo < 2; a line 2.8 m along the look, 4 m/s
 ;                          on who it hit) and the Finisher (at 2: 14 m/s and 5 up)
 ; The fading of the combo is the motion set's (motion_sets/brawl_moves.tscn); the damage is the
 ; server mod's (brawl.cpp), on the hit events.
+
+[ext_resource type="CbSheet" path="res://prefabs/fist.cbsheet" id="sheet"]
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -39,4 +41,4 @@ shape = SubResource("Body")
 mesh = SubResource("Mesh")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/fist.rules"
+sheet = ExtResource("sheet")

@@ -4608,7 +4608,7 @@ void TestBots()
 // the impact one, bounces off the floor without going off, and when its time is up (2.5 s after it
 // left the hand) the simulation says frag.grenade.expired where it is, with who threw it, and
 // removes it, on the client on the same tick as on the server; its sheet sets it off there, on that
-// tick (frag.rules: a motion the grenade owns), and the mod's C++ hurts who is near.
+// tick (frag.cbsheet: a motion the grenade owns), and the mod's C++ hurts who is near.
 void TestFrag()
 {
 	const uint32_t throwAt = 300;

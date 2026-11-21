@@ -1,9 +1,11 @@
 [gd_scene format=3]
 
 ; The deathmatch mod's round sounds and screen effects, as world reactions.
-; The reactions: the rules sheet beside this scene (reactions_deathmatch.rules).
+; The reactions: the rules sheet beside this scene (reactions_deathmatch.cbsheet).
+
+[ext_resource type="CbSheet" path="res://vfx/reactions_deathmatch.cbsheet" id="sheet"]
 
 [node name="DeathmatchReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://vfx/reactions_deathmatch.rules"
+sheet = ExtResource("sheet")

@@ -3,12 +3,14 @@
 ; The kit's clocks, as motions every simulation runs (so they are predicted): there is no cooldown a
 ; HUD can read, and no timer, so each is a Float field a While motion counts down.
 ;
-;   Rules   CbRules   brawl_moves.rules: ComboFade, ComboReset, CoolDash, CoolUpper, CoolSlam
+;   Rules   CbRules   brawl_moves.cbsheet: ComboFade, ComboReset, CoolDash, CoolUpper, CoolSlam
 ;
 ; The skills set them (their When used changes: brawl.cd_dash = 3); the server mod declares them.
+
+[ext_resource type="CbSheet" path="res://motion_sets/brawl_moves.cbsheet" id="sheet"]
 
 [node name="Moves" type="CbMotionSet"]
 set_name = "brawl.moves"
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://motion_sets/brawl_moves.rules"
+sheet = ExtResource("sheet")

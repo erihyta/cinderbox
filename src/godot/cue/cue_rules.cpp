@@ -6,7 +6,6 @@
 #include "sheet_rules.h"
 
 #include <godot_cpp/classes/engine.hpp>
-#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/color.hpp>
@@ -141,22 +140,55 @@ namespace cb::gd
 
 void CbRules::_bind_methods()
 {
-	ClassDB::bind_method( D_METHOD( "set_file", "value" ), &CbRules::set_file );
-	ClassDB::bind_method( D_METHOD( "get_file" ), &CbRules::get_file );
+	ClassDB::bind_method( D_METHOD( "set_sheet", "value" ), &CbRules::set_sheet );
+	ClassDB::bind_method( D_METHOD( "get_sheet" ), &CbRules::get_sheet );
 	ClassDB::bind_method( D_METHOD( "get_reaction_count" ), &CbRules::get_reaction_count );
 	ClassDB::bind_method( D_METHOD( "get_problems" ), &CbRules::get_problems );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "file", PROPERTY_HINT_FILE, "*.rules" ), "set_file", "get_file" );
+	ClassDB::bind_method( D_METHOD( "get_warnings" ), &CbRules::_get_configuration_warnings );
+	ADD_PROPERTY( PropertyInfo( Variant::OBJECT, "sheet", PROPERTY_HINT_RESOURCE_TYPE, "CbSheet" ), "set_sheet", "get_sheet" );
 }
 
-void CbRules::set_file( const String& v )
+void CbRules::set_sheet( const Ref<CbSheet>& v )
 {
-	m_file = v.strip_edges();
+	if ( v == m_sheet )
+	{
+		return;
+	}
+	const Callable changed = callable_mp( this, &CbRules::OnSheetChanged );
+	if ( m_sheet.is_valid() && m_sheet->is_connected( "changed", changed ) )
+	{
+		m_sheet->disconnect( "changed", changed );
+	}
+	m_sheet = v;
+	if ( m_sheet.is_valid() )
+	{
+		m_sheet->connect( "changed", changed );
+	}
+	OnSheetChanged();
+}
+
+void CbRules::OnSheetChanged()
+{
 	if ( is_inside_tree() )
 	{
 		Clear();
 		Build();
 	}
 	update_configuration_warnings();
+}
+
+String CbRules::SheetText() const
+{
+	return m_sheet.is_valid() ? m_sheet->get_text() : String();
+}
+
+String CbRules::SheetName() const
+{
+	if ( m_sheet.is_null() )
+	{
+		return String();
+	}
+	return m_sheet->get_path().is_empty() ? String( "(a sheet of its own)" ) : m_sheet->get_path();
 }
 
 int64_t CbRules::get_reaction_count() const
@@ -190,25 +222,11 @@ void CbRules::Build()
 {
 	m_built = true;
 	m_problems.clear();
-	if ( m_file.is_empty() )
+	if ( m_sheet.is_null() )
 	{
 		return;
 	}
-	// Only a file of the pack itself.
-	if ( m_file.begins_with( "res://" ) == false || m_file.contains( ".." ) )
-	{
-		m_problems.push_back( "the file is not one of this project's (res://...)" );
-		UtilityFunctions::push_warning( "CbRules ", get_path(), ": ", m_problems[0] );
-		return;
-	}
-	Ref<FileAccess> file = FileAccess::open( m_file, FileAccess::READ );
-	if ( file.is_null() )
-	{
-		m_problems.push_back( "cannot read " + m_file );
-		UtilityFunctions::push_warning( "CbRules ", get_path(), ": ", m_problems[0] );
-		return;
-	}
-	std::vector<cue::Rule> rules = cue::ParseRules( file->get_as_text(), m_problems );
+	std::vector<cue::Rule> rules = cue::ParseRules( m_sheet->get_text(), m_problems );
 	// How far a plain path may climb: no higher than the scene (the rules are written from the node
 	// this one is under).
 	int depth = 0;
@@ -278,28 +296,27 @@ void CbRules::Build()
 	}
 	for ( int64_t i = 0; i < m_problems.size(); ++i )
 	{
-		UtilityFunctions::push_warning( "CbRules ", m_file, ": ", m_problems[i] );
+		UtilityFunctions::push_warning( "CbRules ", SheetName(), ": ", m_problems[i] );
 	}
 }
 
 PackedStringArray CbRules::_get_configuration_warnings() const
 {
 	PackedStringArray out;
-	if ( m_file.is_empty() )
+	if ( m_sheet.is_null() )
 	{
-		out.push_back( "Give it a rules file (file): the reactions of this scene, as lines of text." );
+		out.push_back( "Give it a sheet (sheet: a .cbsheet file): the reactions of this scene, as lines of text." );
 		return out;
 	}
-	if ( FileAccess::file_exists( m_file ) == false )
+	if ( m_sheet->get_path().is_empty() || m_sheet->get_path().contains( "::" ) )
 	{
-		out.push_back( "No such file: " + m_file );
-		return out;
+		out.push_back( "Its sheet is kept inside the scene: save it as a .cbsheet file (the sheet's menu, Save As), so tools, the bake and the cooker read it." );
 	}
 	PackedStringArray errors;
-	cue::ParseRules( FileAccess::get_file_as_string( m_file ), errors );
+	cue::ParseRules( m_sheet->get_text(), errors );
 	for ( int64_t i = 0; i < errors.size(); ++i )
 	{
-		out.push_back( m_file.get_file() + " " + errors[i] );
+		out.push_back( SheetName().get_file() + " " + errors[i] );
 	}
 	return out;
 }

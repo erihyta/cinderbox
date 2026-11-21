@@ -1,9 +1,9 @@
 #pragma once
 
-// A rules sheet (.rules) in the editor's script editor: its words coloured, the names the server's
-// mods declare offered while typing, and what cannot be read or names nobody declares marked on its
-// line, with why when the caret is there. The editor gives a .rules file this highlighter (its
-// extension is its language), and the highlighter takes care of the text box it is given.
+// A sheet (.cbsheet) in the editor's Sheet screen (cinderbox_sheet.h): its words coloured, the names
+// the server's mods declare offered while typing, and what cannot be read or names nobody declares
+// marked on its line, with why when the caret is there. The Sheet screen gives each sheet's text box
+// one, and the highlighter takes care of the text box it is given.
 //
 // What it says is the names library's (cue_names.h: SheetProblems, Completions, WordKind), which
 // tools and checks read too (CbNames); this is only the editor's side of it.

@@ -58,7 +58,7 @@ there the first time a project is opened with it. One you take out of the favori
 | `vfx/reactions_<mod>.tscn` | predict a press (`CbPrediction`), react to events (`CbReaction`) |
 | `ui/hud_<mod>.tscn` | show fields while the item is out (`CbFieldLabel`) |
 | `animation_packs/<mod>_animations.tscn` | an animation pack: the default AnimationTree in full, replacing the upper body |
-| `motion_sets/<mod>_moves.tscn`, `.rules` | add to how players move, predicted: a push on a press, with a charge and an event (a motion block in the set's sheet) |
+| `motion_sets/<mod>_moves.tscn`, `.cbsheet` | add to how players move, predicted: a push on a press, with a charge and an event (a motion block in the set's sheet) |
 
 Files that already exist are kept. Delete the starters a mod does not need.
 

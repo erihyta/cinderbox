@@ -1,10 +1,12 @@
 [gd_scene format=3]
 
 ; How the brawler's kit looks and sounds, as world reactions: all of it is the rules sheet beside
-; this scene (brawl.rules). The CbRules node reads it; each rule becomes a reaction under it when
+; this scene (brawl.cbsheet). The CbRules node reads it; each rule becomes a reaction under it when
 ; the scene is used.
+
+[ext_resource type="CbSheet" path="res://vfx/brawl.cbsheet" id="sheet"]
 
 [node name="BrawlReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://vfx/brawl.rules"
+sheet = ExtResource("sheet")

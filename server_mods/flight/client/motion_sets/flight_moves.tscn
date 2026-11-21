@@ -3,13 +3,15 @@
 ; The flight mod's motions. Every simulation runs them from the player's own input, so all of it
 ; is predicted: the toggle, the flying, the thrust, and the fuel the gauge shows.
 ;
-;   Rules   CbRules   flight_moves.rules: FlyOn and FlyOff on "fly" (T), Flying while flight.on,
+;   Rules   CbRules   flight_moves.cbsheet: FlyOn and FlyOff on "fly" (T), Flying while flight.on,
 ;                     the jetpack's Thrust and Refuel (where flight.jetpack_on), and the Glide
 ;
 ; Saving this scene bakes it into res://motions/flight.moves.cfg.
+
+[ext_resource type="CbSheet" path="res://motion_sets/flight_moves.cbsheet" id="sheet"]
 
 [node name="Moves" type="CbMotionSet"]
 set_name = "flight.moves"
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://motion_sets/flight_moves.rules"
+sheet = ExtResource("sheet")

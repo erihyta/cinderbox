@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 ; How the grapple mod looks and sounds. Its reactions are the rules sheet beside it
-; (reactions_grapple.rules).
+; (reactions_grapple.cbsheet).
 ;
 ;   Rope    CbLinkLook     the rope: grapple_rope.tscn stretched from the waist (the Hip socket: the
 ;                          line is tied there, the hands stay free) to its
@@ -11,6 +11,8 @@
 ;   Hit     a rule         a puff where the hook takes hold, when it does (grapple.hooked, said
 ;                          by the hook's line at that point)
 
+[ext_resource type="CbSheet" path="res://vfx/reactions_grapple.cbsheet" id="sheet"]
+
 [node name="GrappleReactions" type="Node3D"]
 
 [node name="Rope" type="CbLinkLook" parent="."]
@@ -19,4 +21,4 @@ scene = "res://vfx/grapple_rope.tscn"
 from = "Hip"
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://vfx/reactions_grapple.rules"
+sheet = ExtResource("sheet")

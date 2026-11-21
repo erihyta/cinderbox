@@ -9,8 +9,10 @@ extends SceneTree
 ## of the same sheet are still made into nodes; the motion blocks are not. A block that cannot run
 ## refuses the bake and says its file and line. Exit code 0 when everything held.
 
-const SHEET := "res://addons/cinderbox_maps/check_motion_blocks.rules"
-const SCRATCH := "res://addons/cinderbox_maps/check_motion_blocks_scratch.rules"
+const SHEET := "res://addons/cinderbox_maps/check_motion_blocks.cbsheet"
+## The sheet each check writes (a CbSheet of its own, not a file).
+const SCRATCH := "(scratch)"
+var _scratch_sheet := CbSheet.new()
 
 var _failures := 0
 
@@ -31,15 +33,14 @@ func _set_with(file: String) -> CbMotionSet:
 	set.set_name = "test.moves"
 	var rules := CbRules.new()
 	rules.name = "Rules"
-	rules.file = file
+	rules.sheet = _scratch_sheet if file == SCRATCH else load(file)
 	set.add_child(rules)
 	return set
 
 
 func _scratch(text: String) -> void:
-	var f := FileAccess.open(SCRATCH, FileAccess.WRITE)
-	f.store_string(text)
-	f.close()
+	_scratch_sheet = CbSheet.new()
+	_scratch_sheet.text = text
 
 
 func _refused(what: String, text: String, says: String) -> void:
@@ -97,7 +98,7 @@ func _run() -> void:
 	item.kind = "test.hammer"
 	var item_rules := CbRules.new()
 	item_rules.name = "Rules"
-	item_rules.file = SCRATCH
+	item_rules.sheet = _scratch_sheet
 	item.add_child(item_rules)
 	var motions: Dictionary = item.bake_motions()
 	var item_text := String(motions["text"])
@@ -248,7 +249,7 @@ func _run() -> void:
 	bomb.kind = "test.bomb"
 	var bomb_rules := CbRules.new()
 	bomb_rules.name = "Rules"
-	bomb_rules.file = SCRATCH
+	bomb_rules.sheet = _scratch_sheet
 	bomb.add_child(bomb_rules)
 	var bomb_baked: Dictionary = bomb.bake_motions()
 	var bomb_text := String(bomb_baked["text"])
@@ -272,7 +273,7 @@ func _run() -> void:
 	_refused("an impulse of a kind there is not", "motion A on press a\n\timpulse 3 along up kind mass\n", "line 2: kind velocity or momentum")
 
 	# The SDK's starter sheet (a new mod's motions) bakes, its name filled in.
-	var starter := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://").path_join("../sdk/starters/motion_set.rules"))
+	var starter := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://").path_join("../sdk/starters/motion_set.cbsheet"))
 	_scratch(starter.replace("MODNAME", "demo"))
 	var demo := _set_with(SCRATCH)
 	var demo_baked: Dictionary = demo.bake()
@@ -316,7 +317,7 @@ func _item_bake(text: String, kind: String, use: int = 1) -> String:
 	item.use = use
 	var rules := CbRules.new()
 	rules.name = "Rules"
-	rules.file = SCRATCH
+	rules.sheet = _scratch_sheet
 	item.add_child(rules)
 	var baked: Dictionary = item.bake_motions()
 	item.free()

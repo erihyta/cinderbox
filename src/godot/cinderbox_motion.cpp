@@ -61,7 +61,7 @@ std::string CbMotionSet::Bake( String& error ) const
 		error = "set_name must be one word (dash.moves): the server mod asks for the set by it";
 		return std::string();
 	}
-	// The motion blocks of its rules sheets (a CbRules under it). (The header's words are those of
+	// The motion blocks of its sheets (a CbRules under it, holding a .cbsheet). (The header's words are those of
 	// the files baked before M268, when the motion nodes baked here too: unchanged, so no published
 	// set's file changes.)
 	std::string text = "cinderbox_motions\t3\n# Baked from the CbMotion nodes of a CbMotionSet. Edit the scene and bake again.\n";

@@ -237,7 +237,7 @@ too: the controls stay nodes (where they are, their font), the logic is text. Ea
 `CbFieldBinding` on a control.
 
 ```
-# ui/hud_brawl.rules: one plain Label says READY or the seconds left
+# ui/hud_brawl.cbsheet: one plain Label says READY or the seconds left
 show Skills/Dash if carried.brawl.dash_strike
 text Skills/Dash "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
 text Skills/Dash "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
@@ -469,12 +469,12 @@ World node: a workshop item cannot reach the game's HUD or menus.
 ### Rules sheets
 
 Many reactions are one rule each: a node, an inspector, a dozen values. A **rules sheet** is the
-same reactions as lines of text, in a `.rules` file beside the scene; a `CbRules` node points to it
-(`file`). Logic is text; what is a place or a thing (a mesh to light up, a socket) stays a node,
+same reactions as lines of text, in a `.cbsheet` file beside the scene (a `CbSheet` resource); a
+`CbRules` node holds it (`sheet`, set like any resource: drag the file onto it). Logic is text; what is a place or a thing (a mesh to light up, a socket) stays a node,
 and a rule names it by its path.
 
 ```
-# vfx/brawl.rules: a thud where each hit lands
+# vfx/brawl.cbsheet: a thud where each hit lands
 on brawl.jab.hit
     subject $at
     at point
@@ -493,7 +493,7 @@ while melee.hot
 | `motion NAME on ...`, `while ...`, `when ...`, then its lines | a motion the simulation runs, not the viewer: baked with the item or the motion set ([rules-language.md](rules-language.md)) |
 
 ```
-# prefabs/pistol.rules
+# prefabs/pistol.cbsheet
 motion Fire on use if gun.ammo > 0 and not gun.reloading
     cooldown 0.2
     change gun.ammo -= 1
@@ -515,15 +515,20 @@ on item.reach
   director, the guard and the Cue Preview see nothing new.
 - **Plain paths** are from the node `CbRules` is under, and climb no higher than the scene.
 - **Mistakes say their line**: on the node in the editor, and at publish (a name no mod declares:
-  `res://vfx/brawl.rules line 22: event: no mod declares "brawl.upercut.hit" (did you mean
+  `res://vfx/brawl.cbsheet line 22: event: no mod declares "brawl.upercut.hit" (did you mean
   brawl.uppercut.hit?)`). A rule with one is left out; the rest works.
-- **The editor opens `.rules`** in its script editor, coloured (the sheet's words, the names mods
+- **The editor opens a sheet in its Sheet screen** (M284: beside 2D, 3D and Script; double-click a
+  `.cbsheet`, or click a node's `sheet`), one tab each, coloured (the sheet's words, the names mods
   declare, numbers, text, comments; a dotted name nobody declares in red), with the names offered
   while typing (`brawl.cd` offers `brawl.cd_dash`, `carried.` the item kinds), and a line with a
-  mistake tinted: put the caret on it to read why. Packs ship them (`*.rules` in the export filter;
-  the game's pack check allows them as data).
-- **Every look of the game is written so** (M166): the game's own `vfx/reactions.rules`, the
-  pistol's and the bat's sheets, and every mod's `reactions_<mod>.rules`: 48 nodes became 13 sheets.
+  mistake tinted: put the caret on it to read why. What is typed is the scene's at once (its rules
+  are built again); Ctrl+S saves the sheets with the scene. A sheet is a resource, so Godot knows
+  which scenes use it: one moved or renamed in the FileSystem dock keeps working, and a pack carries
+  it with its scene (`*.cbsheet` in the export filter too; the game's pack check allows them as
+  data). A sheet kept inside a scene (made with New CbSheet) works, and the node warns: save it as a
+  file, which tools, the bake and the cooker read.
+- **Every look of the game is written so** (M166): the game's own `vfx/reactions.cbsheet`, the
+  pistol's and the bat's sheets, and every mod's `reactions_<mod>.cbsheet`: 48 nodes became 13 sheets.
 - **A setting holds for the actions below it**, top to bottom, until another line changes it:
   one rule plays a flash, a tracer and a shot, each where it belongs. `at here`, `delay 0`,
   `chance 1`, `cooldown 0` and `wait off` go back to the defaults; a setting after the last action

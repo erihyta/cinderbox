@@ -112,7 +112,7 @@ sheet, and no sync protocol per ability.
 - Hytale shares one attack chain across every sword and lets each item replace named parts of it.
 - It also has words for what Cinderbox writes by hand: which chains block or interrupt which, a
   combo with a window, hold time deciding the outcome, tap against hold, a cooldown shared by id.
-- `fist.rules` writes the same `find` block four times and guards its two motions with
+- `fist.cbsheet` writes the same `find` block four times and guards its two motions with
   `not motion.brawl.fist.Finisher`; its combo's window is a field a `while` motion counts down.
 - None of step 6 is built yet (no `param`, `let`, `.cbsheet` in the parsers). When it is, add a
   sheet shared across items with per-item parameters, and `blocked by`, a combo and a charge as
