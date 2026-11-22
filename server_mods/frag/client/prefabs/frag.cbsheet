@@ -15,6 +15,9 @@ cbsheet 1
 # tick (so the blast is never a lead late). The numbers are the frag mod's (its options, published
 # as fields); hurting who is near is the mod's too (combat.damage).
 
+# Its numbers.
+param inventory.start 1
+
 # The throw lets go at the arm clip's frag.release marker, or a moment later without it (a body the
 # arm's pack does not fit, the critter): a throw always happens.
 motion Throwing on use

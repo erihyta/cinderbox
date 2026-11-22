@@ -17,9 +17,6 @@ size = Vector3(0.1, 0.1, 0.22)
 [node name="Hook" type="CbItem" unique_id=1774742039]
 kind = "grapple.hook"
 display_name = "Grapple"
-properties = {
-"inventory.start": 1.0
-}
 animation_pack = "grapple.hook_arm"
 use = 1
 slot = 4

@@ -2,6 +2,12 @@ cbsheet 1
 
 # The uppercut, on the ground, 4 s apart: whoever is ahead (3 m) is launched up, and you hop.
 
+# Its names (the brawl mod's C++ finds them) and its numbers.
+field brawl.cd_upper float
+event brawl.uppercut.started
+event brawl.uppercut.hit
+param inventory.start 1
+
 motion Rise on use if not linked and brawl.cd_upper <= 0 and grounded
 	until brawl.uppercut.used or pressed.jump
 	lasts 0.05

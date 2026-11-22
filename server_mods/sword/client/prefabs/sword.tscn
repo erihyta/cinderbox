@@ -77,11 +77,6 @@ size = Vector3(0.08, 0.06, 1.05)
 [node name="Sword" type="CbItem"]
 kind = "sword.blade"
 display_name = "Sword"
-properties = {
-"inventory.start": 1.0,
-"item.ruled": 1.0,
-"pickup.hold_seconds": 0.5
-}
 use = 1
 slot = 6
 holster = "Back"

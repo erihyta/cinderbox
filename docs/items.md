@@ -346,7 +346,7 @@ One scene is one item, and its root says so:
 
 ```
 Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1        (prefabs/bat.tscn)
-│                               properties { pickup.hold_seconds: 0.5 }
+│                               its sheet (bat.cbsheet) says: param pickup.hold_seconds 0.5 s
 ├── Body     CollisionShape3D   a BoxShape3D: its body when it lies in the world
 ├── Carry    Marker3D           where the carrying hand holds it: the item's carry_grip
 ├── Other    Marker3D           for the other hand: the item's other_grip
@@ -359,7 +359,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `kind` | the kind a server mod declares (`declare.ItemKind( "melee.bat" )`). One scene per kind; the baked file is named after it |
 | `display_name` | what prompts and lists call it (`{look:field}`, an item's `{name}`) |
 | `mass`, `density`, `friction`, `bounce` | its [body](maps.md#a-body) when it lies in the world, as any body says it: what it weighs (1 kg unless it says otherwise), how it grips, how it bounces |
-| `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
+| its sheet's `param` lines | named numbers any server mod may read (`param pickup.hold_seconds 0.5 s`). They replace what the item's mod declared in code for the same name. (Before M286, the `CbItem`'s `properties`.) |
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |
 | `hand` | [the left hand](#the-left-hand) while it is carried, or the slots' hand while it is selected |
@@ -386,8 +386,8 @@ there is to say:
 |---|---|
 | `kind` | the item kind (`gun.pistol`): the scene is the declaration |
 | the body, `mass`, the grips | as for any item |
-| `properties` | numbers any mod may read: the rules that apply to it (`gun.damage` makes it a gun), its `slot`, `inventory.start` |
-| `fields` | **its own state**, a field of every copy (`{"gun.rounds": 12}`): declared by the scene, a new copy starts with the value, and keeps its own from then on (simulation state: predicted, rolled back, in a joiner's snapshot). The value's type is the field's (a whole number an Int, a decimal a Float, true / false a Bool). Server mods read and write it (`ctx.Get` / `ctx.Set` on the item); looks read the one in a player's hand as `hand.<field>` |
+| its sheet's `param` lines | numbers any mod may read: the rules that apply to it (`param gun.damage 25` makes it a gun), `param inventory.start 1` (its `slot` is the `CbItem`'s) |
+| its sheet's `field ... on item` lines | **its own state**, a field of every copy (`field gun.rounds int on item = 12`): a new copy starts with the value, and keeps its own from then on (simulation state: predicted, rolled back, in a joiner's snapshot). The value's type is the field's (a whole number an Int, a decimal a Float, true / false a Bool). Server mods read and write it (`ctx.Get` / `ctx.Set` on the item); looks read the one in a player's hand as `hand.<field>` |
 | `animation_pack` | the pack it brings: its layers the character has while it is held (`gun.pistol_hold`), and its [overlay](characters.md#animation-packs) while it is carried at all (the boots' dash pose): a `CbAnimPack` scene of the same project |
 | `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
 | its sheet's `use` rule and motion blocks, and its When used rules | [what using it does](motions.md#what-an-item-does): the boots' dash, the hook's line and rope |
@@ -525,8 +525,8 @@ Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
   `pickup.target`. **E** takes it, **G** throws what you hold. With the `inventory` mod running, a
   taken item goes to its slot (see [The inventory](#the-inventory)); without it there is only the
   right hand: what was there drops, and dying drops it.
-- **Hold to pick up**: an item may take a moment: `pickup.hold_seconds` in its `CbItem`'s
-  `properties` (the bat: 0.5; the pistol is a tap), or `declare.ItemProperty( kind,
+- **Hold to pick up**: an item may take a moment: `param pickup.hold_seconds 0.5 s` in its sheet
+  (the bat; the pistol is a tap), or `declare.ItemProperty( kind,
   "pickup.hold_seconds", 0.5f )` in its mod. `pickup.hold` says how long the item in reach needs,
   and while E is held on it `pickup.since` is the tick the hold began (0: none). Letting go or
   losing the item starts over. The board changes when a hold starts and ends, not every tick.

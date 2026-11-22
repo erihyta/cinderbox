@@ -3,6 +3,12 @@ cbsheet 1
 # The dash strike: a lunge, 16 m/s, a moment without friction, 3 s apart; whoever is ahead (4 m) is
 # knocked back.
 
+# Its names (the brawl mod's C++ finds them) and its numbers.
+field brawl.cd_dash float
+event brawl.dash_strike.started
+event brawl.dash_strike.hit
+param inventory.start 1
+
 use if brawl.cd_dash <= 0
 	change brawl.cd_dash = 3
 	emit brawl.dash_strike.started

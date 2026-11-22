@@ -1,4 +1,4 @@
-rule motion line 20 head 0
+rule motion line 23 head 0
   name: text "Throwing"
   trigger: text "use"
   item: text "carried"
@@ -14,7 +14,7 @@ rule motion line 20 head 0
               kind: text "emit"
               text: text "frag.thrown"
               guard: text ""
-              line: int 25
+              line: int 28
           - dict
               verb: text "launch"
               kind: text "part"
@@ -27,8 +27,8 @@ rule motion line 20 head 0
                   ahead: float 0.8
                   seconds: float 2.5
               guard: text ""
-              line: int 26
-        line: int 24
+              line: int 29
+        line: int 27
         within: float 0.3
         wait: text "frag.release"
     - dict
@@ -38,7 +38,7 @@ rule motion line 20 head 0
               kind: text "emit"
               text: text "frag.thrown"
               guard: text ""
-              line: int 25
+              line: int 28
           - dict
               verb: text "launch"
               kind: text "part"
@@ -51,10 +51,10 @@ rule motion line 20 head 0
                   ahead: float 0.8
                   seconds: float 2.5
               guard: text ""
-              line: int 26
-        line: int 24
+              line: int 29
+        line: int 27
         timeout: bool true
-rule motion line 28 head 0
+rule motion line 31 head 0
   name: text "Blast"
   trigger: text "event"
   event: text "expired"
@@ -67,7 +67,7 @@ rule motion line 28 head 0
               kind: text "emit"
               text: text "frag.blast"
               guard: text ""
-              line: int 30
+              line: int 33
           - dict
               verb: text "break"
               radius: text "frag.break_radius"
@@ -75,7 +75,7 @@ rule motion line 28 head 0
               seconds: text "frag.rubble_seconds"
               kind: text "break"
               guard: text ""
-              line: int 31
+              line: int 34
           - dict
               verb: text "find"
               kind: text "find"
@@ -85,7 +85,7 @@ rule motion line 28 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 33
+                    line: int 36
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -97,7 +97,7 @@ rule motion line 28 head 0
                           2: text "(distance < frag.radius) * frag.push * (1 - distance / frag.radius)"
                         target: int 3
                 - dict
-                    line: int 34
+                    line: int 37
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -109,4 +109,4 @@ rule motion line 28 head 0
                           2: text "(distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius)"
                         target: int 3
               guard: text ""
-              line: int 32
+              line: int 35

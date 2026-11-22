@@ -67,6 +67,38 @@ hud Line
   the actions below them, `then when`, `subject ^^`, ...), is still read, until nothing ships it.
   [Version 0's words and their version 1 spelling](#version-0).
 
+### Declarations
+
+A sheet declares the names it brings, one a line, at the start of a line (M286):
+
+```
+field gun.ammo int                        # a field of the player (the default), sent to its player
+field team.id int shared                  # ... sent to every player
+field shop.coins int private              # ... its player's alone, never shown on others
+field flight.jetpack_on bool on world     # the game's, one for everyone
+field gun.rounds int on item = 12         # a field of each copy of the item; a new copy starts so
+event brawl.jab.hit                       # an event (at a character: heard by who sees it)
+event deathmatch.kill everyone            # ... heard by every player
+action reload key R                       # a key a player presses (R by default)
+param gun.damage 25                       # a number of the item whose scene holds the sheet
+param gun.reload_seconds 1.5 s
+```
+
+| Line | Is |
+|---|---|
+| `field NAME int\|float\|bool [on player\|world\|item] [shared\|private] [= VALUE]` | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
+| `event NAME [everyone]` | an event, the same way |
+| `action NAME [key KEY]` | an action, its key as Godot names keys (`R`, `F`, `1`, `MouseLeft`) |
+| `param NAME NUMBER [UNIT]` | a number of the item whose scene holds the sheet: baked into `items/<kind>.cfg` as its property, which server mods read (`ctx.ItemProperty`; was the `CbItem`'s `properties`). **In the sheet it is its number**: `gun.ammo < gun.magazine` reads `gun.ammo < 12` |
+
+- **The editor knows a sheet's own names** as you type, with no server build; the names file
+  (`cinderbox_names.cfg`, the server's build) brings the rest, the sheets' of every mod among them.
+- A motion set's sheet (`motion_sets/`) is not in the mod's item (what it bakes to is): its names
+  are declared in a sheet that is (the flight mod's in `vfx/reactions_flight.cbsheet`).
+- **Units** may follow any number: `s`, `m`, `m/s`, `deg`. They are checked against the word they
+  are for (`cooldown 0.4 m` is a mistake: cooldown takes a time) and dropped; a number without one
+  means what it always did.
+
 ### Words in expressions
 
 The same [expression language](looks.md#expressions) everywhere: a condition, a value, a HUD line.
@@ -592,3 +624,4 @@ them after M243). What a sheet names stays a node: `CollisionShape3D` and `Area3
 | M214 | every amount an expression |
 | M215 | this reference, rewritten from what is built; the motion lines in the debug HUD |
 | M283 to M285 | one compiler in plain C++ (`src/sheet`); a sheet a `.cbsheet` resource; version 1, one spelling for every block (`react`, `hud`, scopes, `wait for`, `create`, short names), every shipped sheet converted; this page moved from `sheets.md` |
+| M286 | declarations in the sheet (`field`, `event`, `action`, `param`), read by the server from the mod's item; an item's numbers and own fields its sheet's (the `CbItem`'s `properties` and `fields` went); units |

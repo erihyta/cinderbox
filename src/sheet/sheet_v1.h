@@ -60,4 +60,44 @@ bool FormatVersion1( const std::string& text, std::string& formatted, std::strin
 // them, without line numbers and with every dictionary's keys in order.
 std::string Meaning( const std::string& text );
 
+// --- Declarations (M286): the names a sheet brings, at the start of a line, one each --------------
+//
+//   field gun.ammo int                      a field of the player (the default), sent to its player
+//   field team.id int shared                ... sent to every player
+//   field shop.coins int private            ... its player's alone, never shown on others
+//   field deathmatch.round int on world     the game's, one for everyone
+//   field gun.rounds int on item = 12       a field of each copy of the item, what a new one starts with
+//   event brawl.jab.hit                     an event (said at a character: heard by who sees it)
+//   event deathmatch.kill everyone          ... heard by every player
+//   action reload key R                     a key a player presses (R by default)
+//   param gun.damage 25                     a number of the item whose scene holds the sheet: the
+//   param gun.reload_seconds 1.5 s          server's item property, and this sheet's word for it
+//
+// The server declares a sheet's fields, events and actions for the mod whose item has it (after
+// the mod's C++: a name the C++ declares with another type is a mistake when the server starts);
+// the item's bake writes its params and its item fields into items/<kind>.cfg. In the sheet, a
+// param is its number wherever an expression names it. Units (s, m, m/s, deg) may follow a number
+// anywhere; they are checked against the word they are for, and dropped.
+struct Declaration
+{
+	enum class Kind
+	{
+		Field,
+		Event,
+		Action,
+		Param,
+	};
+	Kind kind = Kind::Field;
+	int line = 0;
+	std::string name;
+	std::string type = "int";	// a field's: int, float, bool
+	std::string on = "player";	// a field's: player, world, item
+	bool shared = false;		// a field's: sent to every player
+	bool privately = false;		// a field's: its player's alone
+	bool everyone = false;		// an event's
+	std::string key;			// an action's
+	double value = 0.0;			// a param's; an item field's start
+};
+std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& errors );
+
 } // namespace cb::sheet

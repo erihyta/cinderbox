@@ -136,10 +136,18 @@ func _initialize() -> void:
 	made[0].display_name = "Test Item"
 	made[0].mass = 2.5
 	made[0].view_offset = Vector3(0, 0.05, 0.03)
-	made[0].properties = {"pickup.hold_seconds": 0.5}
 	made[0].scene_file_path = "res://prefabs/test_item.tscn"
+	# Its numbers and its own fields are its sheet's (M286).
+	var numbers := CbRules.new()
+	var numbers_sheet := CbSheet.new()
+	numbers_sheet.text = "cbsheet 1\nparam pickup.hold_seconds 0.5 s\nfield test.rounds int on item = 7\n"
+	numbers.sheet = numbers_sheet
+	made[0].add_child(numbers)
 	baked = made[0].bake()
-	_check("an item bakes its mass and properties", _near(_line(baked.text, "mass"), [2.5]) and baked.text.contains("property pickup.hold_seconds 0.5"), baked.text)
+	_check("an item bakes its mass and its sheet's params", _near(_line(baked.text, "mass"), [2.5]) and baked.text.contains("property pickup.hold_seconds 0.5"), baked.text)
+	_check("... and its sheet's item fields", baked.text.contains("field test.rounds int 7"), baked.text)
+	made[0].remove_child(numbers)
+	numbers.free()
 	_check("... its scene, its name and its first-person view",
 		baked.text.contains("scene res://prefabs/test_item.tscn\n") and baked.text.contains("name Test Item\n") and _near(_line(baked.text, "view"), [0, 0.05, 0.03]), baked.text)
 	# How it is used and where it goes are the item's to say: properties the engine reads.

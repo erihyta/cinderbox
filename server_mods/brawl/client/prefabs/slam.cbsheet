@@ -4,6 +4,13 @@ cbsheet 1
 # ground, everyone in the Shockwave region (a cylinder 5 m around the feet) is thrown away from it
 # and up, by every simulation: the brawl mod only hurts them (brawl.slam.hit).
 
+# Its names (the brawl mod's C++ finds them) and its numbers.
+field brawl.cd_slam float
+event brawl.slam.started
+event brawl.slam.landed
+event brawl.slam.hit
+param inventory.start 1
+
 motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	lasts 3
 	change brawl.cd_slam = 5

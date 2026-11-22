@@ -4521,6 +4521,37 @@ void TestSword()
 // joins; three bots join after it, a second apart, named, and the teams are two and two. They find
 // their enemies and fight with the brawl kit or the sword: in 20 s their hits do damage, and someone
 // falls. A second person joins: a bot leaves. The people's games never disagree with the server.
+// Names declared in a mod's sheets (M286): declared for the mod after its C++, the C++'s found
+// again, one with another type a mistake said with the sheet's path and line.
+void TestSheetDeclarations()
+{
+	mods::Declarations declare;
+	declare.BeginMod( "test" );
+	declare.Field( "test.x", BoardType::Int );
+	declare.DeclareSheet( "prefabs/t.cbsheet", "cbsheet 1\n# a sheet\nfield test.x float\nfield test.y bool shared\nfield test.round int on world\n"
+											   "field test.rounds int on item = 3\nevent test.e everyone\naction test.go key G\nparam test.damage 25\n" );
+	const ModSchema& schema = declare.Schema();
+	const BoardField* y = schema.FindField( "test.y" );
+	const BoardField* round = schema.FindField( "test.round" );
+	const ModAction* go = schema.FindAction( "test.go" );
+	CHECK( y != nullptr && y->type == BoardType::Bool && y->shared && y->scope == BoardScope::Entity );
+	CHECK( round != nullptr && round->scope == BoardScope::Global );
+	CHECK( schema.FindField( "test.rounds" ) == nullptr ); // (an item's own: baked with the item)
+	CHECK( schema.FindEvent( "test.e" ) >= 0 && go != nullptr && go->key == "G" );
+	CHECK( schema.FindField( "test.damage" ) == nullptr ); // (a param: the item's property)
+	bool said = false;
+	for ( const std::string& e : declare.Errors() )
+	{
+		said = said || ( e.find( "test.x" ) != std::string::npos && e.find( "prefabs/t.cbsheet line 3" ) != std::string::npos );
+	}
+	CHECK( declare.Errors().size() == 1 && said );
+	// A sheet's own mistake, with its path.
+	mods::Declarations again;
+	again.BeginMod( "test" );
+	again.DeclareSheet( "ui/h.cbsheet", "cbsheet 1\nfield test.z int maybe\n" );
+	CHECK( again.Errors().size() == 1 && again.Errors()[0].find( "ui/h.cbsheet line 2" ) != std::string::npos );
+}
+
 void TestBots()
 {
 	Harness h( 48270, {}, {}, { { "test.mods", "brawl,sword,teams,deathmatch,bots" }, { "bots.fill", "4" }, { "teams.count", "2" } } );
@@ -8963,6 +8994,7 @@ int main( int argc, char** argv )
 		{ "teams", TestTeams },
 		{ "teams_chosen", TestTeamsChosen },
 		{ "sword", TestSword },
+		{ "sheet_declarations", TestSheetDeclarations },
 		{ "bots", TestBots },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },

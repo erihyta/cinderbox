@@ -1961,6 +1961,22 @@ void TestSheetsVersion1()
 	sheet::Strings none;
 	const std::vector<sheet::Rule> rules = sheet::ParseRules( "cbsheet 1\n\n# a\nreact on a\n\tsound b\n\tsound c\n", none );
 	CHECK( none.empty() && rules.size() == 2 && rules[0].line == 5 && rules[1].line == 6 && rules[0].head == 4 );
+
+	// Declarations (M286), params as their numbers, units.
+	sheet::Strings declErrors;
+	const std::vector<sheet::Declaration> declared = sheet::ReadDeclarations(
+		"cbsheet 1\nfield a.x int\nfield a.y bool shared\nfield a.n int on item = 3\nevent a.e everyone\naction go key G\nparam a.top 25 m/s\n"
+		"field a.x float\nfield a.bad int on item shared\nparam a.top 3\n",
+		declErrors );
+	CHECK( declared.size() == 6 && declared[1].shared && declared[2].on == "item" && declared[2].value == 3.0 && declared[3].everyone &&
+		   declared[4].key == "G" && declared[5].kind == sheet::Declaration::Kind::Param && declared[5].value == 25.0 );
+	CHECK( says( declErrors, "8", "declared at line 2" ) && says( declErrors, "9", "field NAME" ) && says( declErrors, "10", "declared at line 7" ) );
+	sheet::Strings unitErrors;
+	const std::vector<sheet::Rule> timed = sheet::ParseRules(
+		"cbsheet 1\nparam a.reach 2 m\nmotion M on use if a.reach > 1\n\tcooldown 0.4 s\n\tlasts 2 m\n\timpulse 9 m/s along up\n", unitErrors );
+	CHECK( timed.size() == 1 && timed[0].properties.Get( "cooldown", 0.0 ).AsFloat() == 0.4 &&
+		   timed[0].properties.Get( "conditions", sheet::Strings() ).AsStrings() == sheet::Strings{ "2 > 1" } );
+	CHECK( unitErrors.size() == 1 && says( unitErrors, "5", "lasts takes a time" ) );
 }
 
 // The arena's walls (M280): the baked map (godot/maps/arena.cbmap) as the server loads it.

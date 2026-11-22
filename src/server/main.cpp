@@ -166,6 +166,16 @@ bool DumpNames( const char* path, const std::string& lookSource )
 		{
 			declarations.BeginMod( mod->Name() );
 			mod->Declare( declarations );
+			// And what its look's sheets declare (M286), as the server will.
+			if ( lookSource.empty() == false )
+			{
+				cb::Sheets sheets;
+				cb::ListSheetsFolder( ( std::filesystem::path( lookSource ) / mod->Name() / "client" ).string(), sheets );
+				for ( const auto& [sheetPath, sheetText] : sheets )
+				{
+					declarations.DeclareSheet( sheetPath, sheetText );
+				}
+			}
 			text += std::string( "mod\t" ) + info.name + "\n";
 		}
 	}
@@ -750,6 +760,21 @@ int main( int argc, char** argv )
 			}
 		}
 		return items;
+	};
+	// And its look's sheets, for the names they declare (M286).
+	options.lookSheets = [itemsDir, workshopDir]( const std::string& mod ) {
+		cb::Sheets sheets;
+		cb::ModItem item;
+		std::string error;
+		if ( ReadItem( itemsDir, mod, item ) )
+		{
+			std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
+			if ( cb::ListSheetsItem( zip, item, sheets, error ) == false )
+			{
+				std::printf( "mod %s: its look's sheets could not be read: %s\n", mod.c_str(), error.c_str() );
+			}
+		}
+		return sheets;
 	};
 	// Item bodies too: items/<kind>.cfg, baked from the item's scene.
 	options.loadItemShape = [itemsDir, workshopDir]( const std::string& mod, const std::string& kind, cb::ItemShape& shape,

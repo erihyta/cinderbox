@@ -25,9 +25,6 @@ size = Vector3(0.1, 0.1, 0.1)
 [node name="Uppercut" type="CbItem"]
 kind = "brawl.uppercut"
 display_name = "Uppercut"
-properties = {
-"inventory.start": 1.0
-}
 use = 1
 slot = 3
 slot_key_uses = true

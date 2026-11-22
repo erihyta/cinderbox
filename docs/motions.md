@@ -347,7 +347,7 @@ was carried, not a new one.
 
 ```
 Frag    CbItem   kind "frag.grenade"   use: once a press   slot 6   use_key H   (prefabs/frag.tscn)
-│                animation_pack frag.throw_arm   properties { inventory.start: 1 }
+│                animation_pack frag.throw_arm   (its sheet: param inventory.start 1)
 │                mass 0.4   friction 0.8   bounce 0.45
 ├── Body  CollisionShape3D   a sphere, 9 cm
 ├── Ball, Band  MeshInstance3D

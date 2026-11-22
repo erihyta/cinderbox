@@ -710,6 +710,79 @@ bool ListLookItemsFolder( const std::string& dir, std::vector<LookItem>& out )
 	return ignored ? false : true;
 }
 
+bool ListSheetsItem( const std::string& zipPath, const ModItem& item, Sheets& out, std::string& error )
+{
+	out.clear();
+	std::ifstream in( zipPath, std::ios::binary );
+	if ( in.good() == false )
+	{
+		error = "no workshop item at " + zipPath;
+		return false;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	const std::string bytes = all.str();
+	if ( Sha256Hex( bytes.data(), bytes.size() ) != item.sha256 )
+	{
+		error = zipPath + " is not the item the manifest names";
+		return false;
+	}
+	mz_zip_archive zip = {};
+	if ( mz_zip_reader_init_mem( &zip, bytes.data(), bytes.size(), 0 ) == MZ_FALSE )
+	{
+		error = zipPath + " is not a zip";
+		return false;
+	}
+	std::map<std::string, std::string> found;
+	for ( mz_uint i = 0; i < mz_zip_reader_get_num_files( &zip ); ++i )
+	{
+		char name[512] = {};
+		mz_zip_reader_get_filename( &zip, i, name, sizeof( name ) );
+		const std::string path = name;
+		if ( path.size() < 9 || path.compare( path.size() - 8, 8, ".cbsheet" ) != 0 )
+		{
+			continue;
+		}
+		size_t size = 0;
+		void* data = mz_zip_reader_extract_to_heap( &zip, i, &size, 0 );
+		if ( data != nullptr )
+		{
+			found[path] = std::string( static_cast<const char*>( data ), size );
+			mz_free( data );
+		}
+	}
+	mz_zip_reader_end( &zip );
+	out.assign( found.begin(), found.end() );
+	return true;
+}
+
+bool ListSheetsFolder( const std::string& dir, Sheets& out )
+{
+	out.clear();
+	namespace fs = std::filesystem;
+	std::error_code ignored;
+	std::map<std::string, std::string> found;
+	const fs::path root( dir );
+	for ( fs::recursive_directory_iterator it( root, fs::directory_options::skip_permission_denied, ignored ), end; it != end; it.increment( ignored ) )
+	{
+		const std::string name = it->path().filename().string();
+		if ( it->is_directory() && ( name.empty() || name[0] == '.' || name == "bin" || name == "starters" || name == "placeholder" ) )
+		{
+			it.disable_recursion_pending();
+			continue;
+		}
+		if ( it->is_regular_file() && it->path().extension() == ".cbsheet" )
+		{
+			std::ifstream in( it->path(), std::ios::binary );
+			std::ostringstream all;
+			all << in.rdbuf();
+			found[fs::relative( it->path(), root ).generic_string()] = all.str();
+		}
+	}
+	out.assign( found.begin(), found.end() );
+	return true;
+}
+
 bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<std::string, std::string>& parts, std::string& error )
 {
 	std::ifstream in( zipPath, std::ios::binary );
@@ -743,9 +816,11 @@ bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<
 		mz_zip_reader_get_filename( &zip, i, name, sizeof( name ) );
 		std::string path = name;
 		bool item_ = path.rfind( "items/", 0 ) == 0 && ends( path, ".cfg" );
+		// (A sheet's declarations are the server's too, M286: the sheet is, whole.)
+		bool sheet_ = ends( path, ".cbsheet" );
 		bool baked = ( path.rfind( "anim/", 0 ) == 0 || path.rfind( "motions/", 0 ) == 0 || path.rfind( "characters/", 0 ) == 0 ) &&
 					 ( ends( path, ".cfg" ) || ends( path, ".ozz" ) );
-		if ( item_ == false && baked == false )
+		if ( item_ == false && baked == false && sheet_ == false )
 		{
 			continue;
 		}
@@ -757,7 +832,25 @@ bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<
 		}
 		std::string content( static_cast<const char*>( data ), size );
 		mz_free( data );
-		if ( item_ )
+		if ( sheet_ )
+		{
+			// Only its declarations (its motions are baked, its looks the game's).
+			std::string kept;
+			std::istringstream lines( content );
+			std::string line;
+			while ( std::getline( lines, line ) )
+			{
+				for ( const char* verb : { "field ", "event ", "action " } )
+				{
+					if ( line.rfind( verb, 0 ) == 0 )
+					{
+						kept += line + "\n";
+					}
+				}
+			}
+			content = kept;
+		}
+		else if ( item_ )
 		{
 			// Without what only the game reads.
 			std::string kept;

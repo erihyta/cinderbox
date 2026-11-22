@@ -3,6 +3,19 @@ cbsheet 1
 # The sword (M279): what it does to bodies (predicted: every simulation runs these) and how it
 # answers. Damage, blocks and parries are the sword mod's (sword.cpp), on sword.hit.
 
+# Its names (the sword mod's C++ finds them) and its numbers.
+field sword.stunned bool shared
+event sword.swing
+event sword.strike
+event sword.done
+event sword.hit
+event sword.blocked
+event sword.parried
+action use2 key MouseRight
+param inventory.start 1
+param item.ruled 1
+param pickup.hold_seconds 0.5 s
+
 # A swing, on the left mouse button: the pack plays it (sword.swing), and at the clip's
 # sword.strike marker a box where the player looks, pitch and all, finds whom the blade meets:
 # 2.4 m ahead, 1.2 m across, 1.6 m from low to high, turned about the chest with the look. Without

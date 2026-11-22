@@ -5,6 +5,27 @@ cbsheet 1
 # (gun.cpp): it hears item.use, aims along the camera as it was, hit-tests posed bodies, and says
 # item.reach (the tracer) and item.hit. Plain paths are from the scene's root.
 
+# Its names (the gun mod's C++ finds them), its own field, its numbers (the gun mod reads them as the
+# item's properties, gun.damage and the rest).
+field gun.ammo int
+field gun.reloading bool
+field gun.rounds int on item = 12
+event item.use
+event item.use_failed
+event item.reload
+event item.reach
+event item.hit
+action reload key R
+param gun.damage 25
+param gun.kill_push 6 m/s
+param gun.magazine 12
+param gun.prop_push 4 m/s
+param gun.range 80 m
+param gun.reload_seconds 1.5 s
+param inventory.start 1
+param mark.range 80 m
+param mark.seconds 1 s
+
 # Fire: once a press (the item's use), 0.2 s apart at most, while it has rounds and is not
 # reloading: a round off what you see, and item.use (the flash, the sound, the recoil: the pack's
 # Shoot state starts on it).

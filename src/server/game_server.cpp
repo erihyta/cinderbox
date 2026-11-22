@@ -48,6 +48,15 @@ bool GameServer::Start( const ServerOptions& options )
 	{
 		declarations.BeginMod( mod->Name() );
 		mod->Declare( declarations );
+		// What its look's sheets declare (M286): the same names again where the C++ declared them
+		// (another type is a mistake), and the sheets' own.
+		if ( options.lookSheets )
+		{
+			for ( const auto& [path, text] : options.lookSheets( mod->Name() ) )
+			{
+				declarations.DeclareSheet( path, text );
+			}
+		}
 	}
 	for ( const std::string& error : declarations.Errors() )
 	{

@@ -373,6 +373,10 @@ public:
 	}
 
 	void BeginMod( const std::string& name );
+	// What a sheet of the mod's look declares (M286; docs/sheets.md, Declarations): its fields (not
+	// an item's own: those are baked with the item), events and actions, as the mod's. A sheet's
+	// mistake or a name declared with another type is an error, said with the sheet's path.
+	void DeclareSheet( const std::string& path, const std::string& text );
 	void SetLookItems( std::function<std::vector<LookItem>( const std::string& mod )> read )
 	{
 		m_lookItems = std::move( read );

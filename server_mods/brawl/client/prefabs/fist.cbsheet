@@ -11,6 +11,15 @@ cbsheet 1
 # Without the markers (a body the pack does not fit, a server without the pack) the punch lands a
 # moment later anyway: the "within" gives up and its timeout hits the same way.
 
+# Its names (the brawl mod's C++ finds them) and its numbers.
+field brawl.combo int
+field brawl.combo_left float
+event brawl.fist.strike
+event brawl.fist.ready
+event brawl.jab.hit
+event brawl.finisher.hit
+param inventory.start 1
+
 motion Jab on use if not linked and brawl.combo < 2 and not active brawl.fist.Finisher
 	cooldown 0.3
 	change brawl.combo += 1

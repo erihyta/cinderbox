@@ -2,6 +2,7 @@
 
 #include "cue_rules.h"
 #include "expr.h"
+#include "sheet_v1.h"
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/time.hpp>
@@ -474,11 +475,26 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 		int64_t colon = error.find( ":" );
 		out.push_back( { int( error.substr( 5, colon - 5 ).to_int() ), error.substr( colon + 1 ).strip_edges() } );
 	}
-	const Book& book = TheBook();
-	if ( book.known == false )
+	if ( TheBook().known == false )
 	{
 		return out;
 	}
+	// The names file's, and the sheet's own.
+	Book local = TheBook();
+	{
+		CharString utf8 = text.utf8();
+		sheet::Strings ignored;
+		for ( const sheet::Declaration& d : sheet::ReadDeclarations( std::string( utf8.get_data(), size_t( utf8.length() ) ), ignored ) )
+		{
+			const char* kind = d.kind == sheet::Declaration::Kind::Event ? "event" : d.kind == sheet::Declaration::Kind::Action ? "action" : "field";
+			local.byKind[kind].insert( d.name );
+			if ( d.kind != sheet::Declaration::Kind::Action )
+			{
+				local.declared.insert( d.name );
+			}
+		}
+	}
+	const Book& book = local;
 	for ( const cue::Rule& rule : rules )
 	{
 		if ( rule.type == "motion" )
@@ -639,7 +655,19 @@ PackedStringArray Completions( const String& prefix )
 	return out;
 }
 
-String WordKind( const String& word )
+std::set<std::string> SheetNames( const String& text )
+{
+	std::set<std::string> out;
+	CharString utf8 = text.utf8();
+	sheet::Strings ignored;
+	for ( const sheet::Declaration& d : sheet::ReadDeclarations( std::string( utf8.get_data(), size_t( utf8.length() ) ), ignored ) )
+	{
+		out.insert( d.name );
+	}
+	return out;
+}
+
+String WordKind( const String& word, const std::set<std::string>* own )
 {
 	if ( word.is_empty() )
 	{
@@ -662,7 +690,8 @@ String WordKind( const String& word )
 	{
 		name = name.rfind( prefix, 0 ) == 0 ? name.substr( std::string( prefix ).size() ) : name;
 	}
-	if ( book.known && ( book.declared.count( name ) != 0 || Has( book, "action", name ) || Has( book, "intent", name ) || Has( book, "event", name ) ) )
+	if ( ( own != nullptr && own->count( name ) != 0 ) ||
+		 ( book.known && ( book.declared.count( name ) != 0 || Has( book, "action", name ) || Has( book, "intent", name ) || Has( book, "event", name ) ) ) )
 	{
 		return "name";
 	}

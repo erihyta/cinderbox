@@ -21,9 +21,6 @@ radial_segments = 16
 [node name="Cannon" type="CbItem" unique_id=1664216463]
 kind = "cannon.cannon"
 display_name = "Cannon"
-properties = {
-"inventory.start": 1.0
-}
 use = 1
 use_key = "N"
 mass = 20.0

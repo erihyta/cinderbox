@@ -9,6 +9,7 @@
 #include "cue_names.h"
 #include "cue_prediction.h"
 #include "cue_rules.h"
+#include "sheet_v1.h"
 #include "events.h"
 #include "cinderbox_map_nodes.h"
 #include "mod_schema.h"
@@ -57,8 +58,6 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_view_left_hand" ), &CbItem::get_view_left_hand );
 	ClassDB::bind_method( D_METHOD( "set_view_right_hand", "value" ), &CbItem::set_view_right_hand );
 	ClassDB::bind_method( D_METHOD( "get_view_right_hand" ), &CbItem::get_view_right_hand );
-	ClassDB::bind_method( D_METHOD( "set_properties", "value" ), &CbItem::set_properties );
-	ClassDB::bind_method( D_METHOD( "get_properties" ), &CbItem::get_properties );
 	ClassDB::bind_method( D_METHOD( "bake" ), &CbItem::bake );
 	ClassDB::bind_method( D_METHOD( "bake_motions" ), &CbItem::bake_motions );
 	ClassDB::bind_method( D_METHOD( "bake_to_project" ), &CbItem::bake_to_project );
@@ -67,11 +66,6 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.bat" ), "set_kind", "get_kind" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "display_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Bat" ), "set_display_name",
 				  "get_display_name" );
-	ClassDB::bind_method( D_METHOD( "set_fields", "value" ), &CbItem::set_fields );
-	ClassDB::bind_method( D_METHOD( "get_fields" ), &CbItem::get_fields );
-	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "fields", PROPERTY_HINT_DICTIONARY_TYPE, "String;Variant" ), "set_fields", "get_fields" );
-	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "properties", PROPERTY_HINT_DICTIONARY_TYPE, "String;float" ), "set_properties",
-				  "get_properties" );
 	ClassDB::bind_method( D_METHOD( "set_carry_grip", "value" ), &CbItem::set_carry_grip );
 	ClassDB::bind_method( D_METHOD( "get_carry_grip" ), &CbItem::get_carry_grip );
 	ClassDB::bind_method( D_METHOD( "set_other_hand", "value" ), &CbItem::set_other_hand );
@@ -1136,9 +1130,36 @@ Dictionary CbItem::bake() const
 	{
 		text += vformat( "turn %.5f %.5f %.5f %.5f\n", turn.x, turn.y, turn.z, turn.w );
 	}
-	// Sorted, so the same scene always bakes the same file (the item's hash depends on it). How it
-	// is used and where it goes are properties the engine reads; said here, they are the item's.
-	Dictionary all = m_properties.duplicate();
+	// Its numbers and its own fields: its sheets' params and item fields (M286). Sorted, so the same
+	// scene always bakes the same file (the item's hash depends on it). How it is used and where it
+	// goes are properties the engine reads; said here, they are the item's.
+	Dictionary all;
+	Dictionary ownFields;
+	{
+		TypedArray<Node> sheets = find_children( "*", "CbRules", true, false );
+		for ( int64_t s = 0; s < sheets.size(); ++s )
+		{
+			const CbRules* rules = Object::cast_to<CbRules>( sheets[s] );
+			if ( rules == nullptr )
+			{
+				continue;
+			}
+			CharString utf8 = rules->SheetText().utf8();
+			sheet::Strings ignored;
+			for ( const sheet::Declaration& d : sheet::ReadDeclarations( std::string( utf8.get_data(), size_t( utf8.length() ) ), ignored ) )
+			{
+				const String name = String::utf8( d.name.c_str() );
+				if ( d.kind == sheet::Declaration::Kind::Param )
+				{
+					all[name] = d.value;
+				}
+				else if ( d.kind == sheet::Declaration::Kind::Field && d.on == "item" )
+				{
+					ownFields[name] = d.type == "bool" ? Variant( d.value != 0.0 ) : d.type == "int" ? Variant( int64_t( d.value ) ) : Variant( d.value );
+				}
+			}
+		}
+	}
 	if ( m_use == USE_PRESS || m_use == USE_HOLD )
 	{
 		all["use"] = m_use;
@@ -1187,12 +1208,12 @@ Dictionary CbItem::bake() const
 		text += "property " + name + " " + String::num( double( value ), 4 ) + "\n";
 	}
 	// Its own fields, sorted: "field gun.rounds int 30".
-	Array fieldNames = m_fields.keys();
+	Array fieldNames = ownFields.keys();
 	fieldNames.sort();
 	for ( int i = 0; i < fieldNames.size(); ++i )
 	{
 		String name = String( fieldNames[i] ).strip_edges();
-		Variant value = m_fields[fieldNames[i]];
+		Variant value = ownFields[fieldNames[i]];
 		const char* type = value.get_type() == Variant::BOOL ? "bool" : value.get_type() == Variant::INT ? "int" : value.get_type() == Variant::FLOAT ? "float" : nullptr;
 		if ( name.is_empty() || name.contains( " " ) || name.contains( "\t" ) || type == nullptr || std::isfinite( double( value ) ) == false )
 		{
