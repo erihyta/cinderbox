@@ -29,6 +29,8 @@
 #include "rollback.h"
 #include "hybrid_session.h"
 #include "scenario.h"
+#include "sheet_dump.h"
+#include "sheet_rules.h"
 #include "simulation.h"
 
 #include "box3d/box3d.h"
@@ -42,6 +44,8 @@
 #include <array>
 #include <chrono>
 #include <limits>
+#include <set>
+#include <sstream>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
@@ -1766,6 +1770,86 @@ void TestToss()
 	CHECK( left.downed && left.ragdollGone && left.followed );
 	std::printf( "    the torso ahead of the legs after a tick: struck %.2f m/s, only thrown %.2f m/s\n", fast.bend, slow.bend );
 	CHECK( fast.bend > 0.3f && slow.bend < 0.05f );
+}
+
+// The sheet compiler (M283): every rules sheet in the repository parses to what its golden file says
+// (tests/golden/sheets/<its path>.txt, sheet_dump.h): every rule, every property and its kind, every
+// mistake said. The parser moved from Godot's types to plain C++ in M283 and read all 42 the same
+// way; step 6's next milestones (a new spelling: docs/step6-plan.md) are checked against these files.
+// CB_UPDATE_GOLDEN=1 writes them instead (a change a sheet meant).
+void TestSheetsGolden()
+{
+	sheet::Strings parameters;
+	for ( int p = 0; p < kMoveParams; ++p )
+	{
+		parameters.push_back( MoveParamInfoOf( p ).name );
+	}
+	sheet::SetMoveParameterNames( parameters );
+	namespace fs = std::filesystem;
+	const fs::path root = CB_SOURCE_DIR;
+	// (The rifle's sheet is local, as the rest of its licensed look: not in the repository.)
+	const std::set<std::string> local = { "server_mods/gun/client/prefabs/rifle.rules" };
+	std::vector<std::string> sheets;
+	std::error_code error;
+	for ( fs::recursive_directory_iterator it( root, fs::directory_options::skip_permission_denied, error ), end; it != end; it.increment( error ) )
+	{
+		const std::string name = it->path().filename().string();
+		if ( it->is_directory() && ( name.empty() || name[0] == '.' || name == "bin" || name == "build" || name == "_deps" ) )
+		{
+			it.disable_recursion_pending();
+			continue;
+		}
+		const std::string relative = fs::relative( it->path(), root ).generic_string();
+		if ( it->is_regular_file() && it->path().extension() == ".rules" && local.count( relative ) == 0 )
+		{
+			sheets.push_back( relative );
+		}
+	}
+	std::sort( sheets.begin(), sheets.end() );
+	const bool update = std::getenv( "CB_UPDATE_GOLDEN" ) != nullptr;
+	int same = 0, differ = 0, missing = 0;
+	for ( const std::string& relative : sheets )
+	{
+		std::ifstream in( root / relative, std::ios::binary );
+		std::stringstream text;
+		text << in.rdbuf();
+		sheet::Strings errors;
+		const std::vector<sheet::Rule> rules = sheet::ParseRules( text.str(), errors );
+		const std::string dump = sheet::Dump( rules, errors );
+		const fs::path golden = root / "tests" / "golden" / "sheets" / ( relative + ".txt" );
+		if ( update )
+		{
+			fs::create_directories( golden.parent_path() );
+			std::ofstream( golden, std::ios::binary ) << dump;
+			continue;
+		}
+		std::ifstream was( golden, std::ios::binary );
+		if ( was.is_open() == false )
+		{
+			std::printf( "    %s: no golden file\n", relative.c_str() );
+			++missing;
+			continue;
+		}
+		std::stringstream expected;
+		expected << was.rdbuf();
+		if ( expected.str() != dump )
+		{
+			// Where it first differs.
+			size_t at = 0;
+			while ( at < dump.size() && at < expected.str().size() && dump[at] == expected.str()[at] )
+			{
+				++at;
+			}
+			const size_t line = size_t( std::count( dump.begin(), dump.begin() + std::ptrdiff_t( at ), '\n' ) ) + 1;
+			std::printf( "    %s: differs from its golden file at its line %zu\n", relative.c_str(), line );
+			++differ;
+			continue;
+		}
+		++same;
+	}
+	std::printf( "    %zu sheets: %d as their golden files say, %d differ, %d without one%s\n", sheets.size(), same, differ, missing,
+				 update ? " (golden files written)" : "" );
+	CHECK( sheets.size() >= 40 && differ == 0 && missing == 0 );
 }
 
 // The arena's walls (M280): the baked map (godot/maps/arena.cbmap) as the server loads it.
@@ -13973,6 +14057,7 @@ int main( int argc, char** argv )
 		{ "hybrid_model", TestHybridModel },
 		{ "toss", TestToss },
 		{ "arena_walls", TestArenaWalls },
+		{ "sheets_golden", TestSheetsGolden },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },

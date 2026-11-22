@@ -1,0 +1,6 @@
+rule CbFieldBinding line 2 head 0
+  conditions: texts
+    - "!combat.dead"
+  hides: bool false
+  text_format: text "[{key:use2}]  MARK A PLAYER"
+  target: text "Mark"

@@ -1,0 +1,24 @@
+rule motion line 3 head 0
+  name: text "Use"
+  trigger: text "use"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "brawl.guard.up"
+              guard: text ""
+              line: int 4
+          - dict
+              verb: text "move"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  parameters: dict
+                    jump_speed: float 0
+                    sprint_speed: float 1.5
+                    walk_speed: float 1.5
+              guard: text ""
+              line: int 5

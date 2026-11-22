@@ -1,0 +1,125 @@
+rule motion line 9 head 0
+  name: text "Swing"
+  trigger: text "use"
+  conditions: texts
+    - "not motion.sword.blade.Block and not sword.stunned"
+  cooldown: float 0.4
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "sword.swing"
+              guard: text ""
+              line: int 11
+    - dict
+        statements: list
+          - dict
+              verb: text "find"
+              frame: text "look"
+              most: int 2
+              kind: text "find"
+              shape: dict
+                kind: text "box"
+                size: vec3 1.2 1.6 2.4
+                at: vec3 0 1 1.3
+              who: text "all"
+              statements: list
+                - dict
+                    line: int 14
+                    verb: text "emit"
+                    kind: text "emit"
+                    text: text "sword.hit"
+                - dict
+                    line: int 15
+                    verb: text "impulse"
+                    kind: text "part"
+                    part: dict
+                      class: text "CbImpulse"
+                      properties: dict
+                        speed: float 6
+                        frame: int 2
+                        target: int 3
+              guard: text ""
+              line: int 13
+        line: int 12
+        within: float 0.5
+        wait: text "sword.strike"
+    - dict
+        statements: list
+          - dict
+              verb: text "find"
+              frame: text "look"
+              most: int 2
+              kind: text "find"
+              shape: dict
+                kind: text "box"
+                size: vec3 1.2 1.6 2.4
+                at: vec3 0 1 1.3
+              who: text "all"
+              statements: list
+                - dict
+                    line: int 18
+                    verb: text "emit"
+                    kind: text "emit"
+                    text: text "sword.hit"
+                - dict
+                    line: int 19
+                    verb: text "impulse"
+                    kind: text "part"
+                    part: dict
+                      class: text "CbImpulse"
+                      properties: dict
+                        speed: float 6
+                        frame: int 2
+                        target: int 3
+              guard: text ""
+              line: int 17
+        line: int 16
+        timeout: bool true
+    - dict
+        statements: list
+        line: int 20
+        within: float 1
+        wait: text "sword.done"
+rule motion line 24 head 0
+  name: text "Block"
+  trigger: text "while"
+  expression: text "held.use2 and not motion.sword.blade.Swing"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "move"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  parameters: dict
+                    walk_speed: float 2
+                    sprint_speed: float 2
+                    jump_speed: float 0
+              guard: text ""
+              line: int 25
+rule CbReaction line 30 head 28
+  when: int 0
+  event: text "sword.hit"
+  subject: text "^^"
+  target: text "Model/Sparks"
+  method: text "restart"
+  method_args: list
+rule CbReaction line 35 head 33
+  when: int 0
+  event: text "sword.blocked"
+  subject: text "^^"
+  target: text "Model/Sparks"
+  method: text "restart"
+  method_args: list
+rule CbReaction line 40 head 38
+  when: int 0
+  event: text "sword.parried"
+  subject: text "^^"
+  target: text "Model/Sparks"
+  method: text "restart"
+  method_args: list

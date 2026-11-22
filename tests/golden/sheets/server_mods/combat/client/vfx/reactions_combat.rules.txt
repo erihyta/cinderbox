@@ -1,0 +1,18 @@
+rule CbReaction line 8 head 5
+  when: int 0
+  event: text "combat.hurt"
+  conditions: texts
+    - "is_local"
+  subject: text "$at"
+  place: int 1
+  flash_color: color 0.8 0.05 0.05 0.24
+  flash_time: float 0.3
+rule CbReaction line 14 head 11
+  when: int 0
+  event: text "combat.killed"
+  conditions: texts
+    - "is_local"
+  subject: text "$other"
+  place: int 1
+  flash_color: color 0.6 0 0 0.55
+  flash_time: float 1.2

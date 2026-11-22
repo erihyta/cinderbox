@@ -1,0 +1,18 @@
+rule CbReaction line 8 head 5
+  when: int 0
+  event: text "grapple.fired"
+  subject: text "$at"
+  place: int 4
+  place_node: text "$at/Hip"
+  sound: text "res://assets/sfx/prop_spawn.wav"
+  volume_db: float -10
+  pitch_scale: float 2
+  pitch_jitter: float 0.1
+  max_distance: float 30
+rule CbReaction line 14 head 11
+  when: int 0
+  event: text "grapple.hooked"
+  subject: text "$at"
+  place: int 1
+  scene: text "res://vfx/land.tscn"
+  scene_lifetime: float 2

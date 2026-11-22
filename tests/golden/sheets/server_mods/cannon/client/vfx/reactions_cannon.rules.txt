@@ -1,0 +1,34 @@
+rule CbReaction line 8 head 5
+  when: int 0
+  event: text "cannon.fired"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/impact.wav"
+  volume_db: float 4
+  pitch_scale: float 0.45
+  pitch_jitter: float 0.05
+  max_distance: float 60
+rule CbReaction line 9 head 5
+  when: int 0
+  event: text "cannon.fired"
+  subject: text "$at"
+  place: int 1
+  shake: float 0.12
+  shake_time: float 0.2
+rule CbReaction line 15 head 12
+  when: int 0
+  event: text "cannon.ball.smash"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/prop_destroy.wav"
+  volume_db: float 2
+  pitch_scale: float 0.7
+  pitch_jitter: float 0.1
+  max_distance: float 70
+rule CbReaction line 16 head 12
+  when: int 0
+  event: text "cannon.ball.smash"
+  subject: text "$at"
+  place: int 1
+  scene: text "res://vfx/dust.tscn"
+  scene_lifetime: float 2.5

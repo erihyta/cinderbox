@@ -1,0 +1,42 @@
+rule motion line 3 head 0
+  name: text "Use"
+  trigger: text "use"
+  conditions: texts
+    - "dash.charges > 0"
+  cooldown: float 0.4
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "dash.charges -= 1"
+              guard: text ""
+              line: int 4
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "dash.started"
+              guard: text ""
+              line: int 6
+          - dict
+              verb: text "impulse"
+              kind: text "part"
+              part: dict
+                class: text "CbImpulse"
+                properties: dict
+                  speed: float 11
+                  replace: int 2
+              guard: text ""
+              line: int 7
+          - dict
+              verb: text "move for"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  duration: float 0.18
+                  parameters: dict
+                    friction: float 0
+              guard: text ""
+              line: int 8

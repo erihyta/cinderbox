@@ -7,7 +7,8 @@
 # The build dir is for cb_server: a view file for check_object_source. Every check that needs no
 # running game is run: the ones that take no arguments, the keys page and the workshop in folders of
 # their own, the pack validator's hostile packs, the viewer reading a view file, and the names of
-# every mod's and character's project (written there by the server's build). Not here: check_menu (a window and a
+# every mod's and character's project (written there by the server's build), and every mod's committed bakes
+# (its items and motions baked again: unchanged). Not here: check_menu (a window and a
 # server), check_pack (packs pack_mod.ps1 makes), check_item_preview (a picture to look at).
 # Exit code 1 if any check failed; each failure's output is printed.
 
@@ -65,6 +66,24 @@ else
 	tail -n 20 "$tmp/server.txt"
 	failed+=("object_source")
 fi
+
+# Every mod's committed bakes are what its scenes and sheets bake to now (M283: the sheet compiler,
+# src/sheet, bakes a sheet's motions; a change to it that changes a shipped motion shows here).
+for project in server_mods/*/client; do
+	if [[ -f "$project/project.godot" ]]; then
+		name="bakes-${project//\//-}"
+		started=$SECONDS
+		if timeout 600 "$godot" --headless --path "$project" --script "$checks/bake_items.gd" > "$tmp/$name.txt" 2>&1 &&
+			timeout 600 "$godot" --headless --path "$project" --script "$checks/bake_motions.gd" >> "$tmp/$name.txt" 2>&1 &&
+			git diff --exit-code --stat -- "$project/items" "$project/motions" >> "$tmp/$name.txt" 2>&1; then
+			echo "ok    $name ($((SECONDS - started)) s)"
+		else
+			echo "FAIL  $name ($((SECONDS - started)) s)"
+			tail -n 60 "$tmp/$name.txt"
+			failed+=("$name")
+		fi
+	fi
+done
 
 # (Not the SDK's: its starters name MODNAME, which a new mod's name replaces.)
 for project in server_mods/*/client characters/*/client; do

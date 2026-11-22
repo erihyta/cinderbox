@@ -1,0 +1,186 @@
+rule motion line 9 head 0
+  name: text "Fire"
+  trigger: text "use"
+  conditions: texts
+    - "gun.ammo > 0 and not gun.reloading"
+  cooldown: float 0.2
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "gun.ammo -= 1"
+              guard: text ""
+              line: int 11
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.use"
+              guard: text ""
+              line: int 12
+rule motion line 15 head 0
+  name: text "Dry"
+  trigger: text "use"
+  conditions: texts
+    - "gun.ammo <= 0 and not gun.reloading"
+  cooldown: float 0.2
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "gun.reloading = 1"
+              guard: text ""
+              line: int 17
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.use_failed"
+              guard: text ""
+              line: int 18
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.reload"
+              guard: text ""
+              line: int 19
+rule motion line 22 head 0
+  name: text "Reload"
+  trigger: text "press"
+  action: text "reload"
+  conditions: texts
+    - "not gun.reloading and gun.ammo < gun.magazine"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "gun.reloading = 1"
+              guard: text ""
+              line: int 23
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.reload"
+              guard: text ""
+              line: int 24
+rule CbReaction line 29 head 27
+  when: int 0
+  event: text "item.use"
+  subject: text "^^"
+  scene: text "res://vfx/muzzle_flash.tscn"
+  scene_parent: text "Muzzle"
+  scene_lifetime: float 0.3
+rule CbReaction line 31 head 27
+  when: int 0
+  event: text "item.use"
+  subject: text "^^"
+  place: int 4
+  place_node: text "Muzzle"
+  sound: text "res://assets/sfx/gunshot.wav"
+  volume_db: float -5
+  pitch_jitter: float 0.06
+  max_distance: float 70
+rule CbReaction line 37 head 34
+  when: int 0
+  event: text "item.reach"
+  subject: text "^^"
+  place: int 3
+  place_node: text "Muzzle"
+  scene: text "res://vfx/tracer.tscn"
+  scene_lifetime: float 0.06
+rule CbReaction line 43 head 40
+  when: int 0
+  event: text "item.use2"
+  subject: text "^^"
+  place: int 3
+  place_node: text "Muzzle"
+  scene: text "res://vfx/scan_beam.tscn"
+  scene_lifetime: float 0.15
+rule CbReaction line 45 head 40
+  when: int 0
+  event: text "item.use2"
+  subject: text "^^"
+  place: int 4
+  place_node: text "Muzzle"
+  sound: text "res://assets/sfx/dry_click.wav"
+  volume_db: float -4
+  pitch_scale: float 1.8
+  max_distance: float 25
+rule CbPrediction line 48 head 0 prediction
+  action: text "use2"
+  cue: text "item.use2"
+  conditions: texts
+    - "!gun.reloading and !combat.dead"
+  cooldown: float 0.95
+rule CbReaction line 55 head 52
+  when: int 0
+  event: text "item.use_failed"
+  subject: text "^^"
+  place: int 4
+  place_node: text "Muzzle"
+  sound: text "res://assets/sfx/dry_click.wav"
+  volume_db: float -8
+  max_distance: float 12
+rule CbReaction line 61 head 58
+  when: int 0
+  event: text "item.reload"
+  subject: text "^^"
+  place: int 4
+  place_node: text "Muzzle"
+  sound: text "res://assets/sfx/reload.wav"
+  volume_db: float -10
+  max_distance: float 25
+rule CbReaction line 67 head 64
+  when: int 0
+  event: text "item.hit"
+  conditions: texts
+    - "event.value == 0"
+  subject: text "^^"
+  place: int 1
+  sound: text "res://assets/sfx/ricochet.wav"
+  volume_db: float -16
+  pitch_jitter: float 0.3
+  max_distance: float 30
+rule CbReaction line 68 head 64
+  when: int 0
+  event: text "item.hit"
+  conditions: texts
+    - "event.value == 0"
+  subject: text "^^"
+  place: int 1
+  scene: text "res://vfx/bullet_spark.tscn"
+  scene_lifetime: float 1
+rule CbReaction line 74 head 71
+  when: int 0
+  event: text "item.hit"
+  conditions: texts
+    - "event.value > 0"
+  subject: text "^^"
+  place: int 1
+  sound: text "res://assets/sfx/body_hit.wav"
+  volume_db: float -8
+  pitch_jitter: float 0.15
+  max_distance: float 40
+rule CbReaction line 75 head 71
+  when: int 0
+  event: text "item.hit"
+  conditions: texts
+    - "event.value > 0"
+  subject: text "^^"
+  place: int 1
+  scene: text "res://vfx/hit_puff.tscn"
+  scene_lifetime: float 1
+rule CbReaction line 81 head 78
+  when: int 0
+  event: text "item.hit"
+  conditions: texts
+    - "is_local and event.value > 0"
+  subject: text "^^"
+  place: int 4
+  place_node: text "^^/Head"
+  sound: text "res://assets/sfx/hit_marker.wav"
+  volume_db: float -6

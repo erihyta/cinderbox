@@ -26,6 +26,7 @@ include(Dependencies)
 
 add_subdirectory(src/expr)
 add_subdirectory(src/sim)
+add_subdirectory(src/sheet)
 add_subdirectory(src/anim)
 add_subdirectory(src/present)
 add_subdirectory(src/net)

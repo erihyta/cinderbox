@@ -1,0 +1,155 @@
+rule motion line 4 head 0
+  name: text "Slam"
+  trigger: text "press"
+  action: text "slam"
+  conditions: texts
+    - "not grounded"
+  cooldown: float 2
+  lasts: float 3
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "slam.started"
+              guard: text ""
+              line: int 7
+          - dict
+              verb: text "impulse"
+              kind: text "part"
+              part: dict
+                class: text "CbImpulse"
+                properties: dict
+                  speed: float 25
+                  frame: int 4
+                  direction: vec3 0 -1 0
+                  replace: int 1
+              guard: text ""
+              line: int 8
+          - dict
+              verb: text "move"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  parameters: dict
+                    gravity: float 30
+              guard: text ""
+              line: int 9
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "slam.landed"
+              guard: text ""
+              line: int 11
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "slam.big_landed"
+              guard: text "( slam.big > 0 )"
+              line: int 13
+          - dict
+              verb: text "move for"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  duration: float 0.5
+                  parameters: dict
+                    walk_speed: float 0
+              guard: text "( slam.big > 0 )"
+              line: int 14
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "slam.small_landed"
+              guard: text "not ( slam.big > 0 )"
+              line: int 16
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "slam.loud"
+              guard: text "not ( slam.big > 0 ) and ( slam.loud )"
+              line: int 18
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "slam.count += 1"
+              guard: text ""
+              line: int 19
+        line: int 10
+        within: float 2
+        wait: text "grounded"
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "slam.missed"
+              guard: text ""
+              line: int 21
+        line: int 20
+        timeout: bool true
+rule motion line 24 head 0
+  name: text "Land"
+  trigger: text "when"
+  expression: text "grounded"
+  conditions: texts
+    - "not motion.Slam"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "landed"
+              guard: text ""
+              line: int 25
+rule motion line 28 head 0
+  name: text "Later"
+  trigger: text "press"
+  action: text "later"
+  uses: int 2
+  refill: float 3
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "later.a"
+              guard: text ""
+              line: int 30
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "later.b"
+              guard: text ""
+              line: int 32
+          - dict
+              verb: text "end"
+              kind: text "end"
+              guard: text "( later.stop )"
+              line: int 34
+          - dict
+              verb: text "move for"
+              kind: text "part"
+              part: dict
+                class: text "CbMove"
+                properties: dict
+                  duration: float 1
+                  parameters: dict
+                    friction: float 0
+              guard: text ""
+              line: int 35
+        line: int 31
+        after: float 0.5
+rule CbReaction line 38 head 37
+  when: int 0
+  event: text "slam.landed"
+  shake: float 0.3

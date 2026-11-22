@@ -1,0 +1,8 @@
+rule CbFieldBinding line 4 head 0
+  conditions: texts
+    - "brawl.combo > 0"
+  target: text "Combo"
+rule CbFieldBinding line 5 head 0
+  hides: bool false
+  text_format: text "COMBO {brawl.combo}"
+  target: text "Combo"

@@ -1,0 +1,37 @@
+rule CbReaction line 8 head 5
+  when: int 0
+  event: text "sword.swing"
+  subject: text "$at"
+  place: int 4
+  place_node: text "$at/RightHand"
+  sound: text "res://assets/sfx/sword_swing.wav"
+  volume_db: float -4
+  pitch_jitter: float 0.08
+  max_distance: float 30
+rule CbReaction line 14 head 11
+  when: int 0
+  event: text "sword.hit"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/sword_hit.wav"
+  volume_db: float -2
+  pitch_jitter: float 0.1
+  max_distance: float 40
+rule CbReaction line 20 head 17
+  when: int 0
+  event: text "sword.blocked"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/sword_clang.wav"
+  volume_db: float -2
+  pitch_jitter: float 0.1
+  max_distance: float 45
+rule CbReaction line 26 head 23
+  when: int 0
+  event: text "sword.parried"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/sword_parry.wav"
+  volume_db: float 0
+  pitch_jitter: float 0.05
+  max_distance: float 50

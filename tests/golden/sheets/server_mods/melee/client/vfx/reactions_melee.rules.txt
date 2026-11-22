@@ -1,0 +1,19 @@
+rule CbReaction line 8 head 5
+  when: int 0
+  event: text "melee.swing"
+  subject: text "$at"
+  place: int 4
+  place_node: text "$at/RightHand"
+  sound: text "res://assets/sfx/melee_swing.wav"
+  volume_db: float -6
+  pitch_jitter: float 0.08
+  max_distance: float 30
+rule CbReaction line 15 head 12
+  when: int 0
+  event: text "melee.hit"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/melee_bat_hit.wav"
+  volume_db: float -4
+  pitch_jitter: float 0.12
+  max_distance: float 40

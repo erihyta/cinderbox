@@ -20,6 +20,13 @@ a server mod (C++) ──> damage, score, rounds, shops, who wins: the server's 
 See also: [motions.md](motions.md) (what motions are, what conditions read, the baked file),
 [looks.md](looks.md#expressions) (the expression language).
 
+**The compiler** (M283): `src/sheet`, plain C++ with no Godot types: one parser of every block of a
+sheet (`sheet_rules.h`) and the bake of its motion blocks (`sheet_bake.h`, the scene it is in
+answering for the nodes a line names). The editor, the bake and the names check use it; the server,
+the cooker and the tests can. Every shipped sheet's parse is a golden file
+(`tests/golden/sheets`, the `sheets_golden` test), and every mod's committed bakes are checked to be
+what its sheets bake to now (the Godot checks). Where it goes next: [step6-plan.md](step6-plan.md).
+
 ## What the language may not do
 
 Every machine runs it, and rollback runs a tick again many times:
