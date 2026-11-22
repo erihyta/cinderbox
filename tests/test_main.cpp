@@ -1966,7 +1966,7 @@ void TestSheetsVersion1()
 	sheet::Strings declErrors;
 	const std::vector<sheet::Declaration> declared = sheet::ReadDeclarations(
 		"cbsheet 1\nfield a.x int\nfield a.y bool shared\nfield a.n int on item = 3\nevent a.e everyone\naction go key G\nparam a.top 25 m/s\n"
-		"field a.x float\nfield a.bad int on item shared\nparam a.top 3\n",
+		"field a.x float\nfield a.bad int on world shared\nparam a.top 3\n",
 		declErrors );
 	CHECK( declared.size() == 6 && declared[1].shared && declared[2].on == "item" && declared[2].value == 3.0 && declared[3].everyone &&
 		   declared[4].key == "G" && declared[5].kind == sheet::Declaration::Kind::Param && declared[5].value == 25.0 );
@@ -4595,11 +4595,12 @@ void TestMotionTimers()
 	BoardField round{ "t.round", BoardType::Float, BoardScope::Global, 0 };
 	round.timer = true;
 	schema.fields = { cool, round, { "t.count", BoardType::Int, BoardScope::Entity, 1 } };
-	schema.events = { "t.went", "t.hit" };
+	schema.events = { "t.went", "t.hit", "t.ready" };
 	schema.actions.push_back( { "go", 0, "Q" } );
 	const std::string text = "cinderbox_motions\t3\n"
 							 "motion\tGo\nwhen\tpress\tgo\nif\tt.cool <= 0\nchange\tt.cool\t=\t2\n"
-							 "emit\tt.hit\t(t.count + 40)\nstep\t0\t0.5\tt.count > 5\ngoon\nemit\tt.went\nchange\tt.count\t+=\t1\n";
+							 "emit\tt.hit\t(t.count + 40)\nstep\t0\t0.5\tt.count > 5\ngoon\nemit\tt.went\nchange\tt.count\t+=\t1\n"
+							 "motion\tReady\nwhen\tedge\tready.Go and cooldown.Go <= 0\nemit\tt.ready\n";
 	schema.motionSets.push_back( { "t", "t.moves", text } );
 	// (The codec keeps the timer bit.)
 	ModSchema decoded;
@@ -4614,7 +4615,8 @@ void TestMotionTimers()
 		std::printf( "    %s\n", warnings.c_str() );
 		return;
 	}
-	CHECK( motions->list[0].steps.size() == 2 && motions->list[0].steps[1].goOn );
+	CHECK( motions->list.size() == 2 && motions->list[0].steps[1].goOn );
+	CHECK( std::any_of( motions->list.begin(), motions->list.end(), []( const Motion& m ) { return m.name.find( "Ready" ) != std::string::npos; } ) );
 	Simulation sim( TestConfig(), FlatMap() );
 	sim.SetMotions( motions );
 	InputFrame f;

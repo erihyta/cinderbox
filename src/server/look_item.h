@@ -24,8 +24,9 @@ struct LookItem
 	struct Field
 	{
 		std::string name;
-		std::string type; // "int", "float", "bool"
+		std::string type; // "int", "float", "bool", "timer" (a float that counts down while carried)
 		float value = 0.0f;
+		bool shared = false; // sent to every player (the bat's heat: it glows on others too)
 	};
 	std::vector<Field> fields;
 };

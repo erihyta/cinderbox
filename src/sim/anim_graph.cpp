@@ -152,6 +152,43 @@ private:
 				return;
 			}
 		}
+		if ( name.rfind( "item:", 0 ) == 0 )
+		{
+			// A field of the motion's item (M287).
+			const BoardField* own = m_schema.FindField( name.substr( 5 ) );
+			step.kind = own != nullptr && own->scope == BoardScope::Entity ? AnimExpr::VarKind::ItemField : AnimExpr::VarKind::Zero;
+			step.index = own != nullptr ? own->slot : 0;
+			step.type = own != nullptr ? own->type : BoardType::Int;
+			if ( step.kind == AnimExpr::VarKind::Zero && m_warnings.find( "'" + name + "'" ) == std::string::npos )
+			{
+				m_warnings += "'" + name + "': no mod declares the field (it reads as 0); ";
+			}
+			return;
+		}
+		for ( const char* state : { "ready.", "cooldown.", "uses." } )
+		{
+			if ( name.rfind( state, 0 ) == 0 )
+			{
+				// A motion's state (M287).
+				step.kind = AnimExpr::VarKind::Zero;
+				if ( ListingMotionNames() )
+				{
+					return;
+				}
+				const int motion = FindMotionByName( m_schema, name.substr( std::string( state ).size() ) );
+				if ( motion >= 0 && motion < 65535 )
+				{
+					step.kind = state[0] == 'r' ? AnimExpr::VarKind::MotionReady : state[0] == 'c' ? AnimExpr::VarKind::MotionCooldown : AnimExpr::VarKind::MotionUses;
+					step.index = uint16_t( motion );
+				}
+				else if ( m_warnings.find( "'" + name + "'" ) == std::string::npos )
+				{
+					m_warnings += "'" + name + "': " + ( motion == -2 ? std::string( "several motions have that name: say the set too" ) : std::string( "no motion of that name" ) ) +
+								  " (it reads as 0); ";
+				}
+				return;
+			}
+		}
 		if ( name.rfind( "motion.", 0 ) == 0 )
 		{
 			step.kind = AnimExpr::VarKind::Zero;
@@ -344,6 +381,19 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			return 0.0f;
 		case AnimExpr::VarKind::MotionOn:
 			return ( in.motionsOn >> step.index ) & 1 ? 1.0f : 0.0f;
+		case AnimExpr::VarKind::ItemField:
+		{
+			if ( in.itemBoard == nullptr || size_t( step.index ) >= in.itemBoard->size() )
+			{
+				return 0.0f;
+			}
+			const int32_t value = ( *in.itemBoard )[size_t( step.index )];
+			return step.type == BoardType::Float ? BoardToFloat( value ) : step.type == BoardType::Bool ? ( value != 0 ? 1.0f : 0.0f ) : float( value );
+		}
+		case AnimExpr::VarKind::MotionReady:
+		case AnimExpr::VarKind::MotionCooldown:
+		case AnimExpr::VarKind::MotionUses:
+			return in.motionState != nullptr ? in.motionState( in.motionUser, step.kind, step.index ) : 0.0f;
 		case AnimExpr::VarKind::UsingKind:
 			for ( uint32_t i = 0; in.usingKinds != nullptr && i < in.usingCount; ++i )
 			{

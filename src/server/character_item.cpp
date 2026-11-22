@@ -626,6 +626,8 @@ LookItem ParseLookItem( const std::string& kind, const std::string& text )
 			LookItem::Field field;
 			if ( words >> field.name >> field.type >> field.value )
 			{
+				std::string shared;
+				field.shared = ( words >> shared ) && shared == "shared";
 				item.fields.push_back( field );
 			}
 		}

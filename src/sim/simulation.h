@@ -884,6 +884,7 @@ private:
 	// An impulse on `target` along `direction`, after taking away what it replaces.
 	void ImpulseEnd( const MotionEffect& effect, float strength, const MotionEnd& target, Character& c, b3Vec3 direction );
 	// A find of a motion step that starts now: what its shape overlaps, and what happens to each.
+	flecs::entity MotionItemOf( uint32_t holder, const Motion& m );
 	void RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
 				  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& values, uint32_t sayer );
 	// A movement parameter given to a player for some seconds (MoveEffects).
@@ -944,6 +945,11 @@ private:
 	void SetAnimState( flecs::entity e, const AnimState& state );
 	flecs::entity_t m_animId = 0;
 	BoardValues m_globalBoard;
+	// (M287: what each player carries, by holder, as (holder, item NetId), and one player's items'
+	// boards while its motions run, with each one's NetId.)
+	std::vector<std::pair<uint32_t, uint32_t>> m_carriedItemsScratch;
+	std::vector<MotionInputs::ItemBoard> m_itemBoardsScratch;
+	std::vector<uint32_t> m_itemBoardsOf;
 	std::vector<EntityRef> m_entities; // sorted by netId
 
 	// Rebuilds m_shapeLookup (shape index -> NetId) for every shape in the world.

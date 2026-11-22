@@ -2324,7 +2324,7 @@ void TestRifle()
 	int rifleReload = schema.FindEvent( "item.reload" );
 	int pistolFired = schema.FindEvent( "item.use" );
 	CHECK( fire != 0 && rifle != 0 && rifleFired >= 0 && rifleDry >= 0 && rifleReload >= 0 && pistolFired >= 0 );
-	CHECK( schema.FindItemKind( "gun.rifle" ) >= 0 && schema.FindField( "gun.ammo" ) != nullptr );
+	CHECK( schema.FindItemKind( "gun.rifle" ) >= 0 && schema.FindField( "gun.rounds" ) != nullptr );
 
 	// Held for two seconds (20 shots), a tap (1), then held for good (9, a reload, and on).
 	auto trigger = []( uint32_t tick ) { return ( tick >= 200 && tick < 320 ) || tick == 400 || tick >= 460; };
@@ -2344,7 +2344,20 @@ void TestRifle()
 	std::set<uint32_t> shots, clicks, reloads, pistolShots;
 	int32_t ammoAfterHold = -1;
 	int32_t ammoAfterTap = -1;
-	const BoardField* ammo = schema.FindField( "gun.ammo" );
+	// (Its rounds are the rifle's own field, M287: the copy its holder carries.)
+	const BoardField* ammo = schema.FindField( "gun.rounds" );
+	const int rifleKind = schema.FindItemKind( "gun.rifle" );
+	auto roundsOf = [&]( Simulation& sim, uint32_t holder ) {
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == holder && int( item->kind ) == rifleKind )
+			{
+				return sim.BoardValue( r.netId, ammo->slot );
+			}
+		}
+		return -1;
+	};
 	h.RunUntil( 17.0, [&]( double ) {
 		Simulation& sim = h.server.Sim();
 		const uint32_t rifleman = sim.PlayerNetId( h.bots[0].client->Slot() );
@@ -2372,11 +2385,11 @@ void TestRifle()
 		}
 		if ( rifleman != 0 && sim.Tick() >= 360 && sim.Tick() < 390 )
 		{
-			ammoAfterHold = sim.BoardValue( rifleman, ammo->slot );
+			ammoAfterHold = roundsOf( sim, rifleman );
 		}
 		if ( rifleman != 0 && sim.Tick() >= 430 && sim.Tick() < 450 )
 		{
-			ammoAfterTap = sim.BoardValue( rifleman, ammo->slot );
+			ammoAfterTap = roundsOf( sim, rifleman );
 		}
 	} );
 	h.Report();
@@ -2528,7 +2541,7 @@ void TestMelee()
 	int gunKind = schema.FindItemKind( "gun.pistol" );
 	int batKind = schema.FindItemKind( "melee.bat" );
 	int hand = schema.FindSocket( "RightHand" );
-	const BoardField* hot = schema.FindField( "melee.hot" );
+	const BoardField* hot = schema.FindField( "melee.hot_left" ); // (the bat's own timer, M287)
 	CHECK( gunKind >= 0 && batKind >= 0 && hand == int( kSocketRightHand ) && hot != nullptr );
 	bool heldGun = false;
 	bool gunAfterBat = false;

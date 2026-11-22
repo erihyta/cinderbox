@@ -94,6 +94,15 @@ struct AnimExpr
 		// "using.gun.pistol": the player uses an item of the kind this tick: in the hand with the use
 		// button down, or by its slot's key (the press; while held, for one used while held).
 		UsingKind,
+		// "item:gun.rounds": a field of the item an item's motion is about (M287: a sheet's field
+		// "on item"; index: board slot). Only a motion reads one (0 elsewhere, or without the item).
+		ItemField,
+		// "ready.Fire", "cooldown.Fire", "uses.Fire" (M287: a sheet's "ready Fire", ...): a motion of
+		// the player's could start now (not on, off cooldown, a use left), the seconds of cooldown it
+		// has left, its uses left (index: as MotionOn). Only a motion reads them (0 elsewhere).
+		MotionReady,
+		MotionCooldown,
+		MotionUses,
 	};
 	enum Builtin : uint8_t
 	{
@@ -336,6 +345,11 @@ struct AnimGraphInputs
 	uint32_t usingCount = 0;
 	// The curves "curve(...)" reads (the motion's own; null: 0).
 	const std::vector<AnimCurve>* curves = nullptr;
+	// The board of the item a motion is about (VarKind::ItemField; null: 0).
+	const BoardValues* itemBoard = nullptr;
+	// A motion's state (VarKind::MotionReady, ...): read through the motions (sim/motions.h); null: 0.
+	float ( *motionState )( const void* user, AnimExpr::VarKind kind, uint16_t motion ) = nullptr;
+	const void* motionUser = nullptr;
 };
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );

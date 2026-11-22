@@ -126,6 +126,15 @@ private:
 			{
 				++m_pos;
 			}
+			// "item:gun.rounds" (M287: a field of the item a motion is about) is one name too.
+			if ( m_pos + 1 < s.size() && s[m_pos] == ':' && ( std::isalpha( static_cast<unsigned char>( s[m_pos + 1] ) ) || s[m_pos + 1] == '_' ) )
+			{
+				++m_pos;
+				while ( m_pos < s.size() && IsNameChar( s[m_pos] ) )
+				{
+					++m_pos;
+				}
+			}
 			m_token.kind = Token::Name;
 			m_token.text = s.substr( start, m_pos - start );
 			return;

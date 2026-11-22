@@ -255,6 +255,10 @@ bool Spaces( const Piece& p )
 
 // The params of the sheet being lowered (its word for a number: param gun.magazine 12), by name.
 thread_local const std::map<std::string, std::string>* t_params = nullptr;
+// Its item's own fields (field ... on item), which a motion's lines read and change as the item's
+// ("item:gun.rounds", M287); only in a motion block.
+thread_local const std::set<std::string>* t_itemFields = nullptr;
+thread_local bool t_inMotion = false;
 
 std::string ExprToV0( const std::string& text )
 {
@@ -287,10 +291,17 @@ std::string ExprToV0( const std::string& text )
 			i += 4;
 			continue;
 		}
-		if ( ( w == "known" || w == "active" ) && spaceAt( i + 1 ) && wordAt( i + 2 ) != nullptr && NameStart( ( *wordAt( i + 2 ) )[0] ) )
+		if ( ( w == "known" || w == "active" || w == "ready" || w == "cooldown" || w == "uses" ) && spaceAt( i + 1 ) && wordAt( i + 2 ) != nullptr &&
+			 NameStart( ( *wordAt( i + 2 ) )[0] ) )
 		{
-			out += w == "known" ? "?" : "motion.";
+			// (ready, cooldown, uses: a motion's state, M287.)
+			out += w == "known" ? "?" : w == "active" ? "motion." : w + ".";
 			i += 1; // (the spaces: the name is read next)
+			continue;
+		}
+		if ( t_inMotion && t_itemFields != nullptr && t_itemFields->count( w ) != 0 )
+		{
+			out += "item:" + w;
 			continue;
 		}
 		const bool path = i + 1 < p.size() && p[i + 1].word == false && ( p[i + 1].text[0] == '/' || p[i + 1].text[0] == '@' );
@@ -1369,17 +1380,27 @@ Lowered LowerVersion1( const std::string& text, Strings& errors )
 			params[d.name] = Num( d.value );
 		}
 	}
+	std::set<std::string> itemFields;
+	for ( const Declaration& d : ReadDeclarations( text, ignored ) )
+	{
+		if ( d.kind == Declaration::Kind::Field && d.on == "item" )
+		{
+			itemFields.insert( d.name );
+		}
+	}
 	struct Using
 	{
-		explicit Using( const std::map<std::string, std::string>* p )
+		Using( const std::map<std::string, std::string>* p, const std::set<std::string>* f )
 		{
 			t_params = p;
+			t_itemFields = f;
 		}
 		~Using()
 		{
 			t_params = nullptr;
+			t_itemFields = nullptr;
 		}
-	} using_( &params );
+	} using_( &params, &itemFields );
 	Out out;
 	bool header = false;
 	size_t i = 0;
@@ -1414,7 +1435,9 @@ Lowered LowerVersion1( const std::string& text, Strings& errors )
 		}
 		else if ( verb == "motion" || verb == "use" )
 		{
+			t_inMotion = true;
 			LowerMotion( lines, i, end, out, errors );
+			t_inMotion = false;
 		}
 		else if ( verb == "react" )
 		{
@@ -1566,15 +1589,15 @@ std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& err
 					ok = false;
 				}
 			}
-			ok = ok && ( d.shared && d.privately ) == false && ( d.on == "player" || ( d.shared == false && d.privately == false ) );
+			ok = ok && ( d.shared && d.privately ) == false && ( d.on == "player" || ( d.on == "item" && d.privately == false ) || ( d.shared == false && d.privately == false ) );
 			if ( ok == false )
 			{
 				fail( "field NAME int|float|bool|timer [on player|world|item] [shared|private] [= VALUE] (shared and private for a player's field)" );
 				continue;
 			}
-			if ( d.type == "timer" && ( d.on == "item" || d.privately ) )
+			if ( d.type == "timer" && d.privately )
 			{
-				fail( "a timer is a player's field or the world's (an item's, or a private one: not yet)" );
+				fail( "a timer is a player's field, an item's or the world's (a private one: not yet)" );
 				continue;
 			}
 		}

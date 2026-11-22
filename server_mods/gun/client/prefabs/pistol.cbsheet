@@ -1,15 +1,16 @@
 cbsheet 1
 
-# The pistol (step 5, M282: every item a sheet): pulling its trigger, which every simulation runs
-# (predicted), and how it looks. The shot itself, the rounds and the reload's end are the gun mod's
-# (gun.cpp): it hears item.use, aims along the camera as it was, hit-tests posed bodies, and says
-# item.reach (the tracer) and item.hit. Plain paths are from the scene's root.
+# The pistol: its trigger, its rounds and its reload, which every simulation runs (predicted: M287,
+# the gun's own fields), and how it looks. The shot itself is the gun mod's (gun.cpp): it hears
+# item.use, aims along the camera as it was, hit-tests posed bodies, and says item.reach (the
+# tracer) and item.hit. Plain paths are from the scene's root.
 
-# Its names (the gun mod's C++ finds them), its own field, its numbers (the gun mod reads them as the
-# item's properties, gun.damage and the rest).
-field gun.ammo int
-field gun.reloading bool
+# Its names (the gun mod's C++ finds them), its own fields (each copy's: a magazine put away half
+# empty comes out half empty), its numbers (the gun mod reads them as the item's properties).
 field gun.rounds int on item = 12
+field gun.magazine int on item = 12
+field gun.reloading bool on item
+field gun.reload_left timer on item
 event item.use
 event item.use_failed
 event item.reload
@@ -18,7 +19,6 @@ event item.hit
 action reload key R
 param gun.damage 25
 param gun.kill_push 6 m/s
-param gun.magazine 12
 param gun.prop_push 4 m/s
 param gun.range 80 m
 param gun.reload_seconds 1.5 s
@@ -27,24 +27,32 @@ param mark.range 80 m
 param mark.seconds 1 s
 
 # Fire: once a press (the item's use), 0.2 s apart at most, while it has rounds and is not
-# reloading: a round off what you see, and item.use (the flash, the sound, the recoil: the pack's
-# Shoot state starts on it).
-motion Fire on use if gun.ammo > 0 and not gun.reloading
+# reloading: a round off the gun, and item.use (the flash, the sound, the recoil: the pack's Shoot
+# state starts on it; the gun mod's shot).
+motion Fire on use if gun.rounds > 0 and not gun.reloading
 	cooldown 0.2
-	change gun.ammo -= 1
+	change gun.rounds -= 1
 	emit item.use
 
 # Dry: the trigger on an empty magazine clicks, and the reload begins.
-motion Dry on use if gun.ammo <= 0 and not gun.reloading
+motion Dry on use if gun.rounds <= 0 and not gun.reloading
 	cooldown 0.2
 	change gun.reloading = 1
+	change gun.reload_left = gun.reload_seconds
 	emit item.use_failed
 	emit item.reload
 
 # Reload: R, while not full.
-motion Reload on press reload if not gun.reloading and gun.ammo < gun.magazine
+motion Reload on press reload if not gun.reloading and gun.rounds < gun.magazine
 	change gun.reloading = 1
+	change gun.reload_left = gun.reload_seconds
 	emit item.reload
+
+# Reloaded: when its reload_left has run out (a timer: it ran in the holster too), full again.
+motion Reloaded when gun.reloading and gun.reload_left <= 0
+	for carrier
+	change gun.reloading = 0
+	change gun.rounds = gun.magazine
 
 # Flash, ShotSound
 react on item.use
@@ -68,7 +76,7 @@ react on item.use2
 			sound dry_click volume -4 pitch 1.8 range 25
 
 # PredictScan: the mark mod's scan (its use2), still the server's with a guess here
-predict use2 as item.use2 if !gun.reloading and !combat.dead
+predict use2 as item.use2 if !hand.gun.reloading and !combat.dead
 	cooldown 0.95
 
 # DrySound

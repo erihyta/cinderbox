@@ -2414,6 +2414,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	// What everyone holds, for state machines that ask ("attack and melee.bat").
 	m_heldScratch.clear();
 	m_carriedScratch.clear();
+	m_carriedItemsScratch.clear();
 	if ( AnyGraph() || m_motions )
 	{
 		for ( const EntityRef& r : m_entities )
@@ -2421,6 +2422,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			flecs::entity e( m_world, r.entity );
 			if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder != 0 )
 			{
+				m_carriedItemsScratch.push_back( { item->holder, uint32_t( r.netId ) } );
 				m_carriedScratch.push_back( { item->holder, item->kind } );
 				if ( item->stowed == 0 )
 				{
@@ -2444,6 +2446,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	auto byHolder = []( const std::pair<uint32_t, uint16_t>& a, const std::pair<uint32_t, uint16_t>& b ) { return a.first < b.first; };
 	std::stable_sort( m_heldScratch.begin(), m_heldScratch.end(), byHolder );
 	std::stable_sort( m_carriedScratch.begin(), m_carriedScratch.end(), byHolder );
+	std::stable_sort( m_carriedItemsScratch.begin(), m_carriedItemsScratch.end(),
+					  []( const std::pair<uint32_t, uint32_t>& a, const std::pair<uint32_t, uint32_t>& b ) { return a.first < b.first; } );
 	std::stable_sort( m_usingScratch.begin(), m_usingScratch.end(), byHolder );
 	auto kindsOf = [this, byHolder]( uint32_t netId, Kinds& k ) {
 		auto take = [&]( const std::vector<std::pair<uint32_t, uint16_t>>& list, uint16_t* to, uint32_t& count, uint32_t most ) {
@@ -2522,6 +2526,40 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			FlyHold( e, motion );
 			{
 				const AnimState before = GetAnimState( e );
+				// What it carries: each item's board, for its items' motions (M287), its timers counted
+				// down here too (an item's timer runs while it is carried).
+				m_itemBoardsScratch.clear();
+				m_itemBoardsOf.clear();
+				{
+					const std::pair<uint32_t, uint32_t> key{ netId, 0u };
+					for ( auto it = std::lower_bound( m_carriedItemsScratch.begin(), m_carriedItemsScratch.end(), key,
+													  []( const std::pair<uint32_t, uint32_t>& a, const std::pair<uint32_t, uint32_t>& b ) { return a.first < b.first; } );
+						  it != m_carriedItemsScratch.end() && it->first == netId; ++it )
+					{
+						flecs::entity carried = FindEntity( it->second );
+						const HeldItem* held = carried.is_valid() ? carried.try_get<HeldItem>() : nullptr;
+						if ( held == nullptr )
+						{
+							continue;
+						}
+						MotionInputs::ItemBoard one;
+						one.kind = held->kind;
+						one.stowed = held->stowed != 0;
+						one.board = GetBoard( carried );
+						one.board.values.resize( m_config.fields );
+						for ( uint16_t timer : m_motions->entityTimers )
+						{
+							const float left = size_t( timer ) < one.board.values.size() ? BoardToFloat( one.board.values[timer] ) : 0.0f;
+							if ( left > 0.0f )
+							{
+								one.board.values[timer] = BoardFromFloat( std::max( 0.0f, left - m_config.TimeStep() ) );
+								one.changed = true;
+							}
+						}
+						m_itemBoardsScratch.push_back( one );
+						m_itemBoardsOf.push_back( it->second );
+					}
+				}
 				Blackboard board = GetBoard( e );
 				// Its timers count down first (M287: a field "timer", a second a second, to 0).
 				bool timersRan = false;
@@ -2616,6 +2654,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				m_motionActive.clear();
 				m_refusalScratch.clear();
 				motionIn.refusals = &m_refusalScratch;
+				motionIn.items = &m_itemBoardsScratch;
 				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents, m_motionActive );
 				if ( m_refusalScratch.empty() == false && slot >= 0 )
 				{
@@ -2624,6 +2663,13 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				if ( boardChanged || timersRan )
 				{
 					SetBoard( e, board );
+				}
+				for ( size_t k = 0; k < m_itemBoardsScratch.size(); ++k )
+				{
+					if ( m_itemBoardsScratch[k].changed )
+					{
+						SetBoard( FindEntity( m_itemBoardsOf[k] ), m_itemBoardsScratch[k].board );
+					}
 				}
 				// A hold whose motion ended (its condition, a new throw) is let go.
 				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
@@ -3416,7 +3462,35 @@ void Simulation::Step( const InputFrame& given )
 		ApplyPhysicsEvents( frame, 0, uint16_t( std::min<size_t>( k + 1, 0xFFFF ) ) );
 	}
 	spent( m_profile.commandsNs );
-	// The game's timers (M287), a second a second, before the characters' motions read them.
+	// The game's timers (M287), a second a second, before the characters' motions read them; and
+	// those of items lying in the world (a carried one's run with its holder's motions).
+	if ( m_motions && m_motions->entityTimers.empty() == false )
+	{
+		for ( const EntityRef& r : m_entities )
+		{
+			flecs::entity e( m_world, r.entity );
+			const HeldItem* held = e.try_get<HeldItem>();
+			if ( held == nullptr || held->holder != 0 || HasBoard( e ) == false )
+			{
+				continue;
+			}
+			Blackboard board = GetBoard( e );
+			bool ran = false;
+			for ( uint16_t timer : m_motions->entityTimers )
+			{
+				const float left = size_t( timer ) < board.values.size() ? BoardToFloat( board.values[timer] ) : 0.0f;
+				if ( left > 0.0f )
+				{
+					board.values[timer] = BoardFromFloat( std::max( 0.0f, left - m_config.TimeStep() ) );
+					ran = true;
+				}
+			}
+			if ( ran )
+			{
+				SetBoard( e, board );
+			}
+		}
+	}
 	if ( m_motions )
 	{
 		for ( uint16_t timer : m_motions->globalTimers )
@@ -5864,6 +5938,33 @@ std::vector<uint32_t> Simulation::BreakablesNear( b3Vec3 point, float radius ) c
 	return out;
 }
 
+// The copy of an item's motion's kind its player carries (M287): the one in the hand, or the first
+// carried for a motion "for carrier". None: invalid.
+flecs::entity Simulation::MotionItemOf( uint32_t holder, const Motion& m )
+{
+	flecs::entity best;
+	bool bestInHand = false;
+	if ( m.heldKind < 0 )
+	{
+		return best;
+	}
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		const HeldItem* held = e.try_get<HeldItem>();
+		if ( held == nullptr || held->holder != holder || int( held->kind ) != m.heldKind || ( held->stowed != 0 && m.heldCarried == false ) )
+		{
+			continue;
+		}
+		if ( best.is_valid() == false || ( bestInHand == false && held->stowed == 0 ) )
+		{
+			best = e;
+			bestInHand = held->stowed == 0;
+		}
+	}
+	return best;
+}
+
 void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
 						  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& motionValues, uint32_t sayer )
 {
@@ -6034,16 +6135,32 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 				GiveMove( target.end.entity, move.param, MotionAmount( m, move.value, move.expr, values, MoveParamInfoOf( move.param ).min, MoveParamInfoOf( move.param ).max ), move.seconds );
 			}
 		}
-		// The owner's fields, once for each thing found.
+		// The owner's fields, once for each thing found; and its item's (M287).
 		if ( find.changes.empty() == false )
 		{
 			Blackboard board = GetBoard( e );
+			flecs::entity item = MotionItemOf( selfId, m );
+			Blackboard itemBoard = item.is_valid() ? GetBoard( item ) : Blackboard{};
+			itemBoard.values.resize( m_config.fields );
+			bool itemChanged = false;
 			for ( MotionFind::Change change : find.changes )
 			{
 				change.value = MotionAmount( m, change.value, change.expr, values, -1.0e9f, 1.0e9f );
-				ApplyFindChange( change, board );
+				if ( change.item == false )
+				{
+					ApplyFindChange( change, board );
+				}
+				else if ( item.is_valid() )
+				{
+					ApplyFindChange( change, itemBoard );
+					itemChanged = true;
+				}
 			}
 			SetBoard( e, board );
+			if ( itemChanged )
+			{
+				SetBoard( item, itemBoard );
+			}
 		}
 		for ( int event : find.emits )
 		{
