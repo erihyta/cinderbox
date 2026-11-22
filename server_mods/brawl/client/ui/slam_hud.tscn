@@ -1,8 +1,10 @@
 [gd_scene format=3]
 
 ; The ground slam's own HUD (CbItem.hud on prefabs/slam.tscn, shown while it is carried): one line, its key
-; and whether it is ready. What it says is the sheet beside it (slam_hud.rules). Its row is its own:
+; and whether it is ready. What it says is the sheet beside it (slam_hud.cbsheet). Its row is its own:
 ; the four skills' lines stack at the bottom left.
+
+[ext_resource type="CbSheet" path="res://ui/slam_hud.cbsheet" id="sheet"]
 
 [sub_resource type="LabelSettings" id="Small"]
 font_size = 20
@@ -22,4 +24,4 @@ offset_bottom = -178.0
 label_settings = SubResource("Small")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://ui/slam_hud.rules"
+sheet = ExtResource("sheet")

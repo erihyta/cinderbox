@@ -1,5 +1,5 @@
-"""Turns a scene's CbReaction and CbPrediction nodes into a rules sheet beside it (scene.rules) and one
-CbRules node at its root. The scene is rewritten; look at both before you commit them.
+"""Turns a scene's CbReaction and CbPrediction nodes into a rules sheet beside it (scene.cbsheet) and
+one CbRules node at its root, holding it. The scene is rewritten; look at both before you commit them.
 
     python tools/reactions_to_rules.py <project dir> <scene path inside it>
 
@@ -189,11 +189,15 @@ for part in parts:
 if removed == 0:
     raise SystemExit("nothing to convert in " + path)
 stem = os.path.splitext(os.path.basename(scene))[0]
-rules_rel = posixpath.join(posixpath.dirname(scene), stem + ".rules")
+rules_rel = posixpath.join(posixpath.dirname(scene), stem + ".cbsheet")
 sheet = "# %s's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are\n# from the scene's root.\n\n" % os.path.basename(scene)
 sheet += "\n\n".join("\n".join(r) for r in rules) + "\n"
 io.open(os.path.join(project, rules_rel), "w", encoding="utf-8", newline="\n").write(sheet)
+# The sheet is the scene's resource: after its last ext_resource, or right after its header.
+exts = [i for i, part in enumerate(kept) if part.startswith("[ext_resource")]
+at = exts[-1] + 1 if exts else 1
+kept.insert(at, '[ext_resource type="CbSheet" path="res://%s" id="sheet"]\n' % rules_rel)
 body = "\n".join(kept).rstrip("\n")
-body += '\n\n[node name="Rules" type="CbRules" parent="."]\nfile = "res://%s"\n' % rules_rel
+body += '\n\n[node name="Rules" type="CbRules" parent="."]\nsheet = ExtResource("sheet")\n'
 io.open(path, "w", encoding="utf-8", newline="").write(body.replace("\n", nl))
 print("%s: %d nodes into %s" % (path, removed, rules_rel))

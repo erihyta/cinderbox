@@ -4,9 +4,11 @@
 ; at the press is hit and knocked back. 3 s to come back (brawl.cd_dash, counted down by the motion
 ; set, shown by the HUD).
 ;   DashStrike  CbItem     once a press, by its slot's key
-;     Rules     CbRules    dash_strike.rules: the lunge (16 m/s, 0.25 s without friction, 3 s apart)
+;     Rules     CbRules    dash_strike.cbsheet: the lunge (16 m/s, 0.25 s without friction, 3 s apart)
 ;                          and the Hit (a line 4 m ahead, at once: 10 m/s on who it hit)
 ; (The line is at the press, before the lunge moves you: nothing is hit along the way.)
+
+[ext_resource type="CbSheet" path="res://prefabs/dash_strike.cbsheet" id="sheet"]
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -41,4 +43,4 @@ shape = SubResource("Body")
 mesh = SubResource("Mesh")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/dash_strike.rules"
+sheet = ExtResource("sheet")

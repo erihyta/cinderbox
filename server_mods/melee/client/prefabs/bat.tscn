@@ -1,5 +1,7 @@
 [gd_scene format=3 uid="uid://bdlgyugvlsbhm"]
 
+[ext_resource type="CbSheet" path="res://prefabs/bat.cbsheet" id="sheet"]
+
 [sub_resource type="StandardMaterial3D" id="Tape"]
 albedo_color = Color(0.1, 0.1, 0.12, 1)
 roughness = 0.9
@@ -197,4 +199,4 @@ shape = SubResource("Body")
 libraries/ = SubResource("AnimationLibrary_gysuc")
 
 [node name="Rules" type="CbRules" parent="." unique_id=1433396034]
-file = "res://prefabs/bat.rules"
+sheet = ExtResource("sheet")

@@ -42,7 +42,7 @@ String CbRulesHighlighter::_get_name() const
 
 PackedStringArray CbRulesHighlighter::_get_supported_languages() const
 {
-	return PackedStringArray( { "rules" } );
+	return PackedStringArray( { "cbsheet" } );
 }
 
 Ref<EditorSyntaxHighlighter> CbRulesHighlighter::_create() const

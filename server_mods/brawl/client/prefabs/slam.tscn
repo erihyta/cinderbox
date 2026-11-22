@@ -2,12 +2,14 @@
 
 ; Ground slam: its slot's key (4), in the air. You dive straight down; where you land, everyone within 5 m is hurt
 ; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive, the landing and the shockwave
-; are predicted (slam.rules: a motion block that waits for the ground, then finds who is in the
+; are predicted (slam.cbsheet: a motion block that waits for the ground, then finds who is in the
 ; Shockwave region); the damage is the brawl mod's (brawl.slam.hit).
 ;   Slam        CbItem     once a press, by its slot's key; what a use does is its sheet's
-;                          (slam.rules): a dive, 25 m/s straight down, then the shockwave
+;                          (slam.cbsheet): a dive, 25 m/s straight down, then the shockwave
 ;   Shockwave   Area3D     the region the landing finds players in: a cylinder 5 m around the feet
 ;                          (its shape is not the item's body)
+
+[ext_resource type="CbSheet" path="res://prefabs/slam.cbsheet" id="sheet"]
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -52,4 +54,4 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 shape = SubResource("Wave")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/slam.rules"
+sheet = ExtResource("sheet")

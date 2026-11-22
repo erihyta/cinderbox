@@ -481,7 +481,7 @@ checks hold and do not: [Workshop items and packs](#workshop-items-and-packs)).
 | `CbDirector` | the World node: entities with kind, template and state as metadata; runs the reactions under it. Plain Godot: anything can drive it |
 | `CbReaction` | on a **cue** (a mod event, a game event) or **while** conditions hold: an animation, a property, a listed method, a scene, a sound, a screen shake or flash, placed by the cue or a node |
 | `CbPrediction` | which cue the server will answer a press with (or a held action, every `cooldown`: `while_held`); the cue plays at once, and the server's cue then plays only what waited |
-| `CbRules` | a sheet (`.rules`) beside the scene: its rules become reactions, predictions and HUD lines when the scene is used; its motion blocks are baked ([docs/rules-language.md](docs/rules-language.md)) |
+| `CbRules` | a sheet (`.cbsheet`) beside the scene: its rules become reactions, predictions and HUD lines when the scene is used; its motion blocks are baked ([docs/rules-language.md](docs/rules-language.md)) |
 | `CbItem` | the root of an item's scene: kind, name, mass, properties, first-person view, where the hands hold it (two markers); with the `CollisionShape3D` under it, baked to `items/<kind>.cfg` |
 | `CbLinkLook` | the scene a motion probe's line is drawn as, stretched from the player's socket to the line's end (`FrameEntity::linkEnd`) |
 | `CbMotionSet` | not a look: a mod's motions, as a sheet's motion blocks, baked to `motions/<set>.cfg` ([docs/motions.md](docs/motions.md); the baking: `sheet_motions.cpp`). The motion nodes (`CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`) and `CbCurve` were deleted in M268 |

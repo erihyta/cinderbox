@@ -5,7 +5,7 @@
 // live in, with its sheets under it:
 //
 //   Moves               CbMotionSet   set_name "dash.moves"       (motion_sets/dash_moves.tscn)
-//   └── Rules           CbRules       file "res://motion_sets/dash_moves.rules"
+//   └── Rules           CbRules       file "res://motion_sets/dash_moves.cbsheet"
 //
 // The set bakes to res://motions/<set_name>.cfg when its scene is saved (and when the mod is
 // published); the server mod names it: declare.Motions( "dash.moves" ). The file is read by the

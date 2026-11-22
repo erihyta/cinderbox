@@ -1788,7 +1788,7 @@ void TestSheetsGolden()
 	namespace fs = std::filesystem;
 	const fs::path root = CB_SOURCE_DIR;
 	// (The rifle's sheet is local, as the rest of its licensed look: not in the repository.)
-	const std::set<std::string> local = { "server_mods/gun/client/prefabs/rifle.rules" };
+	const std::set<std::string> local = { "server_mods/gun/client/prefabs/rifle.cbsheet" };
 	std::vector<std::string> sheets;
 	std::error_code error;
 	for ( fs::recursive_directory_iterator it( root, fs::directory_options::skip_permission_denied, error ), end; it != end; it.increment( error ) )
@@ -1800,7 +1800,7 @@ void TestSheetsGolden()
 			continue;
 		}
 		const std::string relative = fs::relative( it->path(), root ).generic_string();
-		if ( it->is_regular_file() && it->path().extension() == ".rules" && local.count( relative ) == 0 )
+		if ( it->is_regular_file() && it->path().extension() == ".cbsheet" && local.count( relative ) == 0 )
 		{
 			sheets.push_back( relative );
 		}

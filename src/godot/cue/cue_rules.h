@@ -1,10 +1,11 @@
 #pragma once
 
-// A rules sheet: a look's reactions as lines of text, in a file beside the scene (brawl.rules), not
-// one CbReaction node each. Logic is text; what is a place or a thing (a node to light up, a mesh, a
-// socket) stays a node, and a rule names it by its path. A CbRules node in the scene points to the
-// file; when the scene is used, each action of each rule becomes a CbReaction under it, the same as
-// one placed by hand, so the director, the guard and the Cue Preview see nothing new.
+// A rules sheet: a look's reactions as lines of text, in a file beside the scene (brawl.cbsheet, a
+// CbSheet: cue_sheet.h), not one CbReaction node each. Logic is text; what is a place or a thing (a
+// node to light up, a mesh, a socket) stays a node, and a rule names it by its path. A CbRules node
+// in the scene holds the sheet; when the scene is used, each action of each rule becomes a
+// CbReaction under it, the same as one placed by hand, so the director, the guard and the Cue
+// Preview see nothing new.
 //
 //   # The kit's hits: a thud where they land.
 //   on brawl.jab.hit
@@ -108,6 +109,8 @@
 // that node itself), which climbs no higher than the scene. # starts a comment. A line that cannot
 // be read is said with its number, and its rule is left out; the rest of the sheet still works.
 
+#include "cue_sheet.h"
+
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -146,26 +149,30 @@ void SetMoveParameterNames( const godot::PackedStringArray& names );
 namespace cb::gd
 {
 
-// A scene's rules sheet (cue_rules.h): the file it reads, and the CbReactions (and CbPredictions)
-// its rules become, under it (internal children: never saved with the scene). A Node3D: what a rule
-// adds with no place of its own (a scene, a sound) goes where this node is.
+// A scene's rules sheet (cue_rules.h): the sheet it reads (a CbSheet, a resource: a .cbsheet file),
+// and the CbReactions (and CbPredictions) its rules become, under it (internal children: never saved
+// with the scene). A Node3D: what a rule adds with no place of its own (a scene, a sound) goes where
+// this node is. A sheet edited in the editor builds them again at once.
 class CbRules : public godot::Node3D
 {
 	GDCLASS( CbRules, godot::Node3D )
 
 public:
-	void set_file( const godot::String& v );
-	godot::String get_file() const
+	void set_sheet( const godot::Ref<CbSheet>& v );
+	godot::Ref<CbSheet> get_sheet() const
 	{
-		return m_file;
+		return m_sheet;
 	}
+	// What the sheet says, and what it is called in a message ("" and "" without one).
+	godot::String SheetText() const;
+	godot::String SheetName() const;
 	// How many reactions its rules made (0 before it is in the tree), and what it could not read.
 	int64_t get_reaction_count() const;
 	godot::PackedStringArray get_problems() const
 	{
 		return m_problems;
 	}
-	godot::PackedStringArray _get_configuration_warnings() const override;
+	godot::PackedStringArray _get_configuration_warnings() const override; // (get_warnings, to tools)
 
 protected:
 	static void _bind_methods();
@@ -174,7 +181,8 @@ protected:
 private:
 	void Build();
 	void Clear();
-	godot::String m_file;
+	void OnSheetChanged();
+	godot::Ref<CbSheet> m_sheet;
 	godot::PackedStringArray m_problems;
 	bool m_built = false;
 };

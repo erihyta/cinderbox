@@ -3,9 +3,11 @@
 ; How the dash mod looks and sounds. Both events come from the mod's motions, which every
 ; simulation runs, the viewer's own included: your own dash is heard on the press with no
 ; CbPrediction, and a rollback that takes a dash back takes its event back.
-; The reactions: the rules sheet beside this scene (reactions_dash.rules).
+; The reactions: the rules sheet beside this scene (reactions_dash.cbsheet).
+
+[ext_resource type="CbSheet" path="res://vfx/reactions_dash.cbsheet" id="sheet"]
 
 [node name="DashReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://vfx/reactions_dash.rules"
+sheet = ExtResource("sheet")

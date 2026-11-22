@@ -1,5 +1,7 @@
 [gd_scene format=3 uid="uid://bbfj2lrc230si"]
 
+[ext_resource type="CbSheet" path="res://prefabs/frag.cbsheet" id="sheet"]
+
 [sub_resource type="SphereShape3D" id="Body"]
 radius = 0.09
 
@@ -63,4 +65,4 @@ mesh = SubResource("BandMesh")
 shape = SubResource("Reach")
 
 [node name="Rules" type="CbRules" parent="." unique_id=2127743095]
-file = "res://prefabs/frag.rules"
+sheet = ExtResource("sheet")

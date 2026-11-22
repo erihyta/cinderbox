@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbSheet" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A rules sheet: a [code].cbsheet[/code] file, plain text, held by a [CbRules] node.
+	</brief_description>
+	<description>
+		The extension reads and writes [code].cbsheet[/code] files itself: the file is the sheet's [member text], whole, nothing more (no header, no Godot markup), so any text editor, diff and tool reads it as it is. Set on a [CbRules] node as a resource, Godot knows which scenes use it: one moved or renamed in the FileSystem dock keeps working, and a pack carries it with its scene.
+		In the editor a sheet opens in the Sheet screen (double-click it, or click a node's sheet): its words coloured, the names the server's mods declare offered while typing, a line with a mistake tinted (put the caret on it to read why). What is typed is the sheet's at once; Ctrl+S saves it with the scene.
+		What a sheet may say: docs/rules-language.md and docs/looks.md (Rules sheets).
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="text" type="String" setter="set_text" getter="get_text" default="&quot;&quot;">
+			The sheet's lines. Setting it tells every [CbRules] that holds the sheet to build its rules again.
+		</member>
+	</members>
+</class>

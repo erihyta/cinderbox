@@ -1,14 +1,16 @@
 [gd_scene format=3]
 
 ; What the gun mod's look shows in the world. Nearly nothing: a gun's shot, its sounds and what its
-; hits look like are the gun's own (the rules sheet beside its scene, prefabs/*.rules, on the item
+; hits look like are the gun's own (the rules sheet beside its scene, prefabs/*.cbsheet, on the item
 ; mod's cues), so each gun has its own and a new gun brings its own.
 ;
 ; Here is only what is about someone else than the holder: the mark mod's "mark.found" (the pistol's
 ; second use found a player) puts a zone around the marked player ($other) for 2 seconds.
-; The reactions: the rules sheet beside this scene (reactions_gun.rules).
+; The reactions: the rules sheet beside this scene (reactions_gun.cbsheet).
+
+[ext_resource type="CbSheet" path="res://vfx/reactions_gun.cbsheet" id="sheet"]
 
 [node name="GunReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://vfx/reactions_gun.rules"
+sheet = ExtResource("sheet")

@@ -6,7 +6,7 @@
 // key (H), or the use button with it selected, plays its throw on the left arm (its animation pack); the throw clip's marker,
 // frag.release, lets go of the grenade the player carries (a sheet's launch carried), with
 // 2.5 s to live. It bounces and rolls as its body says. When its time is up the simulation sets it
-// off where it is, as its sheet says (client/prefabs/frag.rules: a motion the grenade owns): it says
+// off where it is, as its sheet says (client/prefabs/frag.cbsheet: a motion the grenade owns): it says
 // frag.blast, blows a hole in a wall near it and throws what is loose; and it says
 // "frag.grenade.expired" there, with whoever threw it, and removes it: on every machine, on the same
 // tick, so the blast is never a lead late on anyone's screen.
@@ -57,7 +57,7 @@ public:
 		// Said by the simulation when a grenade's time is up ("<kind>.expired"): the fuse.
 		m_expired = declare.Event( "frag.grenade.expired" );
 		m_blast = declare.Event( "frag.blast" );
-		// The blast's numbers, for its sheet (frag.rules): the server's options.
+		// The blast's numbers, for its sheet (frag.cbsheet): the server's options.
 		m_radiusField = declare.Field( "frag.radius", BoardType::Float, BoardScope::Global );
 		m_pushField = declare.Field( "frag.push", BoardType::Float, BoardScope::Global );
 		m_breakRadiusField = declare.Field( "frag.break_radius", BoardType::Float, BoardScope::Global );
@@ -156,7 +156,7 @@ private:
 		int throwerSlot = thrower != 0 ? ctx.SlotOf( thrower ) : -1;
 		uint32_t throwerTarget = throwerSlot >= 0 ? SlotTarget( PlayerSlot( throwerSlot ) ) : 0;
 
-		// (The blast itself, its hole and what is loose thrown, are its sheet's: frag.rules.)
+		// (The blast itself, its hole and what is loose thrown, are its sheet's: frag.cbsheet.)
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			PlayerSlot slot = PlayerSlot( i );

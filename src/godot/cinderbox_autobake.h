@@ -20,7 +20,6 @@
 
 #include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/control.hpp>
-#include <godot_cpp/classes/editor_syntax_highlighter.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/sub_viewport.hpp>
 #include <godot_cpp/classes/button.hpp>
@@ -55,7 +54,6 @@ private:
 	godot::String m_testMod;
 
 	godot::Ref<CbMotionInspector> m_motionInspector;
-	godot::Ref<godot::EditorSyntaxHighlighter> m_rulesHighlighter;
 
 	// "First person": a picture beside the 3D view of what the holder of the item being edited
 	// sees, while the item's Hold preview is on (CbItem::preview_view). It has a world of its own:

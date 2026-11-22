@@ -6,9 +6,11 @@
 ;   Thrown  on grenade.thrown, at the thrower: the throw's sound
 ;   Blast   on grenade.blast, at the point it went off: the burst, the bang, and a shake of the
 ;           screen
-; The reactions: the rules sheet beside this scene (reactions_grenade.rules).
+; The reactions: the rules sheet beside this scene (reactions_grenade.cbsheet).
+
+[ext_resource type="CbSheet" path="res://vfx/reactions_grenade.cbsheet" id="sheet"]
 
 [node name="GrenadeReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://vfx/reactions_grenade.rules"
+sheet = ExtResource("sheet")

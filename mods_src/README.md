@@ -17,7 +17,7 @@ The game checks each pack before it loads it, against an allowlist. A pack is re
 - it contains a file outside `prefabs/`, `vfx/`, `ui/`, `maps/`, `assets/`, `characters/`, `anim/`,
   `items/`, `motions/` or Godot's converted copies (`.godot/exported`, `.godot/imported`), or a
   kind of file not on the list: scenes, resources, textures, samples, audio, fonts, rules sheets
-  (`.rules`), and in the last four folders baked data (`.ozz`, `.cfg`);
+  (`.cbsheet`), and in the last four folders baked data (`.ozz`, `.cfg`);
 - it holds a text resource (`.tscn`, `.tres`): Godot's export writes binary ones, and Godot decodes
   escapes in text before it reads a name, so a script could hide in one (M261.9);
 - a `.remap` or `.import` has a backslash, a key an export does not write, a value that builds an
@@ -96,6 +96,6 @@ contained one would be refused.
 ## example_neon
 
 This mod replaces the prop spawn effect with a magenta burst, gives box props a glowing cyan
-material, and adds three reactions of its own (`vfx/reactions_neon.rules`, a rules sheet in `vfx/reactions_neon.tscn`): a landing puff and
+material, and adds three reactions of its own (`vfx/reactions_neon.cbsheet`, a rules sheet in `vfx/reactions_neon.tscn`): a landing puff and
 blip only the local player gets, using a sound the mod ships itself; a burst when a `heavy_crate`
 is destroyed; and a magenta screen flash when the local player spawns something.

@@ -4,14 +4,16 @@
 ; no item. Every simulation runs it from the player's own input (the server's, and each client's
 ; prediction). The dash itself is an item's motion: prefabs/boots.tscn.
 ;
-;   Rules   CbRules   dash_moves.rules: DoubleJump, on "jump", in the air, once until you stand
+;   Rules   CbRules   dash_moves.cbsheet: DoubleJump, on "jump", in the air, once until you stand
 ;                     again (a jump's speed upward, whatever the fall was). Only where the server
 ;                     allows it (dash.double_jump_on: cb_server --mod-option dash.double_jump=1)
 ;
 ; Saving this scene bakes it into res://motions/dash.moves.cfg.
 
+[ext_resource type="CbSheet" path="res://motion_sets/dash_moves.cbsheet" id="sheet"]
+
 [node name="Moves" type="CbMotionSet"]
 set_name = "dash.moves"
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://motion_sets/dash_moves.rules"
+sheet = ExtResource("sheet")

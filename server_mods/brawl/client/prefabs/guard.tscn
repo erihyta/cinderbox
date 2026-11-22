@@ -4,7 +4,9 @@
 ; hits on you do a quarter of their damage (brawl.cpp asks ctx.Using). Other weapons' damage is
 ; not reduced: that is the combat mod's to take, and no mod can change another's damage.
 ;   Guard       CbItem     a press, and while held, by its slot's key; what it does is its sheet's
-;                          (guard.rules): walk and sprint 1.5 m/s, no jump; says brawl.guard.up
+;                          (guard.cbsheet): walk and sprint 1.5 m/s, no jump; says brawl.guard.up
+
+[ext_resource type="CbSheet" path="res://prefabs/guard.cbsheet" id="sheet"]
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -39,4 +41,4 @@ shape = SubResource("Body")
 mesh = SubResource("Mesh")
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://prefabs/guard.rules"
+sheet = ExtResource("sheet")

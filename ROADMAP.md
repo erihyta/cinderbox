@@ -79,7 +79,7 @@ Which steps launch needs: [the road](#the-road).
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283) | yes: the sheet's format settled, with a version |
+| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284) | yes: the sheet's format settled, with a version |
 | 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
@@ -294,7 +294,7 @@ the mod's C++ turns its hit events into damage (`brawl.cpp` is the model, 158 li
 
 **Done (M282, 2026-11-21)**, kept small (the owner: convert in today's language; what it cannot
 say stays C++ and goes on [step 6's list](#found-by-step-5)):
-- **The bat**: `bat.rules` swings (the clip's markers say when it strikes and when it ends: its
+- **The bat**: `bat.cbsheet` swings (the clip's markers say when it strikes and when it ends: its
   length in one place), its find the nearest player and two loose bodies; `melee.cpp` (272 lines to
   186) turns a hit into damage, faces the holder to the camera, and keeps the bat's heat. Its
   stances and the look's guess went. A sheet's find meets capsules, not posed hitboxes.
@@ -313,10 +313,10 @@ The plan as it was written before (the bat, then the guns):
 |---|---|
 | The swing | `melee.cpp` (272 lines): five rays fanned out from the chest at the clip's `melee.strike` marker; the hit test poses the target (hit zones) |
 | The look's guess | `predict use as melee.swing`, `cooldown 1.1` copied from the clip, `stance melee_swing on full` (read by nothing) |
-| Its length | in three places: `melee.done` at 1.1 s in the clip, `cooldown 1.1` in `bat.rules`, `kCooldownSeconds 0.6` in `melee.cpp` |
+| Its length | in three places: `melee.done` at 1.1 s in the clip, `cooldown 1.1` in `bat.cbsheet`, `kCooldownSeconds 0.6` in `melee.cpp` |
 | `melee.hot` | a field on the bat the server sets when a swing hits a player, cleared by the mod's timer 2 s later; not predicted; a prop hit does not heat it |
 | NPCs | cannot swing it: `melee.cpp` loops over player slots (the fist works for NPCs: sheets run for every driver, M228) |
-| Its sheets | `bat.rules` in the bat's scene (the glow, the flames, the sparks, the guess); `reactions_melee.rules` in a world reactions scene (the sounds) |
+| Its sheets | `bat.cbsheet` in the bat's scene (the glow, the flames, the sparks, the guess); `reactions_melee.cbsheet` in a world reactions scene (the sounds) |
 
 **The bat after** (a sketch, not tried):
 
@@ -344,7 +344,8 @@ motion Strike on melee.strike
 ### 6. Sheets improved
 
 **Done**: M283, the compiler as a plain C++ library (`src/sheet`), every shipped sheet parsing and
-baking as before (golden files, the Godot checks' bakes).
+baking as before (golden files, the Godot checks' bakes). M284, a sheet is a `.cbsheet` file, a
+`CbSheet` resource a `CbRules` node holds (no path in a string), opened in the editor's Sheet screen.
 
 **The plan (2026-11-21): [docs/step6-plan.md](docs/step6-plan.md)**: the language as it would be, the
 shipped sheets before and after, the compiler, what the engine has to learn, ten milestones (M283 to
@@ -377,19 +378,19 @@ its format's version, and the compiler reads older ones, so words can still be a
 | **Where each block runs, marked**: simulated blocks and the viewer's in separate sections (or files); one indentation rule (it counts) | today four languages share a file: `motion` and `use` (simulated, indentation counts), `on` and `while` (reactions), `predict`, and `show` / `text` / `bind` (HUD) |
 | **Names in the sheet**: `field brawl.combo int`, `event brawl.jab.hit`; the server reads them from the pack | the editor waits for a server build |
 | **Parameters**: `param damage 8`, shown in the inspector, read by the server's rules | numbers written twice (the bat) |
-| **One sheet for many items** (Hytale proposal 5): shared across items, each with its own parameters or replacing named parts | `fist.rules` writes the same `find` block four times |
+| **One sheet for many items** (Hytale proposal 5): shared across items, each with its own parameters or replacing named parts | `fist.cbsheet` writes the same `find` block four times |
 | **Words for how skills meet** (proposal 5): `blocked by`, a combo with a window, a charge, tap against hold, a cooldown shared by name | the fist guards motions with `not motion.brawl.fist.Finisher`; brawl counts its combo window down in a field |
 | **Text and rows from the server** (proposal 3; shape decided when the step starts): rows a mod publishes for a `CbList`, text fields sent like names and private fields (outside the hash); the layout stays the look's | fields are numbers; the shop's offers are written twice (`hud_shop.tscn`, `kOffers` in `shop.cpp`) |
 | **A motion's state readable** (cooldown left, charges, on) in conditions and HUD lines | brawl rebuilds its cooldowns with five C++ fields and five `while` motions, while a motion's own `cooldown` goes unused |
 | **Rates said**: `change x -= 1 per second` | `change x -= 1` is once in a step but per second in a `while` |
 | **One rule for expressions**: one word bare, anything longer in brackets | an expression ends at "the next option word" |
 | **`let NAME = EXPRESSION`** in a motion | the frag's falloff is written out twice |
-| **A cast and the owner's own effects in one step** | `dash_strike.rules` needs two blocks with a copied condition |
+| **A cast and the owner's own effects in one step** | `dash_strike.cbsheet` needs two blocks with a copied condition |
 | **`change` on the item; a timer on a carried item** | the bat's heat, if it is ever more than a look |
 | **Curves as resources** (`curve(res://falloff.tres, reach)` or a curves dictionary on the node); the frag's falloff the first user | no shipped sheet used `curve()`; `CbCurve`, found by name from text, was deleted in M268 and a sheet's `curve()` is refused until this; the simulation still reads a motions file's `curve` lines |
 | **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/rules-language.md#planned)) | |
 | **Tools**: a formatter; errors in the editor as you type; headless sheet tests (a motion on a stand-in, then what moved) | |
-| **`.rules` becomes `.cbsheet`**: 40 sheets and about 80 files that name `.rules`; `docs/rules-language.md`; a `.gitattributes` line and a small VS Code grammar | the name says what the file is, one family with `.cbmap` |
+| **`.rules` becomes `.cbsheet`** (**done**, M284; the VS Code grammar not made: the editor's Sheet screen colours them) | the name says what the file is, one family with `.cbmap` |
 | **Last, not needed by the slice: items drawn as data and reactions run from the compiled sheet** | moved to [6b](#6b-cooked-items) (2026-11-17) |
 
 **The dash strike after** (proposed, not valid today); its HUD reads the cooldown itself, and

@@ -10,7 +10,7 @@
 //   gun.kill_push, gun.prop_push   how hard a hit shoves the body it kills, and what is loose
 //
 // Since M282 (step 5: every item a sheet) pulling the trigger is the gun's sheet (its scene's
-// CbRules, prefabs/pistol.rules), which every simulation runs, so a shot is predicted, not guessed:
+// CbRules, prefabs/pistol.cbsheet), which every simulation runs, so a shot is predicted, not guessed:
 //   Fire     on use, while it has rounds and is not reloading: a round off what the holder sees
 //            (change gun.ammo -= 1) and item.use (the flash, the sound, the recoil). Its cooldown is
 //            the time between two shots; the item's `use` says whether it fires once a press or

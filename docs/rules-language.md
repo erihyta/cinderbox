@@ -1,13 +1,13 @@
 # Rules as a language
 
-A **motion block** in a `.rules` sheet is a motion the simulation runs: every machine (the server,
+A **motion block** in a `.cbsheet` sheet is a motion the simulation runs: every machine (the server,
 every client) runs the same lines on the same input, so what a player does to bodies is predicted
 on their own screen and rolled back like movement. A mod's C++ keeps only what the server alone
 should decide (damage, score, rounds). This page is the reference: **everything on it is built**;
 what is planned is listed [at the end](#planned).
 
 ```
-a .rules sheet ──bake──> motions/<set>.cfg ──> every simulation runs it (server and clients)
+a .cbsheet sheet ──bake──> motions/<set>.cfg ──> every simulation runs it (server and clients)
     └── names nodes by path: shapes, markers, paths, curves (drawn in the 3D view)
 
 a server mod (C++) ──> damage, score, rounds, shops, who wins: the server's only, a lead late
@@ -26,6 +26,11 @@ answering for the nodes a line names). The editor, the bake and the names check 
 the cooker and the tests can. Every shipped sheet's parse is a golden file
 (`tests/golden/sheets`, the `sheets_golden` test), and every mod's committed bakes are checked to be
 what its sheets bake to now (the Godot checks). Where it goes next: [step6-plan.md](step6-plan.md).
+
+**The file** (M284): a sheet is a `.cbsheet` file, a `CbSheet` resource (the extension's own loader
+and saver: the file is the text, whole), held by a `CbRules` node in the scene (`sheet`). It opens in
+the editor's Sheet screen ([looks.md](looks.md#rules-sheets)). Before M284 it was a `.rules` file a
+`CbRules` node named by its path (`file`).
 
 ## What the language may not do
 
@@ -263,7 +268,7 @@ may not act). A recording shows the followed player's.
 
 ## Examples (the shipped sheets)
 
-The ground slam (`server_mods/brawl/client/prefabs/slam.rules`): a dive, and on landing everyone
+The ground slam (`server_mods/brawl/client/prefabs/slam.cbsheet`): a dive, and on landing everyone
 in the drawn `Shockwave` cylinder thrown away and up; the brawl mod only hurts them.
 
 ```
@@ -280,7 +285,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 		emit brawl.slam.hit
 ```
 
-The frag grenade (`server_mods/frag/client/prefabs/frag.rules`): thrown on the arm's marker (or a
+The frag grenade (`server_mods/frag/client/prefabs/frag.cbsheet`): thrown on the arm's marker (or a
 moment later on a body the arm's pack does not fit), it
 goes off where it lies when its time is up, on the same tick everywhere; its numbers are the mod's
 options, published as fields.
@@ -306,7 +311,7 @@ motion Blast on expired
 		impulse (distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius) along up
 ```
 
-The grappling hook (`server_mods/grapple/client/prefabs/hook.rules`):
+The grappling hook (`server_mods/grapple/client/prefabs/hook.cbsheet`):
 
 ```
 motion Throw on use if not linked
@@ -320,8 +325,8 @@ motion Throw on use if not linked
 		move air_control 0.6 gravity 0 airborne 1
 ```
 
-The dash boots (`server_mods/dash/client/prefabs/boots.rules`) and flight's jetpack
-(`server_mods/flight/client/motion_sets/flight_moves.rules`, a while motion):
+The dash boots (`server_mods/dash/client/prefabs/boots.cbsheet`) and flight's jetpack
+(`server_mods/flight/client/motion_sets/flight_moves.cbsheet`, a while motion):
 
 ```
 use if dash.charges > 0

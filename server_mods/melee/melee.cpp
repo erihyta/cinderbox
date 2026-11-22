@@ -1,7 +1,7 @@
 // Melee: a bat (a sheet since M282, step 5: every item a sheet).
 //
 // What the bat is and does to bodies is its look's (client/prefabs/bat.tscn and its sheet,
-// bat.rules), so it is predicted:
+// bat.cbsheet), so it is predicted:
 //   left mouse button   a swing: the pack (melee.hold, its clip's markers) plays it, and at its
 //                       melee.strike marker a box where the player looks, pitch and all, finds the
 //                       first it meets: melee.hit (a = who swung, b = what it hit), and shoves it.

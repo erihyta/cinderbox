@@ -451,15 +451,12 @@ PackedStringArray Problems( const Node* node )
 		}
 	}
 	// A rules sheet: each rule is read as the node it becomes, at its line of the file.
-	if ( node->is_class( "CbRules" ) )
+	if ( const auto* rules = Object::cast_to<CbRules>( node ) )
 	{
-		String file = node->get( "file" );
-		if ( file.is_empty() == false && FileAccess::file_exists( file ) )
+		String file = rules->SheetName();
+		for ( const auto& [line, why] : SheetProblems( rules->SheetText() ) )
 		{
-			for ( const auto& [line, why] : SheetProblems( FileAccess::get_file_as_string( file ) ) )
-			{
-				out.push_back( file + " line " + String::num_int64( line ) + ": " + why );
-			}
+			out.push_back( file + " line " + String::num_int64( line ) + ": " + why );
 		}
 	}
 	return out;

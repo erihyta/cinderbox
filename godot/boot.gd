@@ -32,8 +32,8 @@ const TEXT_RESOURCE_EXTENSIONS := ["tscn", "tres"]
 ## Plain media: pixels, samples and glyphs, nothing that can name a script.
 const MEDIA_EXTENSIONS := ["ctex", "stex", "sample", "oggvorbisstr", "mp3str", "fontdata",
 	"png", "jpg", "jpeg", "webp", "svg", "wav", "ogg", "mp3", "ttf", "otf"]
-## Rules sheets (CbRules): text a reaction node reads as data, line by line; never code.
-const RULES_EXTENSIONS := ["rules"]
+## Sheets (CbSheet, .cbsheet; CbRules uses one): text read as data, line by line; never code.
+const RULES_EXTENSIONS := ["cbsheet"]
 ## Redirect files: they must point at converted resources inside the pack.
 const REDIRECT_EXTENSIONS := ["remap", "import"]
 ## The keys an export writes into a redirect, besides `path.<feature>` (a texture's, per format).

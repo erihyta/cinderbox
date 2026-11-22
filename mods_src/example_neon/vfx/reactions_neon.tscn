@@ -2,7 +2,9 @@
 
 ; An example client mod adding its own reactions next to the game's (its own spawn effect and sound).
 
+[ext_resource type="CbSheet" path="res://vfx/reactions_neon.cbsheet" id="sheet"]
+
 [node name="NeonReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-file = "res://vfx/reactions_neon.rules"
+sheet = ExtResource("sheet")
