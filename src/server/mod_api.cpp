@@ -62,9 +62,14 @@ void Declarations::DeclareSheet( const std::string& path, const std::string& tex
 			case sheet::Declaration::Kind::Field:
 				if ( d.on != "item" )
 				{
-					const BoardType type = d.type == "float" ? BoardType::Float : d.type == "bool" ? BoardType::Bool : BoardType::Int;
+					const BoardType type = d.type == "float" || d.type == "timer" ? BoardType::Float : d.type == "bool" ? BoardType::Bool : BoardType::Int;
 					const BoardScope scope = d.on == "world" ? BoardScope::Global : d.privately ? BoardScope::Private : BoardScope::Entity;
 					Field( d.name, type, scope, d.shared );
+					// A timer counts down by itself (M287): the C++'s float of the same name becomes one.
+					for ( BoardField& f : m_schema.fields )
+					{
+						f.timer = f.timer || ( d.type == "timer" && f.name == d.name );
+					}
 				}
 				break;
 			case sheet::Declaration::Kind::Event:

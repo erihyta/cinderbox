@@ -23,7 +23,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 95; // each version's change: docs/versions.md (add a row when raising it)
+inline constexpr uint32_t kProtocolVersion = 96; // each version's change: docs/versions.md (add a row when raising it)
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t

@@ -194,3 +194,17 @@ rule motion line 37 head 0
         line: int 50
         within: float 0.9
         wait: text "brawl.fist.ready"
+rule motion line 54 head 0
+  name: text "ComboOver"
+  trigger: text "while"
+  expression: text "brawl.combo_left <= 0 and brawl.combo > 0"
+  item: text "carried"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "brawl.combo = 0"
+              guard: text ""
+              line: int 56

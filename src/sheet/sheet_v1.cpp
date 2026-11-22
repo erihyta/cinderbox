@@ -587,50 +587,8 @@ void LowerMotion( const std::vector<std::string>& lines, size_t first, size_t en
 			last = w.size() - 2;
 		}
 		const std::string expression = code.substr( w[2].start, w[last - 1].end - w[2].start );
-		out.Add( indent + "then when " + ExprToV0( expression ) + ( limit.empty() ? std::string() : " within " + limit ), number );
-		if ( how != "or" )
-		{
-			continue;
-		}
-		// wait for X or S: the lines after it run when X holds, or after S without it. Version 0 says
-		// so with a timeout that repeats them, so this is the motion's last wait.
-		std::vector<size_t> rest;
-		bool ok = true;
-		for ( size_t j = k + 1; j < end; ++j )
-		{
-			if ( Blank( lines[j] ) )
-			{
-				continue;
-			}
-			const std::string v = WordsOf( CodeOf( lines[j] ) )[0].text;
-			if ( v == "wait" || v == "timeout" )
-			{
-				errors.push_back( "line " + Number( number ) + ": a wait for ... or S is its motion's last wait, with no timeout (until the engine goes on after a wait: step 6, M287)" );
-				ok = false;
-				break;
-			}
-			rest.push_back( j );
-		}
-		if ( ok == false )
-		{
-			break;
-		}
-		for ( int pass = 0; pass < 2; ++pass )
-		{
-			if ( pass == 1 )
-			{
-				out.Add( indent + "timeout", number );
-			}
-			for ( size_t j : rest )
-			{
-				std::string text;
-				if ( lower( j, text ) )
-				{
-					out.Add( text, int( j + 1 ) );
-				}
-			}
-		}
-		break;
+		// (wait for X or S: the step after it starts once X holds, or after S without it: M287.)
+		out.Add( indent + "then when " + ExprToV0( expression ) + ( limit.empty() ? std::string() : " " + how + " " + limit ), number );
 	}
 }
 
@@ -1018,86 +976,24 @@ std::string MotionLineToV1( const std::string& line, int headColumn )
 
 bool ConvertMotion( const std::vector<std::string>& lines, size_t first, size_t end, Converting& c )
 {
+	// Line for line: a "then when X within S" with a timeout stays one ("wait for X or S" goes on
+	// to the next step, which a timeout does not: M287).
 	const int headColumn = Column( lines[first] );
 	c.out.push_back( ExprToV1( CodeOf( lines[first] ) ) + ( CommentAt( lines[first] ) < lines[first].size() ? " " + Strip( lines[first].substr( CommentAt( lines[first] ) ) ) : std::string() ) );
-	// "then when X within S", its lines, "timeout", the same lines, and the end: wait for X or S.
-	std::vector<size_t> code;
 	for ( size_t k = first + 1; k < end; ++k )
-	{
-		if ( Blank( lines[k] ) == false )
-		{
-			code.push_back( k );
-		}
-	}
-	size_t orAt = lines.size();
-	size_t timeoutAt = lines.size();
-	for ( size_t i = 0; i < code.size(); ++i )
-	{
-		const std::vector<Word> w = WordsOf( CodeOf( lines[code[i]] ) );
-		if ( w[0].text == "timeout" )
-		{
-			// The lines between the wait before it and it, and the lines after it, to the end.
-			size_t wait = i;
-			while ( wait > 0 && WordsOf( CodeOf( lines[code[wait - 1]] ) )[0].text != "then" )
-			{
-				--wait;
-			}
-			if ( wait == 0 )
-			{
-				break;
-			}
-			const size_t waitLine = code[wait - 1];
-			const std::vector<Word> head = WordsOf( CodeOf( lines[waitLine] ) );
-			std::vector<std::string> before, after;
-			for ( size_t j = wait; j < i; ++j )
-			{
-				before.push_back( lines[code[j]] );
-			}
-			bool plain = true;
-			for ( size_t j = i + 1; j < code.size(); ++j )
-			{
-				const std::string v = WordsOf( CodeOf( lines[code[j]] ) )[0].text;
-				plain = plain && v != "then" && v != "after" && v != "timeout";
-				after.push_back( lines[code[j]] );
-			}
-			// (Comments in them: the same, or it is not converted.)
-			bool same = plain && before.size() == after.size() && head.size() >= 5 && head[head.size() - 2].text == "within";
-			for ( size_t j = 0; same && j < before.size(); ++j )
-			{
-				same = Column( before[j] ) == Column( after[j] ) && CodeOf( before[j] ) == CodeOf( after[j] ) && CommentAt( after[j] ) == after[j].size();
-			}
-			for ( size_t k = code[i] + 1; same && k < end; ++k )
-			{
-				same = Strip( lines[k] ).empty() || Blank( lines[k] ) == false; // (no comment line among them)
-			}
-			if ( same )
-			{
-				orAt = waitLine;
-				timeoutAt = code[i];
-			}
-			break;
-		}
-	}
-	for ( size_t k = first + 1; k < end && k < timeoutAt; ++k )
 	{
 		if ( Strip( lines[k] ).empty() )
 		{
 			c.out.push_back( std::string() );
-			continue;
 		}
-		if ( Blank( lines[k] ) )
+		else if ( Blank( lines[k] ) )
 		{
 			c.out.push_back( Tabs( std::max( 1, ( Column( lines[k] ) - headColumn ) / 4 ) ) + Strip( lines[k] ) );
-			continue;
 		}
-		std::string text = MotionLineToV1( lines[k], headColumn );
-		if ( k == orAt )
+		else
 		{
-			// "... within S" as "... or S"
-			const size_t within = text.rfind( " within " );
-			text = text.substr( 0, within ) + " or " + text.substr( within + 8 );
+			c.out.push_back( MotionLineToV1( lines[k], headColumn ) );
 		}
-		c.out.push_back( text );
 	}
 	return true;
 }
@@ -1640,7 +1536,7 @@ std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& err
 		if ( verb == "field" )
 		{
 			d.kind = Declaration::Kind::Field;
-			ok = ok && w.size() >= 3 && ( w[2].text == "int" || w[2].text == "float" || w[2].text == "bool" );
+			ok = ok && w.size() >= 3 && ( w[2].text == "int" || w[2].text == "float" || w[2].text == "bool" || w[2].text == "timer" );
 			if ( ok )
 			{
 				d.type = w[2].text;
@@ -1673,7 +1569,12 @@ std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& err
 			ok = ok && ( d.shared && d.privately ) == false && ( d.on == "player" || ( d.shared == false && d.privately == false ) );
 			if ( ok == false )
 			{
-				fail( "field NAME int|float|bool [on player|world|item] [shared|private] [= VALUE] (shared and private for a player's field)" );
+				fail( "field NAME int|float|bool|timer [on player|world|item] [shared|private] [= VALUE] (shared and private for a player's field)" );
+				continue;
+			}
+			if ( d.type == "timer" && ( d.on == "item" || d.privately ) )
+			{
+				fail( "a timer is a player's field or the world's (an item's, or a private one: not yet)" );
 				continue;
 			}
 		}

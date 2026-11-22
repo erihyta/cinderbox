@@ -291,6 +291,9 @@ struct MotionStep
 	{
 		int event = -1; // schema event; -1: no mod declared it (nothing is emitted)
 		int8_t guard = -1;
+		// Its value (M287: "emit EVENT value V"): the event record's, read when it happens. -1: none.
+		int16_t valueExpr = -1;
+		float value = 0.0f;
 	};
 
 	// How it is reached (not the first step): `after` seconds since the step before started, then
@@ -300,6 +303,9 @@ struct MotionStep
 	float after = 0.0f;
 	float within = 0.0f;
 	bool timeout = false; // the step a wait that gave up runs: once statements, then the motion ends
+	// A wait that gives up goes on: after `within` without its condition the step starts anyway (a
+	// sheet's "wait for X or S", M287), instead of the timeout or the end.
+	bool goOn = false;
 	int next = -1;		  // the step after this one (-1: the last)
 	int onTimeout = -1;	  // this step's timeout step, when its wait gives up (-1: the motion ends)
 	float length = 0.0f;  // its longest parameter's seconds: how long a last step keeps the motion on
@@ -407,6 +413,10 @@ struct Motion
 // (components.h MotionState has a slot for each).
 struct Motions
 {
+	// The timer fields (BoardField::timer, M287): board slots that count down a second a second, a
+	// player's (on its board) and the game's (on the global board).
+	std::vector<uint16_t> entityTimers;
+	std::vector<uint16_t> globalTimers;
 	std::vector<Motion> list;
 };
 

@@ -1924,7 +1924,7 @@ void TestSheetsVersion1()
 	const std::string expected = "cbsheet 1\n\n# a gun\nreact on item.use if local and known gun.ammo\n\tas holder\n\t\tcreate flash under Muzzle for 0.3\n"
 								 "\t\tat Muzzle\n\t\t\tsound shot volume -5\n\t\t\tsound res://other/far.ogg\n"
 								 "motion Throw on use if not active Dry and combat.health of target > 0\n\tfor carrier\n"
-								 "\twait for x.release or 0.3\n\temit x.thrown\nhud Line\n\tshow if combat.health > 0\n\ttext \"HP\" if combat.dead of holder\n";
+								 "\twait for x.release within 0.3\n\temit x.thrown\n\ttimeout\n\temit x.thrown\nhud Line\n\tshow if combat.health > 0\n\ttext \"HP\" if combat.dead of holder\n";
 	if ( v1 != expected )
 	{
 		std::printf( "    converted:\n%s    (%s)\n", v1.c_str(), why.c_str() );
@@ -1952,7 +1952,7 @@ void TestSheetsVersion1()
 	CHECK( says( bad, "2", "react on" ) );					 // a version 0 rule
 	CHECK( says( bad, "5", "nothing is under it" ) );		 // a scope with no lines
 	CHECK( says( bad, "7", "must be under as actor" ) );	 // what its subject is, with no subject
-	CHECK( says( bad, "9", "last wait" ) );					 // a wait ... or before another wait
+	CHECK( says( bad, "9", "last wait" ) == false );		 // (a wait ... or S may stand anywhere since M287)
 	CHECK( says( bad, "14", "volume wants a number" ) );	 // version 0's mistake, at version 1's line
 	CHECK( says( errorsOf( "cbsheet 2\n" ), "1", "version 1" ) ); // a later version
 	// What it means: the same as version 0's spelling of it.
@@ -4585,6 +4585,94 @@ void TestItemMotions()
 
 // A motion's steps (a rules sheet's motion block, docs/sheets.md): a wait for a condition, a
 // wait that gives up, a wait by time, guards decided when a step starts, an end, an edge trigger.
+// M287: a timer field counts down by itself, a second a second, to 0 (a player's and the game's);
+// a wait that gives up goes on with "goon" (a sheet's "wait for X or S"); an emit has a value.
+void TestMotionTimers()
+{
+	ModSchema schema;
+	BoardField cool{ "t.cool", BoardType::Float, BoardScope::Entity, 0 };
+	cool.timer = true;
+	BoardField round{ "t.round", BoardType::Float, BoardScope::Global, 0 };
+	round.timer = true;
+	schema.fields = { cool, round, { "t.count", BoardType::Int, BoardScope::Entity, 1 } };
+	schema.events = { "t.went", "t.hit" };
+	schema.actions.push_back( { "go", 0, "Q" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tGo\nwhen\tpress\tgo\nif\tt.cool <= 0\nchange\tt.cool\t=\t2\n"
+							 "emit\tt.hit\t(t.count + 40)\nstep\t0\t0.5\tt.count > 5\ngoon\nemit\tt.went\nchange\tt.count\t+=\t1\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	// (The codec keeps the timer bit.)
+	ModSchema decoded;
+	std::vector<uint8_t> bytes;
+	EncodeSchema( schema, bytes );
+	CHECK( DecodeSchema( bytes.data(), bytes.size(), decoded ) && decoded.fields[0].timer && decoded.fields[1].timer && decoded.fields[2].timer == false );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->entityTimers.size() == 1 && motions->globalTimers.size() == 1 );
+	if ( motions == nullptr || motions->list.empty() )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list[0].steps.size() == 2 && motions->list[0].steps[1].goOn );
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			f.inputs[0].actions = 0;
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	// The game's timer, set by a command, counts down.
+	SimCommand set;
+	set.type = CommandType::SetField;
+	set.target = 0; // (the global board)
+	set.index = 0;
+	set.value = BoardFromFloat( 1.0f );
+	f.commands.push_back( set );
+	step( 1 );
+	const float roundAfterOne = BoardToFloat( sim.GlobalBoardValue( 0 ) );
+	step( 30 );
+	const float roundAfterHalf = BoardToFloat( sim.GlobalBoardValue( 0 ) );
+	step( 60 );
+	std::printf( "    the game's timer: %.3f, then %.3f, then %.3f\n", double( roundAfterOne ), double( roundAfterHalf ), double( BoardToFloat( sim.GlobalBoardValue( 0 ) ) ) );
+	CHECK( roundAfterOne < 1.0f && std::fabs( roundAfterHalf - 0.5f ) < 0.03f && BoardToFloat( sim.GlobalBoardValue( 0 ) ) == 0.0f );
+	// A press: the player's timer set to 2 counts down; its emit says 40 (t.count + 40); the wait
+	// gives up after half a second and goes on (t.went, t.count 1).
+	f.inputs[0].actions = 1;
+	step( 1 );
+	const float coolAfterOne = BoardToFloat( sim.BoardValue( p0, 0 ) );
+	const bool hit40 = std::any_of( seen.begin(), seen.end(), []( const ModEventRecord& e ) { return e.type == 1 && e.value == 40; } );
+	step( 60 );
+	const bool went = std::any_of( seen.begin(), seen.end(), []( const ModEventRecord& e ) { return e.type == 0; } );
+	std::printf( "    the player's timer: %.3f after the press, %.3f a second later; the emit's value 40: %d; went on: %d\n", double( coolAfterOne ),
+				 double( BoardToFloat( sim.BoardValue( p0, 0 ) ) ), int( hit40 ), int( went ) );
+	CHECK( coolAfterOne > 1.9f && coolAfterOne <= 2.0f && std::fabs( BoardToFloat( sim.BoardValue( p0, 0 ) ) - 1.0f ) < 0.05f );
+	CHECK( hit40 && went && sim.BoardValue( p0, 1 ) == 1 );
+	// While it counts the motion does not start again (its "if"); once it is 0, it does.
+	f.inputs[0].actions = 1;
+	step( 1 );
+	CHECK( std::count_if( seen.begin(), seen.end(), []( const ModEventRecord& e ) { return e.type == 1; } ) == 1 );
+	step( 70 );
+	f.inputs[0].actions = 1;
+	step( 1 );
+	CHECK( std::count_if( seen.begin(), seen.end(), []( const ModEventRecord& e ) { return e.type == 1; } ) == 2 );
+}
+
 void TestMotionSteps()
 {
 	ModSchema schema;
@@ -14192,6 +14280,7 @@ int main( int argc, char** argv )
 		{ "move_params", TestMoveParams },
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
+		{ "motion_timers", TestMotionTimers },
 		{ "motion_steps", TestMotionSteps },
 		{ "motion_order", TestMotionOrder },
 		{ "motion_regular", TestMotionRegular },

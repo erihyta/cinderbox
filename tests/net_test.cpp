@@ -209,6 +209,12 @@ struct Harness
 			ListLookItemsFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", items );
 			return items;
 		};
+		// (And the names their sheets declare, timers among them: M286, M287.)
+		options.lookSheets = []( const std::string& mod ) {
+			Sheets sheets;
+			ListSheetsFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", sheets );
+			return sheets;
+		};
 		options.loadItemShape = []( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error,
 									std::map<std::string, float>& properties ) {
 			return LoadItemShapeFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", kind, shape, error, &properties );
@@ -4545,6 +4551,13 @@ void TestSheetDeclarations()
 		said = said || ( e.find( "test.x" ) != std::string::npos && e.find( "prefabs/t.cbsheet line 3" ) != std::string::npos );
 	}
 	CHECK( declare.Errors().size() == 1 && said );
+	// A timer (M287): the C++'s float of that name becomes one.
+	mods::Declarations timed;
+	timed.BeginMod( "test" );
+	timed.Field( "test.cool", BoardType::Float );
+	timed.DeclareSheet( "prefabs/c.cbsheet", "cbsheet 1\nfield test.cool timer\nfield test.round timer on world\n" );
+	CHECK( timed.Errors().empty() && timed.Schema().FindField( "test.cool" )->timer && timed.Schema().FindField( "test.round" )->timer &&
+		   timed.Schema().FindField( "test.round" )->scope == BoardScope::Global );
 	// A sheet's own mistake, with its path.
 	mods::Declarations again;
 	again.BeginMod( "test" );

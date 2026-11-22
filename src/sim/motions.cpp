@@ -1009,6 +1009,18 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			MotionStep::Emit emit;
 			emit.event = schema.FindEvent( w[1] );
 			emit.guard = guard;
+			if ( w.size() >= 3 && w[2].empty() == false )
+			{
+				// emit EVENT VALUE: its value, a whole number or an expression read when it happens.
+				if ( inFind || amount( m, w[2], -2147483000.0f, 2147483000.0f, emit.value, emit.valueExpr ) == false )
+				{
+					return fail( inFind ? "an emit in a find has no value (yet)" : "emit EVENT VALUE: a number or an expression" );
+				}
+				if ( emit.valueExpr < 0 )
+				{
+					emit.valueExpr = -2; // (a number, not "none")
+				}
+			}
 			if ( emit.event < 0 )
 			{
 				warnings += m.name + ": no mod declares the event \"" + w[1] + "\": nothing is emitted; ";
@@ -1053,6 +1065,15 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			guard = int8_t( texts.size() );
 			texts.push_back( w[1] );
 			parent.guards.push_back( expr );
+		}
+		else if ( key == "goon" )
+		{
+			// goon: the step before starts anyway when its wait gives up (wait for X or S).
+			if ( m.steps.size() < 2 || m.steps.back().within <= 0.0f || m.steps.back().timeout )
+			{
+				return fail( "goon comes right after a step that waits within some seconds" );
+			}
+			m.steps.back().goOn = true;
 		}
 		else if ( key == "step" || key == "timeout" )
 		{
@@ -1308,6 +1329,13 @@ uint64_t MotionsOnAt( const MotionState& state, uint32_t tick )
 std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::string& warnings )
 {
 	auto motions = std::make_shared<Motions>();
+	for ( const BoardField& f : schema.fields )
+	{
+		if ( f.timer && f.type == BoardType::Float && f.scope != BoardScope::Private )
+		{
+			( f.scope == BoardScope::Global ? motions->globalTimers : motions->entityTimers ).push_back( f.slot );
+		}
+	}
 	for ( const MotionSetInfo& set : schema.motionSets )
 	{
 		if ( set.text.empty() )
@@ -1573,6 +1601,11 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				{
 					ModEventRecord record;
 					record.type = uint16_t( emit.event );
+					if ( emit.valueExpr != -1 )
+					{
+						const MotionValue v{ emit.value, emit.valueExpr >= 0 ? emit.valueExpr : int16_t( -1 ) };
+						record.value = int32_t( std::lround( MotionValueOf( m, v, values, -2147483000.0f, 2147483000.0f ) ) );
+					}
 					events.push_back( record );
 				}
 			}
@@ -1635,7 +1668,11 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				bool ready = waited >= std::max<uint32_t>( 1, Ticks( next.after, in.tickRate ) ) &&
 							 ( next.wait.Empty() || EvaluateAnimExpr( next.wait, values, 0.0f ) != 0.0f );
 				int enter = ready ? nextIndex : -1;
-				if ( ready == false && next.within > 0.0f && waited >= Ticks( next.within, in.tickRate ) )
+				if ( ready == false && next.within > 0.0f && waited >= Ticks( next.within, in.tickRate ) && next.goOn )
+				{
+					enter = nextIndex; // (wait for X or S: it goes on without it)
+				}
+				else if ( ready == false && next.within > 0.0f && waited >= Ticks( next.within, in.tickRate ) )
 				{
 					// It gave up: its timeout, if it has one, then the end.
 					enter = next.onTimeout;

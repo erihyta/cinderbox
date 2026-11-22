@@ -90,7 +90,7 @@ struct Declaration
 	Kind kind = Kind::Field;
 	int line = 0;
 	std::string name;
-	std::string type = "int";	// a field's: int, float, bool
+	std::string type = "int";	// a field's: int, float, bool, timer (a float that counts down to 0, a second a second)
 	std::string on = "player";	// a field's: player, world, item
 	bool shared = false;		// a field's: sent to every player
 	bool privately = false;		// a field's: its player's alone

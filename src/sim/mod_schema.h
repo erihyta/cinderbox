@@ -48,6 +48,9 @@ struct BoardField
 	// fields and those of what it holds go to that player alone; a mod marks those its looks show on
 	// others (a score in a list, a glow), and a field any state machine reads is shared by itself.
 	bool shared = false;
+	// A float that counts down to 0 by itself, a second a second (M287: a sheet's "field NAME timer"):
+	// a player's own (its board's) and the game's (the global board's). The simulation does it.
+	bool timer = false;
 
 	bool operator==( const BoardField& ) const = default;
 };
