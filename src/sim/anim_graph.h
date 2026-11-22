@@ -107,6 +107,11 @@ struct AnimExpr
 		// it has left (index: schema status). Only a motion reads them (0 elsewhere).
 		Status,
 		StatusRemaining,
+		// "$other:combat.health", "$other:stunned" (M290: a sheet's "combat.health of target"): a field
+		// or a status of what a find found (or a cast holds), in its lines (index: board slot, schema
+		// status). Only a motion reads them (0 elsewhere, or when it has none).
+		TargetField,
+		TargetStatus,
 	};
 	enum Builtin : uint8_t
 	{
@@ -133,6 +138,8 @@ struct AnimExpr
 		Time,
 		Distance,
 		Reach,
+		// Inside a find's (or a grab's) lines: what it found is a player (M290). Elsewhere 0.
+		Player,
 		BuiltinCount,
 	};
 	struct Step
@@ -357,6 +364,10 @@ struct AnimGraphInputs
 	// A motion's state (VarKind::MotionReady, ...): read through the motions (sim/motions.h); null: 0.
 	float ( *motionState )( const void* user, AnimExpr::VarKind kind, uint16_t motion ) = nullptr;
 	const void* motionUser = nullptr;
+	// What a find found (or a cast holds), in its lines (M290: VarKind::TargetField, TargetStatus):
+	// its board and its statuses (null: 0).
+	const BoardValues* targetBoard = nullptr;
+	const MotionStatus* targetStatuses = nullptr;
 };
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );

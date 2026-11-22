@@ -216,6 +216,7 @@ enum Place : uint8_t
 	kInCast = 16,	 // what a cast does while it holds
 	kInItem = 32,	 // an item's motion (owner item): it all happens in one tick
 	kItemOnly = 64,	 // (only an item's motion has it)
+	kInGrab = 128,	 // what a grab does to what it holds (M290): a find's lines, and forces
 };
 
 struct LineRule
@@ -225,18 +226,20 @@ struct LineRule
 };
 
 const LineRule kLineRules[] = {
-	{ "change", kInStep | kInEvery | kInTimeout | kInFind | kInItem },
-	{ "emit", kInStep | kInEvery | kInTimeout | kInFind | kInCast | kInItem },
-	{ "impulse", kInStep | kInEvery | kInTimeout | kInFind | kInCast | kInItem },
+	{ "change", kInStep | kInEvery | kInTimeout | kInFind | kInGrab | kInItem },
+	{ "emit", kInStep | kInEvery | kInTimeout | kInFind | kInGrab | kInCast | kInItem },
+	{ "impulse", kInStep | kInEvery | kInTimeout | kInFind | kInGrab | kInCast | kInItem },
+	{ "throw", kInFind | kInGrab | kInCast },
 	{ "launch", kInStep | kInEvery | kInTimeout },
 	{ "break", kInStep | kInEvery | kInTimeout | kInItem },
 	{ "find", kInStep | kInEvery | kInTimeout | kInItem },
-	{ "if", kInStep | kInEvery | kInTimeout | kInItem },
-	{ "else", kInStep | kInEvery | kInTimeout | kInItem },
-	{ "move for", kInStep | kInFind | kInCast },
-	{ "apply", kInStep | kInEvery | kInTimeout | kInFind },
+	{ "if", kInStep | kInEvery | kInTimeout | kInFind | kInGrab | kInItem },
+	{ "else", kInStep | kInEvery | kInTimeout | kInFind | kInGrab | kInItem },
+	{ "move for", kInStep | kInFind | kInGrab | kInCast },
+	{ "apply", kInStep | kInEvery | kInTimeout | kInFind | kInGrab | kInCast },
 	{ "move", kInStep | kInCast },
-	{ "force", kInStep | kInCast },
+	{ "force", kInStep | kInGrab | kInCast },
+	{ "grab", kInStep },
 	{ "link", kInStep | kInCast },
 	{ "follow", kInStep },
 	{ "end", kInStep },
@@ -263,6 +266,7 @@ std::string PlaceName( uint8_t place )
 		   : place == kInTimeout ? "in a timeout"
 		   : place == kInFind	 ? "in a find"
 		   : place == kInCast	 ? "in a cast"
+		   : place == kInGrab	 ? "in a grab"
 		   : place == kInItem	 ? "in an item's motion (it happens in one tick)"
 								 : "in a step";
 }
@@ -398,8 +402,26 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 	auto frameOf = [&]( const std::string& word ) {
 		return word == "look" ? 0 : word == "move" ? 1 : word == "facing" ? 2 : word == "up" ? 3 : word == "world" ? 4 : word == "to" ? 5 : word == "away" ? 6 : -1;
 	};
-	// The words a part shares: on, along, direction.
+	// The words a part shares: on, along, direction, toward.
 	auto common = [&]( const std::string& word, size_t& k ) {
+		if ( word == "toward" && k + 1 < w.size() )
+		{
+			// toward owner | hit | look D (M290): from its target to the point.
+			const std::string to = w[k + 1].text;
+			if ( to == "look" && k + 2 < w.size() )
+			{
+				props["toward"] = "look " + w[k + 2].text;
+				k += 3;
+				return true;
+			}
+			if ( to != "owner" && to != "hit" )
+			{
+				why = "toward owner, hit or look D";
+			}
+			props["toward"] = to;
+			k += 2;
+			return true;
+		}
 		if ( word == "on" && k + 1 < w.size() )
 		{
 			// self; target (what the find found, or what the cast holds: kBlockTarget until the block
@@ -458,13 +480,13 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 		}
 		return false;
 	};
-	if ( verb == "impulse" || verb == "force" )
+	if ( verb == "impulse" || verb == "force" || verb == "throw" )
 	{
 		// How much: a number, or an expression up to the first word that is an option (read when it
 		// acts: "9 * curve(Falloff, reach)", "2 * dash.power").
 		auto forceStops = []( const std::string& word ) {
 			return word == "on" || word == "along" || word == "direction" || word == "replace" || word == "kind" || word == "top" ||
-				   word == "ramp" || word == "react" || word == "turn";
+				   word == "ramp" || word == "react" || word == "turn" || word == "toward" || word == "marks";
 		};
 		size_t options = 1;
 		while ( options < w.size() && ( w[options].quoted || forceStops( w[options].text ) == false ) )
@@ -478,7 +500,7 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 		}
 		// (A part's "class" says what it is to the bake: the names of the motion nodes it was baked
 		// through until M268.)
-		part["class"] = verb == "impulse" ? "CbImpulse" : "CbForce";
+		part["class"] = verb != "force" ? "CbImpulse" : "CbForce";
 		{
 			// (The words before the first option word, found above.)
 			Amount main;
@@ -488,7 +510,7 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 				main.text += ( j > 1 ? " " : "" ) + w[j].text;
 			}
 			// (An impulse's speed is its line's third field, a force's strength its fifth.)
-			amountInto( main, verb == "impulse" ? "speed" : "strength", verb == "impulse" ? 2 : 4 );
+			amountInto( main, verb != "force" ? "speed" : "strength", verb != "force" ? 2 : 4 );
 		}
 		for ( i = options; i < w.size() && why.empty(); )
 		{
@@ -497,7 +519,14 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 			{
 				continue;
 			}
-			if ( verb == "impulse" && word == "replace" && i + 1 < w.size() )
+			if ( verb == "throw" && word == "marks" && i + 3 < w.size() && w[i + 2].text == "for" && Number( w[i + 3], value ) && value > 0.0 )
+			{
+				// throw ... marks EVENT for S (M290): what it throws strikes someone within S: EVENT.
+				props["marks"] = w[i + 1].text;
+				props["marks_seconds"] = value;
+				i += 4;
+			}
+			else if ( verb != "force" && word == "replace" && i + 1 < w.size() )
 			{
 				const std::string r = w[i + 1].text;
 				const int replace = r == "nothing" ? 0 : r == "vertical" ? 1 : r == "horizontal" ? 2 : r == "all" ? 3 : -1;
@@ -508,7 +537,7 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 				props["replace"] = replace;
 				i += 2;
 			}
-			else if ( verb == "impulse" && word == "kind" && i + 1 < w.size() )
+			else if ( verb != "force" && word == "kind" && i + 1 < w.size() )
 			{
 				// kind velocity (the default: m/s, whatever it weighs) or momentum (N s: heavy moves less)
 				const std::string k = w[i + 1].text;
@@ -727,6 +756,7 @@ struct Building
 	// it found.
 	int findColumn = -1;
 	Dict find;
+	std::vector<Frame> findFrames; // the ifs open under it (M290)
 	bool castBlock = false; // the open block is a cast (else a find)
 	bool cast = false;		// the motion has one
 	Strings changes;		// a prediction's
@@ -1102,13 +1132,53 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				Dict statement;
 				statement["line"] = number;
 				const std::string placed = verb == "move" && w.size() > 1 && w[1].text == "for" ? std::string( "move for" ) : verb;
-				const std::string misplaced = Misplaced( placed, rule.castBlock ? kInCast : kInFind, false );
+				const bool grabbing = rule.find.Get( "grab", false ).AsBool();
+				const std::string misplaced = Misplaced( placed, rule.castBlock ? kInCast : grabbing ? kInGrab : kInFind, false );
 				if ( misplaced.empty() == false )
 				{
 					fail( number, misplaced );
 					continue;
 				}
 				statement["verb"] = placed;
+				// (M290) An if under a find: decided for each thing it found.
+				while ( rule.findFrames.empty() == false &&
+						( verb == "else" ? rule.findFrames.back().column > column : rule.findFrames.back().column >= column ) )
+				{
+					rule.findFrames.pop_back();
+				}
+				if ( verb == "if" || verb == "else" )
+				{
+					if ( rule.castBlock )
+					{
+						fail( number, "an if is not in a cast" );
+					}
+					else if ( verb == "if" && w.size() < 2 )
+					{
+						fail( number, "if <expression>" );
+					}
+					else if ( verb == "if" )
+					{
+						rule.findFrames.push_back( { column, RestFrom( line, w[1] ), false } );
+					}
+					else if ( w.size() != 1 || rule.findFrames.empty() || rule.findFrames.back().column != column || rule.findFrames.back().otherwise )
+					{
+						fail( number, "an else is under an if, as far in as it" );
+					}
+					else
+					{
+						rule.findFrames.back().otherwise = true;
+					}
+					continue;
+				}
+				{
+					std::string only;
+					for ( const auto& frame : rule.findFrames )
+					{
+						const std::string one = frame.otherwise ? "not ( " + frame.condition + " )" : "( " + frame.condition + " )";
+						only += only.empty() ? one : " and " + one;
+					}
+					statement["only"] = only;
+				}
 				if ( verb == "change" )
 				{
 					// (Of the motion's owner, once for each thing found: a count of what was hit.)
@@ -1122,10 +1192,20 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				}
 				else if ( verb == "apply" && w.size() >= 4 && w[2].text == "for" )
 				{
-					// (On each player found, M288.)
+					// (On each player found, M288; on the player a cast holds, M290. "on target" says so.)
 					statement["kind"] = "apply";
 					statement["text"] = w[1].text;
-					statement["value"] = RestFrom( line, w[3] );
+					std::string seconds = RestFrom( line, w[3] );
+					if ( w.size() >= 6 && w[w.size() - 2].text == "on" )
+					{
+						if ( w[w.size() - 1].text != "target" )
+						{
+							fail( number, "apply STATUS for S [on target]: in a find or a cast, on what it found or holds" );
+							continue;
+						}
+						seconds = Strip( seconds.substr( 0, seconds.rfind( " on " ) ) );
+					}
+					statement["value"] = seconds;
 				}
 				else if ( verb == "emit" && w.size() == 2 )
 				{
@@ -1155,7 +1235,7 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 						continue;
 					}
 					Dict props = part["properties"].AsDict();
-					if ( ( verb == "impulse" || ( rule.castBlock && verb == "force" ) ) && props.Has( "target" ) == false )
+					if ( ( verb == "impulse" || verb == "throw" || verb == "force" ) && props.Has( "target" ) == false )
 					{
 						props["target"] = rule.castBlock ? 1 : 3; // (what it holds, or found, unless it says)
 					}
@@ -1389,11 +1469,15 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				}
 				statement["verb"] = placed;
 			}
-			if ( verb == "find" )
+			if ( verb == "find" || verb == "grab" )
 			{
-				// find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at (X,Y,Z)]; SHAPE: a node's
-				// path (an Area3D, a CollisionShape3D), sphere R, box (X,Y,Z), capsule R H
-				const char* usage = "find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at (X,Y,Z)], SHAPE a node's path, sphere R, box (X,Y,Z) or capsule R H";
+				// find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first]; SHAPE:
+				// a node's path (an Area3D, a CollisionShape3D), sphere R, box (X,Y,Z), capsule R H. POINT: (X,Y,Z), a
+				// marker, look D, hit (M290). grab: the same, what it finds held while its step lasts.
+				const char* usage = verb == "find" ? "find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first], SHAPE a node's path, "
+													 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit"
+												   : "grab SHAPE [players] [bodies] [max N] [turned facing|look|none] [at POINT] [players first], SHAPE a node's path, "
+													 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit";
 				size_t i = 1;
 				Dict shape;
 				double a = 0.0, b = 0.0;
@@ -1431,7 +1515,12 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				for ( ; i < w.size() && ok; )
 				{
 					const std::string word = w[i].text;
-					if ( word == "players" || word == "bodies" )
+					if ( word == "players" && i + 1 < w.size() && w[i + 1].text == "first" )
+					{
+						statement["first"] = true; // (M290: players before bodies, whatever is nearer)
+						i += 2;
+					}
+					else if ( word == "players" || word == "bodies" )
 					{
 						( word == "players" ? players : bodies ) = true;
 						i += 1;
@@ -1460,6 +1549,21 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 						shape["at"] = ValueOf( w[i + 1] );
 						i += 2;
 					}
+					else if ( word == "at" && i + 2 < w.size() && w[i + 1].text == "look" )
+					{
+						statement["point"] = "look " + w[i + 2].text; // (M290: along the look, the level stops it)
+						i += 3;
+					}
+					else if ( word == "at" && i + 1 < w.size() && ( w[i + 1].text == "hit" || w[i + 1].text == "target" ) )
+					{
+						statement["point"] = std::string( "hit" ); // (where the cast holds)
+						i += 2;
+					}
+					else if ( word == "at" && i + 1 < w.size() && w[i + 1].quoted == false )
+					{
+						shape["at_node"] = w[i + 1].text; // (a marker drawn in the scene: its place)
+						i += 2;
+					}
 					else
 					{
 						ok = false;
@@ -1470,7 +1574,17 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 					fail( number, usage );
 					continue;
 				}
+				if ( verb == "grab" && ( statement.Get( "self", false ).AsBool() || statement.Get( "most", 1 ).AsInt() > 8 ) )
+				{
+					fail( number, "a grab holds 8 at most, and not the player itself" );
+					continue;
+				}
 				statement["kind"] = "find";
+				statement["grab"] = verb == "grab";
+				if ( verb == "grab" && statement.Has( "most" ) == false )
+				{
+					statement["most"] = 8;
+				}
 				statement["shape"] = shape;
 				statement["who"] = players == bodies ? "all" : players ? "players" : "bodies";
 				statement["statements"] = List();
@@ -1479,6 +1593,7 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				rule.steps[rule.steps.size() - 1] = step;
 				rule.findColumn = column;
 				rule.find = statement;
+				rule.findFrames.clear();
 				rule.castBlock = false;
 				continue;
 			}
@@ -1586,18 +1701,26 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				// break radius R [speed S] [seconds S]: walls near the owner. A number, a name, or an
 				// expression in brackets each.
 				bool ok = w.size() >= 3;
-				auto breakStops = []( const std::string& next ) { return next == "radius" || next == "speed" || next == "seconds"; };
+				auto breakStops = []( const std::string& next ) { return next == "radius" || next == "speed" || next == "seconds" || next == "at"; };
 				for ( size_t k = 1; ok && k < w.size(); )
 				{
 					const std::string word = w[k].text;
 					k += 1;
+					if ( word == "at" )
+					{
+						// at look D | hit (M290): around a point, not the owner.
+						ok = k < w.size() && ( w[k].text == "hit" || ( w[k].text == "look" && k + 1 < w.size() ) );
+						statement["point"] = ok ? ( w[k].text == "hit" ? std::string( "hit" ) : "look " + w[k + 1].text ) : std::string();
+						k += ok && w[k].text == "look" ? 2 : 1;
+						continue;
+					}
 					Amount amount;
 					ok = breakStops( word ) && TakeAmount( w, k, breakStops, amount );
 					statement[word] = amount.text; // (a number, or an expression: the bake writes it as it is)
 				}
 				if ( ok == false || statement.Has( "radius" ) == false )
 				{
-					fail( number, "break radius R [speed S] [seconds S]: the walls within R of it, their pieces flung at S, staying S seconds (0: for good)" );
+					fail( number, "break radius R [speed S] [seconds S] [at look D | hit]: the walls within R of it, their pieces flung at S, staying S seconds (0: for good)" );
 					continue;
 				}
 				statement["kind"] = "break";

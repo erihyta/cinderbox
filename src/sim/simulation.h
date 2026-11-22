@@ -887,6 +887,44 @@ private:
 	flecs::entity MotionItemOf( uint32_t holder, const Motion& m );
 	void RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
 				  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& values, uint32_t sayer );
+	// (M290) Where a line's point is now (a find's, a break's, a toward's): false when it has none
+	// (a cast that holds nothing). Owner: the feet.
+	bool MotionPointAt( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, const MotionPoint& point,
+						const AnimGraphInputs& values, b3Vec3& out ) const;
+	// What a find's shape overlaps, in the order its lines take them (players first if it says,
+	// then the nearest), at most as many as it may: around `place`, pivoting about `pivot`.
+	struct Found;
+	struct FindPlace
+	{
+		b3Vec3 place = {};
+		b3Vec3 pivot = {};
+		b3Quat turn = b3Quat_identity;
+	};
+	bool PlaceOfFind( flecs::entity e, const Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
+					  const AnimGraphInputs& values, FindPlace& out ) const;
+	void FindAll( flecs::entity e, const Transform& t, const MotionFind& find, const FindPlace& where, std::vector<Found>& out );
+	// What a find's lines read about one thing it found (its distance, whether it is a player, its
+	// fields and statuses), and which of the lines' conditions hold for it.
+	struct TargetValues;
+	uint16_t ReadTarget( const Motion& m, const MotionFind& find, const Found& target, b3Vec3 place, AnimGraphInputs& values, TargetValues& kept ) const;
+	// A find's once lines on one thing it found.
+	void ActOnFound( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
+					 const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& values, uint32_t sayer, const Found& target, b3Vec3 place );
+	// A grab of the player's current step (M290): what it holds kept, let go or taken in, its once
+	// lines on what it takes when the step starts, its forces on everything it holds.
+	void RunGrab( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, uint16_t motion, const MotionSlot& slot,
+				  size_t index, const MotionFind& find, const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& values, bool starts );
+	// A force on `target` along `direction` this tick (its strength ramped by `ramp`); `other` is the
+	// end that takes its reaction. `toward` >= 0: the distance left to the point it goes to (a
+	// velocity force then steers the whole velocity, arriving there).
+	void ApplyForce( const Motion& m, const MotionEffect& effect, const AnimGraphInputs& values, const MotionEnd& target, const MotionEnd& other,
+					 Character& c, b3Vec3 direction, float ramp, float toward );
+	// From where an effect on `target` goes toward its point (MotionFrame::Toward): false: none.
+	bool TowardOf( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, const MotionEffect& effect, const AnimGraphInputs& values,
+				   const MotionEnd& self, const MotionEnd& target, b3Vec3& direction, float& distance ) const;
+	// A body the player `e` threw with a mark (M290), and the marked bodies that strike someone.
+	void MarkThrown( flecs::entity e, uint32_t body, const MotionEffect& effect );
+	void StrikeThrown();
 	// A movement parameter given to a player for some seconds (MoveEffects).
 	void GiveMove( flecs::entity who, uint8_t param, float value, float seconds );
 	// An item's motions (owner item) for an event said at it: each that answers it, once.
@@ -894,7 +932,9 @@ private:
 	// The motions an event said at a live item this tick starts (its own expiry runs before it goes).
 	void RunItemEvents();
 	// A step's walls: those near the owner broken, as its breaks say.
-	void RunBreaks( const Motion& m, const MotionStep& step, const MotionSlot& slot, b3Vec3 at, const AnimGraphInputs& values );
+	// (`e` and `in`: the player's, for a break at a point; none: around `at`.)
+	void RunBreaks( const Motion& m, const MotionStep& step, const MotionSlot& slot, b3Vec3 at, const AnimGraphInputs& values,
+					flecs::entity e = flecs::entity(), const PlayerInput* in = nullptr );
 	void ApplyMotionEffects( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionState& state,
 							 const Blackboard& board, const std::vector<MotionActive>& active, const AnimGraphInputs& values );
 	void ExpireProps();

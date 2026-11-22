@@ -7,6 +7,7 @@ rule motion line 12 head 0
     - "attack"
   blocked: texts
     - "guard"
+    - "pulled"
   steps: list
     - dict
         statements: list
@@ -64,11 +65,13 @@ rule motion line 20 head 0
                 - dict
                     line: int 23
                     verb: text "emit"
+                    only: text ""
                     kind: text "emit"
                     text: text "brawl.dash_strike.hit"
                 - dict
                     line: int 24
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"

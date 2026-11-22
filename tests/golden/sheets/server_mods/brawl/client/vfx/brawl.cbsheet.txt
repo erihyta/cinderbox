@@ -72,3 +72,22 @@ rule CbReaction line 44 head 41
   volume_db: float 4
   pitch_scale: float 0.5
   max_distance: float 60
+rule CbReaction line 49 head 46
+  when: int 0
+  event: text "brawl.tk.pulled"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/brawl_swing.wav"
+  volume_db: float -2
+  pitch_scale: float 0.6
+  max_distance: float 40
+rule CbReaction line 54 head 51
+  when: int 0
+  event: text "brawl.tk.struck"
+  subject: text "$at"
+  place: int 1
+  sound: text "res://assets/sfx/brawl_hit.wav"
+  volume_db: float 2
+  pitch_scale: float 0.8
+  pitch_jitter: float 0.1
+  max_distance: float 50

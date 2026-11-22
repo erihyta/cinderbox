@@ -7,6 +7,7 @@ rule motion line 14 head 0
     - "attack"
   blocked: texts
     - "guard"
+    - "pulled"
   lasts: float 3
   steps: list
     - dict
@@ -46,6 +47,7 @@ rule motion line 14 head 0
           - dict
               verb: text "find"
               kind: text "find"
+              grab: bool false
               shape: dict
                 kind: text "node"
                 path: text "Shockwave"
@@ -54,6 +56,7 @@ rule motion line 14 head 0
                 - dict
                     line: int 24
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"
@@ -64,6 +67,7 @@ rule motion line 14 head 0
                 - dict
                     line: int 25
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"
@@ -74,6 +78,7 @@ rule motion line 14 head 0
                 - dict
                     line: int 26
                     verb: text "emit"
+                    only: text ""
                     kind: text "emit"
                     text: text "brawl.slam.hit"
               guard: text ""

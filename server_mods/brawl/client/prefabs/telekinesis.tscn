@@ -1,0 +1,40 @@
+[gd_scene format=3]
+
+; Telekinesis (M290): slot 6. Select it; the left button pulls a player to you (or, while the right
+; button holds bodies, throws them), the right button held breaks walls loose 6 m along your look and
+; holds up to 8 loose bodies there. All of it is its sheet's (telekinesis.cbsheet), predicted; the
+; damage of what it throws is the brawl mod's (brawl.tk.struck).
+;   Telekinesis  CbItem   once a press (the left button), its slot's key selects it
+;     Rules      CbRules  telekinesis.cbsheet: Pull, Hold, Throw
+
+[ext_resource type="CbSheet" path="res://prefabs/telekinesis.cbsheet" id="sheet"]
+
+[sub_resource type="SphereShape3D" id="Body"]
+radius = 0.08
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.45, 0.3, 0.95, 1)
+emission_enabled = true
+emission = Color(0.55, 0.35, 1, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="SphereMesh" id="Mesh"]
+material = SubResource("Mat")
+radius = 0.08
+height = 0.16
+
+[node name="Telekinesis" type="CbItem"]
+kind = "brawl.telekinesis"
+display_name = "Telekinesis"
+use = 1
+slot = 6
+mass = 0.5
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh")
+
+[node name="Rules" type="CbRules" parent="."]
+sheet = ExtResource("sheet")

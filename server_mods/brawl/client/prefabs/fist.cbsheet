@@ -25,7 +25,7 @@ let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 
 motion Jab on use if not linked and brawl.combo < 2
 	tags attack, punch
-	blocked by punch, guard
+	blocked by punch, guard, pulled
 	cooldown 0.3
 	change brawl.combo += 1
 	change brawl.combo_left = 1.5
@@ -41,7 +41,7 @@ motion Jab on use if not linked and brawl.combo < 2
 
 motion Finisher on use if brawl.combo >= 2
 	tags attack, punch
-	blocked by punch, guard
+	blocked by punch, guard, pulled
 	cooldown 0.3
 	change brawl.combo = 0
 	wait for brawl.fist.strike within 0.5

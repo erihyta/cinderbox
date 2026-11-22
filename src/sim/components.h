@@ -370,6 +370,35 @@ struct MotionHold
 	b3Vec3 origin = {};
 };
 
+// What a player's grab holds (M290: a sheet's "grab", sim/motions.h): up to eight bodies or players,
+// by NetId, for the step of the motion it is in. A player has it once it has grabbed; `count` 0:
+// nothing held.
+struct MotionGrab
+{
+	uint16_t motion = 0;  // the motion whose grab it is
+	uint16_t step = 0;	  // its step, and which of the step's finds
+	uint8_t find = 0;
+	uint8_t count = 0;
+	uint8_t reserved[2] = {};
+	uint32_t sinceTick = 0; // when its step started: a new step (or start) grabs again
+	uint32_t held[8] = {};
+};
+
+// The bodies a player threw marked (M290: a sheet's "throw ... marks EVENT for S"): while a mark
+// lasts, the first other player the body strikes has its event said (A the thrower, B the one
+// struck, the value its speed), and the mark is spent. A player has it once it has thrown one.
+struct ThrownMark
+{
+	uint32_t body = 0;	   // NetId; 0: an empty place
+	uint32_t untilTick = 0; // it lasts while the tick is below
+	uint16_t event = 0;	   // schema event
+	uint16_t reserved = 0;
+};
+struct ThrownMarks
+{
+	ThrownMark list[8] = {};
+};
+
 // Tag: part of the static level.
 struct StaticGeometry
 {
@@ -575,6 +604,8 @@ CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
 CB_CHECK_COMPONENT( MotionSlot, 28 );
 CB_CHECK_COMPONENT( MotionHold, 48 );
+CB_CHECK_COMPONENT( MotionGrab, 44 );
+CB_CHECK_COMPONENT( ThrownMarks, 12 * 8 );
 
 #undef CB_CHECK_COMPONENT
 

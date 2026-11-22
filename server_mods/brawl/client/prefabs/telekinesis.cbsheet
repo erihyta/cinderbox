@@ -1,0 +1,41 @@
+cbsheet 1
+
+# Telekinesis (M290: the owner's weapon, here as a skill of the kit until its look is made). Select
+# it (slot 6), then:
+#   left button       a pull: a ball thrown 18 m along the look holds the first player it meets and
+#                     draws them to you for 0.6 s; meanwhile they cannot attack (pulled). 4 s apart
+#   right button      held: a ball 6 m along the look (the level stops it short) breaks loose the
+#                     walls it touches and holds up to 8 loose bodies at its middle
+#   left, holding     what it holds is thrown along the look: a player one strikes within 2 s is
+#                     hurt by its speed (brawl.tk.struck: the brawl mod's damage)
+# Every simulation runs it (predicted); the damage alone is the server's.
+
+# Its names (the brawl mod's C++ finds them) and its numbers.
+status pulled
+event brawl.tk.pulled
+event brawl.tk.struck
+param inventory.start 1
+param brawl.tk.reach 6 m
+param brawl.tk.pull_speed 14 m/s
+param brawl.tk.throw_speed 30 m/s
+
+motion Pull on use if not active Hold
+	tags attack
+	blocked by guard, pulled
+	cooldown 4 s
+	lasts 0.6 s
+	cast sphere 0.4 range 18 holds players
+		emit brawl.tk.pulled
+		apply pulled for 0.6 s on target
+		force 60 kind velocity top brawl.tk.pull_speed on target toward owner
+
+motion Hold while held.use2
+	blocked by pulled
+	break radius 2 speed 2 at look brawl.tk.reach
+	grab sphere 3 bodies max 8 at look brawl.tk.reach
+		force 40 kind velocity top 12 toward look brawl.tk.reach
+
+motion Throw on use if active Hold
+	tags attack
+	find sphere 3 bodies max 8 at look brawl.tk.reach
+		throw brawl.tk.throw_speed along look marks brawl.tk.struck for 2 s

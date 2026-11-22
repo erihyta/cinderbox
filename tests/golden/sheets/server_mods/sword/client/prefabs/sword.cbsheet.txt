@@ -23,6 +23,7 @@ rule motion line 25 head 0
               frame: text "look"
               most: int 2
               kind: text "find"
+              grab: bool false
               shape: dict
                 kind: text "box"
                 size: vec3 1.2 1.6 2.4
@@ -32,11 +33,13 @@ rule motion line 25 head 0
                 - dict
                     line: int 32
                     verb: text "emit"
+                    only: text ""
                     kind: text "emit"
                     text: text "sword.hit"
                 - dict
                     line: int 33
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"
@@ -56,6 +59,7 @@ rule motion line 25 head 0
               frame: text "look"
               most: int 2
               kind: text "find"
+              grab: bool false
               shape: dict
                 kind: text "box"
                 size: vec3 1.2 1.6 2.4
@@ -65,11 +69,13 @@ rule motion line 25 head 0
                 - dict
                     line: int 36
                     verb: text "emit"
+                    only: text ""
                     kind: text "emit"
                     text: text "sword.hit"
                 - dict
                     line: int 37
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"

@@ -42,3 +42,13 @@ react on brawl.slam.landed
 	as actor
 		at point
 			sound brawl_hit volume 4 pitch 0.5 range 60
+
+react on brawl.tk.pulled
+	as actor
+		at point
+			sound brawl_swing volume -2 pitch 0.6 range 40
+
+react on brawl.tk.struck
+	as actor
+		at point
+			sound brawl_hit volume 2 pitch 0.8 jitter 0.1 range 50
