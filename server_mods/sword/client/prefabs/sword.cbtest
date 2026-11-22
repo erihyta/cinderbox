@@ -1,0 +1,17 @@
+# The sword (sword.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "a swing hurts the player ahead"
+	item sword.blade in hand
+	other ahead 1.6
+	look -10
+	press use at 0
+	expect event sword.swing at 0
+	expect event sword.hit at 0 within 0.7
+	expect combat.health of other == 70 at 1
+
+test "the block slows the walk"
+	item sword.blade in hand
+	hold forward from 0 to 2
+	hold use2 from 1 to 2
+	expect speed > 3 at 0.8
+	expect speed < 2.5 at 1.8

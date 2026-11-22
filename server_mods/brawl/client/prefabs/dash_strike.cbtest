@@ -1,0 +1,8 @@
+# The dash strike (dash_strike.cbsheet): its slot's key. Run with cb_sheet test, and in CI.
+
+test "the key lunges and knocks back the player ahead"
+	other ahead 4
+	press brawl.dash_strike at 0
+	expect event brawl.dash_strike.started at 0
+	expect event brawl.dash_strike.hit at 0 within 0.6
+	expect brawl.cd_dash > 2 at 0.5

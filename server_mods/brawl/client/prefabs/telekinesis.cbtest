@@ -1,0 +1,21 @@
+# Telekinesis (telekinesis.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "a pull draws the player ahead in, pulled"
+	item brawl.telekinesis in hand
+	other ahead 9
+	look -4
+	press use at 0
+	expect event brawl.tk.pulled at 0
+	expect pulled of other == 1 at 0.2
+	expect distance < 6 at 0.7
+	expect pulled of other == 0 at 1.2
+
+test "held, crates come to the point; thrown, one strikes the player ahead"
+	item brawl.telekinesis in hand
+	crate ahead 6 right 0.8
+	crate ahead 6.5 right -0.8
+	other ahead 13
+	hold use2 from 0 to 3
+	press use at 1.5
+	expect event brawl.tk.struck at 1.5 within 1
+	expect combat.health of other < 100 at 2.6

@@ -1,0 +1,68 @@
+{
+	"name": "cbsheet",
+	"displayName": "Cinderbox sheets",
+	"description": "Colours for Cinderbox sheets (.cbsheet) and sheet tests (.cbtest), and cb_sheet check's mistakes as problems.",
+	"version": "0.1.0",
+	"publisher": "cinderbox",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.80.0"
+	},
+	"categories": [
+		"Programming Languages"
+	],
+	"contributes": {
+		"languages": [
+			{
+				"id": "cbsheet",
+				"aliases": [
+					"Cinderbox sheet",
+					"cbsheet"
+				],
+				"extensions": [
+					".cbsheet"
+				],
+				"configuration": "./language-configuration.json"
+			},
+			{
+				"id": "cbtest",
+				"aliases": [
+					"Cinderbox sheet test",
+					"cbtest"
+				],
+				"extensions": [
+					".cbtest"
+				],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "cbsheet",
+				"scopeName": "source.cbsheet",
+				"path": "./syntaxes/cbsheet.tmLanguage.json"
+			},
+			{
+				"language": "cbtest",
+				"scopeName": "source.cbtest",
+				"path": "./syntaxes/cbtest.tmLanguage.json"
+			}
+		],
+		"problemMatchers": [
+			{
+				"name": "cb_sheet",
+				"owner": "cbsheet",
+				"fileLocation": [
+					"relative",
+					"${workspaceFolder}"
+				],
+				"pattern": {
+					"regexp": "^\\s*(?:FAIL\\s+)?([^\\s:][^:]*\\.cb(?:sheet|test)):(\\d+):\\s+(.*)$",
+					"file": 1,
+					"line": 2,
+					"message": 3
+				}
+			}
+		]
+	}
+}

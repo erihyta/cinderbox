@@ -14,6 +14,7 @@
 #include "mirror.h"
 #include "pose.h"
 #include "sha256.h"
+#include "sheet_test.h"
 #include "registry.h"
 #include "fingerprint.h"
 #include "game_client.h"
@@ -4582,6 +4583,48 @@ void TestSheetDeclarations()
 	CHECK( again.Errors().size() == 1 && again.Errors()[0].find( "ui/h.cbsheet line 2" ) != std::string::npos );
 }
 
+// M291: every sheet test of the mods (server_mods/*/client/**/*.cbtest), as cb_sheet test runs them,
+// each on a server of its own, headless. What failed, by file and line.
+void TestSheetTests()
+{
+	namespace fs = std::filesystem;
+	const std::string root = CB_SOURCE_DIR;
+	std::vector<std::string> files;
+	for ( const fs::directory_entry& e : fs::recursive_directory_iterator( root + "/server_mods" ) )
+	{
+		const std::string path = e.path().generic_string();
+		if ( e.is_regular_file() && e.path().extension() == ".cbtest" && path.find( "/.godot/" ) == std::string::npos )
+		{
+			files.push_back( path );
+		}
+	}
+	std::sort( files.begin(), files.end() );
+	int tests = 0, failed = 0;
+	for ( const std::string& file : files )
+	{
+		std::vector<SheetTestResult> results;
+		std::string error;
+		const bool read = RunSheetTests( file, root, results, error );
+		CHECK( read );
+		if ( read == false )
+		{
+			std::printf( "    %s\n", error.c_str() );
+			continue;
+		}
+		for ( const SheetTestResult& r : results )
+		{
+			++tests;
+			failed += r.passed ? 0 : 1;
+			for ( const std::string& why : r.failures )
+			{
+				std::printf( "    %s\n", why.c_str() );
+			}
+		}
+	}
+	std::printf( "    %zu files, %d tests, %d failed\n", files.size(), tests, failed );
+	CHECK( files.size() >= 14 && failed == 0 );
+}
+
 void TestBots()
 {
 	Harness h( 48270, {}, {}, { { "test.mods", "brawl,sword,teams,deathmatch,bots" }, { "bots.fill", "4" }, { "teams.count", "2" } } );
@@ -9025,6 +9068,7 @@ int main( int argc, char** argv )
 		{ "teams_chosen", TestTeamsChosen },
 		{ "sword", TestSword },
 		{ "sheet_declarations", TestSheetDeclarations },
+		{ "sheet_tests", TestSheetTests },
 		{ "bots", TestBots },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },

@@ -1852,6 +1852,17 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 	const StateReader reader{ &motions, &state, in.tick, in.tickRate };
 	const uint32_t now = in.tick + 1; // 0 in a slot means "never"
 	const float dt = 1.0f / float( in.tickRate );
+	// What the items' fields were when the tick began: what every motion's conditions and amounts read
+	// (as the player's own board is: one motion's change is not another's condition in the same tick,
+	// M291: the pistol's last shot clicked empty at once, Fire and Dry heard the same press).
+	std::vector<BoardValues> itemsBefore;
+	if ( in.items != nullptr )
+	{
+		for ( const MotionInputs::ItemBoard& one : *in.items )
+		{
+			itemsBefore.push_back( one.board.values );
+		}
+	}
 	for ( size_t i = 0; i < motions.list.size(); ++i )
 	{
 		const Motion& m = motions.list[i];
@@ -1876,7 +1887,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				}
 			}
 		}
-		values.itemBoard = mine != nullptr ? &mine->board.values : nullptr;
+		values.itemBoard = mine != nullptr ? &itemsBefore[size_t( mine - in.items->data() )] : nullptr;
 		values.motionState = ReadMotionState;
 		values.motionUser = &reader;
 		values.statuses = state.statuses;

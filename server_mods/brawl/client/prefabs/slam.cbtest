@@ -1,0 +1,13 @@
+# The ground slam (slam.cbsheet): its slot's key, in the air. Run with cb_sheet test, and in CI.
+
+test "a slam from a jump lands and throws the player near"
+	other ahead 2.5
+	press jump at 0
+	press brawl.slam at 0.25
+	expect event brawl.slam.started at 0.25
+	expect event brawl.slam.landed at 0.25 within 1
+	expect event brawl.slam.hit at 0.25 within 1.1
+
+test "on the ground it does nothing"
+	press brawl.slam at 0
+	expect no event brawl.slam.started

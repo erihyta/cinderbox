@@ -1,0 +1,9 @@
+# The grappling hook (hook.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "thrown at the player ahead, it takes hold and pulls"
+	item grapple.hook in hand
+	other ahead 12
+	press use at 0
+	expect event grapple.fired at 0
+	expect event grapple.hooked at 0 within 0.4
+	expect distance < 11 at 0.8

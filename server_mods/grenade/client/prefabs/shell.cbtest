@@ -1,0 +1,8 @@
+# The impact grenade (shell.cbsheet; its mod is switched off: the test runs it). Run with cb_sheet
+# test, and in CI (net_sheet_tests).
+
+test "a use throws it"
+	item grenade.shell in hand
+	look 10
+	press use at 0
+	expect event grenade.thrown at 0 within 0.5

@@ -1,0 +1,31 @@
+# The pistol (gun.cbsheet, pistol.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "a press fires, an empty magazine clicks and reloads"
+	item gun.pistol in hand
+	set gun.rounds of item = 1
+	press use at 0
+	expect event item.use at 0
+	expect gun.rounds of item == 0 at 0.1
+	press use at 0.5
+	expect event item.use_failed at 0.5
+	expect event item.reload at 0.5
+	expect gun.reloading of item == 1 at 0.6
+	expect gun.rounds of item == 12 at 2.1
+	expect gun.reloading of item == 0 at 2.1
+
+test "R reloads a magazine that is not full; a full one does not"
+	item gun.pistol in hand
+	set gun.rounds of item = 5
+	press reload at 0
+	expect event item.reload at 0
+	expect gun.rounds of item == 12 at 1.6
+	press reload at 2
+	expect no event item.reload from 1.9 to 2.5
+
+test "a shot hurts the player ahead"
+	item gun.pistol in hand
+	other ahead 4
+	look -8
+	press use at 0
+	expect event item.hit at 0 within 0.3
+	expect combat.health of other == 75 at 0.3

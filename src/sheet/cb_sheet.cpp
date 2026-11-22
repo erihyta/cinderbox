@@ -6,11 +6,15 @@
 //                               are not, and changes nothing)
 //   cb_sheet convert FILE...    writes each version 0 sheet as version 1, in place; one that would
 //                               mean something else is not written, and says where
+//   cb_sheet test FILE.cbtest...
+//                               runs each sheet test (M291: sheet_test.h) on the real server,
+//                               headless; what failed as FILE:LINE: why. Exit code 1 if any did
 //
 // A motion block's nodes (a find's shape, a marker) are the scene's: only the editor and the bake,
 // which have the scene, check them.
 
 #include "sheet_rules.h"
+#include "sheet_test.h"
 #include "sheet_v1.h"
 
 #include <cstdio>
@@ -51,7 +55,7 @@ bool Write( const std::string& path, const std::string& text )
 
 int Usage()
 {
-	std::fprintf( stderr, "cb_sheet check FILE...\ncb_sheet fmt [--check] FILE...\ncb_sheet convert FILE...\n" );
+	std::fprintf( stderr, "cb_sheet check FILE...\ncb_sheet fmt [--check] FILE...\ncb_sheet convert FILE...\ncb_sheet test FILE.cbtest...\n" );
 	return 2;
 }
 
@@ -78,11 +82,35 @@ int main( int argc, char** argv )
 			files.push_back( arg );
 		}
 	}
-	if ( command != "check" && command != "fmt" && command != "convert" )
+	if ( command != "check" && command != "fmt" && command != "convert" && command != "test" )
 	{
 		return Usage();
 	}
 	int failed = 0;
+	if ( command == "test" )
+	{
+		for ( const std::string& file : files )
+		{
+			std::vector<cb::SheetTestResult> results;
+			std::string error;
+			if ( cb::RunSheetTests( file, cb::SheetTestRoot( file ), results, error ) == false )
+			{
+				std::printf( "%s\n", error.c_str() );
+				++failed;
+				continue;
+			}
+			for ( const cb::SheetTestResult& r : results )
+			{
+				std::printf( "%s  %s: %s\n", r.passed ? "ok  " : "FAIL", file.c_str(), r.name.c_str() );
+				for ( const std::string& why : r.failures )
+				{
+					std::printf( "      %s\n", why.c_str() );
+				}
+				failed += r.passed ? 0 : 1;
+			}
+		}
+		return failed == 0 ? 0 : 1;
+	}
 	for ( const std::string& file : files )
 	{
 		std::string text;

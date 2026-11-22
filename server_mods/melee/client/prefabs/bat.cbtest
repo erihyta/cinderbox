@@ -1,0 +1,19 @@
+# The bat (bat.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "a swing hurts the player ahead, and the bat is hot"
+	item melee.bat in hand
+	other ahead 1.4
+	look -10
+	press use at 0
+	expect event melee.swing at 0
+	expect event melee.hit at 0 within 0.8
+	expect combat.health of other < 100 at 1
+	expect melee.hot_left of item > 1 at 1
+
+test "a swing at a crate knocks it away; the bat stays cold"
+	item melee.bat in hand
+	crate ahead 1.5 size 1
+	look -30
+	press use at 0
+	expect event melee.hit at 0 within 0.8
+	expect melee.hot_left of item == 0 at 1

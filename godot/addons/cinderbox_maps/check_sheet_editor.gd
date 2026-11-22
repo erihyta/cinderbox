@@ -35,5 +35,14 @@ func _initialize() -> void:
 	_check("version 1's words are words: react, hud, create, as, known, of", names.word_kind("react") == "word" and names.word_kind("hud") == "word"
 		and names.word_kind("create") == "word" and names.word_kind("as") == "word" and names.word_kind("known") == "word" and names.word_kind("of") == "word")
 	_check("a good version 1 sheet says nothing", names.sheet_problems("cbsheet 1\nreact on brawl.jab.hit\n\tas actor\n\t\tsound x\n").is_empty())
+	# M290's words; a line where it may not stand marked as it is typed (M291: the Sheet screen's bar
+	# says the same); the formatter the screen's Format button runs.
+	_check("M290's words are words: grab, toward, throw, marks, first", names.word_kind("grab") == "word" and names.word_kind("toward") == "word"
+		and names.word_kind("throw") == "word" and names.word_kind("marks") == "word" and names.word_kind("first") == "word")
+	var misplaced: Dictionary = names.sheet_problems("cbsheet 1\nmotion A on press brawl.guard\n\tfind sphere 2\n\t\tlink length 2\n")
+	_check("a line where it may not stand, at its line, as it is typed", misplaced.has(4) and String(misplaced[4]).contains("cannot stand in a find"), misplaced)
+	var formatted := names.format_sheet("cbsheet 1\nreact on brawl.jab.hit\n    as actor\n        sound x\nreact on brawl.slam.hit\n\tas actor\n\t\tsound x\n")
+	_check("Format: its indentation in tabs", formatted == "cbsheet 1\nreact on brawl.jab.hit\n\tas actor\n\t\tsound x\nreact on brawl.slam.hit\n\tas actor\n\t\tsound x\n", formatted)
+	_check("Format: formatted again, the same", names.format_sheet(formatted) == formatted)
 	print("sheet editor: ", "ok" if _failures == 0 else "%d FAILED" % _failures)
 	quit(0 if _failures == 0 else 1)

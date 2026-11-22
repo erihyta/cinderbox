@@ -608,10 +608,48 @@ Not in version 1 yet (no shipped sheet says them): `side`, `wait off`, `at here`
 | `cb_sheet check FILE...` | reads each sheet, its mistakes as `FILE:LINE: why`; exit code 1 if any. A motion's nodes (a find's shape) are the scene's: the editor and the bake check those |
 | `cb_sheet fmt [--check] FILE...` | writes each version 1 sheet in the one style: tabs, no spaces at the ends of lines, one blank line at most; what it means is checked to stay the same |
 | `cb_sheet convert FILE...` | version 0 to version 1, in place |
-| the editor's Sheet screen | colours, names offered, mistakes on their lines as you type ([looks.md](looks.md#rules-sheets)) |
+| `cb_sheet test FILE.cbtest...` | (M291) runs each [sheet test](#tests) on the real server, headless; what failed as `FILE:LINE: why`; exit code 1 if any did |
+| the editor's Sheet screen | colours, names offered, mistakes on their lines as you type, and above the sheet how many and the first (M291); **Format** (as `cb_sheet fmt`, one undo) ([looks.md](looks.md#rules-sheets)) |
+| VS Code | `tools/vscode-cbsheet`: colours for `.cbsheet` and `.cbtest`, and the `$cb_sheet` problem matcher for `cb_sheet check` and `cb_sheet test` (its README says how to install it) |
 
 `cb_sheet` is built with the tests (`bin/cb_sheet`). `cb_tests sheets_version1` checks that every
 shipped sheet is version 1, in the one style, and converts back to itself from version 0.
+
+## Tests
+
+A sheet test (M291) is a `.cbtest` file beside the sheet: what a player does with the item and
+what must happen. It runs on the **real server**, headless (the mods a `cb_server` runs by
+default, the file's own among them, read from their folders; a bot plays the script), so it tests
+what players get, the mods' C++ included. Every shipped item has one; CI runs them all
+(`net_sheet_tests`), and `cb_sheet test` runs one.
+
+```
+test "a press fires, an empty magazine clicks and reloads"
+	item gun.pistol in hand
+	set gun.rounds of item = 1
+	press use at 0
+	expect event item.use at 0
+	expect gun.rounds of item == 0 at 0.1
+	press use at 0.5
+	expect event item.use_failed at 0.5
+	expect gun.rounds of item == 12 at 2.1
+```
+
+| Line | Does |
+|---|---|
+| `test "NAME"` | a test: the lines under it, on a fresh server |
+| `mods NAME, NAME` / `option NAME VALUE` | mods beside the defaults (the brawler's kit, a switched-off one); a mod option |
+| `item KIND in hand` | the tester holds one (given if it has none, its slot chosen) |
+| `set FIELD [of item\|of world] = N` | a field when the script starts |
+| `other ahead D [right R]` / `crate ahead D [right R] [up U] [size S]` | a second player facing the tester; a loose box |
+| `look PITCH` | degrees up (down: negative); the tester faces ahead |
+| `press ACTION at T` / `hold ACTION from T to T2` | `use`, `jump`, `sprint`, `forward`, `back`, `left`, `right`, a mod's action (`use2`, `reload`), or a carried item's kind (its slot's key: `brawl.slam`) |
+| `expect event EVENT at T [within S]` | said between T and T + S (0.2) |
+| `expect no event EVENT [from T to T2]` | never said (then) |
+| `expect NAME [of item\|of other\|of world] OP N at T` | after the tick at T: a field, a status (1 or 0), `distance` (tester to other), `speed`; `==`, `!=`, `<`, `<=`, `>`, `>=` |
+
+Times are seconds from when the script starts (everything placed, the item in hand, half a second
+to settle).
 
 ## Grammar, in short
 
@@ -663,6 +701,7 @@ them after M243). What a sheet names stays a node: `CollisionShape3D` and `Area3
 | `at target` | a find inside a find's lines |
 | `PATH at T` | a direction along a `Path3D` |
 | A cast in a later step | today a cast is thrown when the motion starts |
+| A sheet test that drives the other player, or moves the tester by more than its keys | the other stands; the tester faces ahead |
 | The player's body | `wall` (a condition and a direction), `teleport`, passing through, not hittable, the capsule's size, keep speed and steer, hidden from others ([ROADMAP.md](../ROADMAP.md#parked)) |
 
 | Open question | Leaning |

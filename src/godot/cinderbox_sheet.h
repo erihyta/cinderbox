@@ -8,6 +8,7 @@
 
 #include <godot_cpp/classes/code_edit.hpp>
 #include <godot_cpp/classes/editor_plugin.hpp>
+#include <godot_cpp/classes/label.hpp>
 #include <godot_cpp/classes/tab_container.hpp>
 #include <godot_cpp/classes/v_box_container.hpp>
 
@@ -42,6 +43,8 @@ public:
 
 	void on_text_changed( godot::Object* edit );
 	void on_tab_close( int64_t tab );
+	void on_tab_changed( int64_t tab );
+	void on_format();
 
 protected:
 	static void _bind_methods();
@@ -54,7 +57,10 @@ private:
 		bool dirty = false;
 	};
 	void Title( size_t tab );
+	// (M291) What the open sheet's mistakes are, as it is typed: how many, and the first.
+	void Status();
 	godot::VBoxContainer* m_screen = nullptr;
+	godot::Label* m_status = nullptr;
 	godot::TabContainer* m_tabs = nullptr;
 	std::vector<Open> m_open;
 };

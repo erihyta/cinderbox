@@ -1,0 +1,8 @@
+# The uppercut (uppercut.cbsheet): its slot's key, on the ground. Run with cb_sheet test, and in CI.
+
+test "the key launches the player ahead"
+	other ahead 1.3
+	press brawl.uppercut at 0
+	expect event brawl.uppercut.started at 0
+	expect event brawl.uppercut.hit at 0 within 0.5
+	expect brawl.cd_upper > 3 at 0.5
