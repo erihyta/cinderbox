@@ -46,9 +46,6 @@ radial_segments = 16
 [node name="Shell" type="CbItem"]
 kind = "grenade.shell"
 display_name = "Grenade"
-properties = {
-"inventory.start": 1.0
-}
 animation_pack = "grenade.throw_arm"
 use = 1
 slot = 7

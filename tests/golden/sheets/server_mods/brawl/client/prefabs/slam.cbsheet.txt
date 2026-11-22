@@ -1,4 +1,4 @@
-rule motion line 7 head 0
+rule motion line 14 head 0
   name: text "Slam"
   trigger: text "use"
   conditions: texts
@@ -12,13 +12,13 @@ rule motion line 7 head 0
               kind: text "change"
               text: text "brawl.cd_slam = 5"
               guard: text ""
-              line: int 9
+              line: int 16
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "brawl.slam.started"
               guard: text ""
-              line: int 10
+              line: int 17
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -30,7 +30,7 @@ rule motion line 7 head 0
                   direction: vec3 0 -1 0
                   replace: int 1
               guard: text ""
-              line: int 11
+              line: int 18
     - dict
         statements: list
           - dict
@@ -38,7 +38,7 @@ rule motion line 7 head 0
               kind: text "emit"
               text: text "brawl.slam.landed"
               guard: text ""
-              line: int 13
+              line: int 20
           - dict
               verb: text "find"
               kind: text "find"
@@ -48,7 +48,7 @@ rule motion line 7 head 0
               who: text "players"
               statements: list
                 - dict
-                    line: int 15
+                    line: int 22
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -58,7 +58,7 @@ rule motion line 7 head 0
                         frame: int 6
                         target: int 3
                 - dict
-                    line: int 16
+                    line: int 23
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -68,11 +68,11 @@ rule motion line 7 head 0
                         frame: int 3
                         target: int 3
                 - dict
-                    line: int 17
+                    line: int 24
                     verb: text "emit"
                     kind: text "emit"
                     text: text "brawl.slam.hit"
               guard: text ""
-              line: int 14
-        line: int 12
+              line: int 21
+        line: int 19
         wait: text "grounded"

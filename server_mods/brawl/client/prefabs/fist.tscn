@@ -27,9 +27,6 @@ size = Vector3(0.1, 0.1, 0.1)
 kind = "brawl.fist"
 animation_pack = "brawl.fists"
 display_name = "Fist"
-properties = {
-"inventory.start": 1.0
-}
 use = 1
 slot = 1
 mass = 0.5

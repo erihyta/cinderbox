@@ -1,4 +1,4 @@
-rule motion line 5 head 0
+rule motion line 8 head 0
   name: text "Use"
   trigger: text "use"
   cooldown: float 1.2
@@ -10,7 +10,7 @@ rule motion line 5 head 0
               kind: text "emit"
               text: text "cannon.fired"
               guard: text ""
-              line: int 7
+              line: int 10
           - dict
               verb: text "launch"
               kind: text "part"
@@ -24,4 +24,4 @@ rule motion line 5 head 0
                   ahead: float 0.9
                   seconds: float 10
               guard: text ""
-              line: int 8
+              line: int 11

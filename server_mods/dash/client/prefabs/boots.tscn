@@ -32,9 +32,6 @@ size = Vector3(0.1, 0.12, 0.11)
 [node name="Boots" type="CbItem"]
 kind = "dash.boots"
 display_name = "Dash boots"
-properties = {
-"inventory.start": 1.0
-}
 use = 1
 animation_pack = "dash.boots_dash"
 slot = 5

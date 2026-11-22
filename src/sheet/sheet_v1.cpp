@@ -253,6 +253,9 @@ bool Spaces( const Piece& p )
 	return p.word == false && p.text.empty() == false && p.text.find_first_not_of( " \t" ) == std::string::npos;
 }
 
+// The params of the sheet being lowered (its word for a number: param gun.magazine 12), by name.
+thread_local const std::map<std::string, std::string>* t_params = nullptr;
+
 std::string ExprToV0( const std::string& text )
 {
 	const std::vector<Piece> p = PiecesOf( text, false );
@@ -265,6 +268,15 @@ std::string ExprToV0( const std::string& text )
 			continue;
 		}
 		const std::string& w = p[i].text;
+		if ( t_params != nullptr )
+		{
+			auto param = t_params->find( w );
+			if ( param != t_params->end() )
+			{
+				out += param->second;
+				continue;
+			}
+		}
 		auto wordAt = [&]( size_t k ) -> const std::string* { return k < p.size() && p[k].word ? &p[k].text : nullptr; };
 		auto spaceAt = [&]( size_t k ) { return k < p.size() && Spaces( p[k] ); };
 		// NAME of ANCHOR
@@ -860,6 +872,99 @@ void LowerHud( const std::vector<std::string>& lines, size_t first, size_t end, 
 	}
 }
 
+// --- Units (D8): "0.2 s", "16 m/s", checked against the word they are for, and dropped ----------
+
+enum class Unit
+{
+	None,
+	Seconds,
+	Metres,
+	Speed,
+	Degrees,
+};
+
+Unit UnitOf( const std::string& word )
+{
+	return word == "s" ? Unit::Seconds : word == "m" ? Unit::Metres : word == "m/s" ? Unit::Speed : word == "deg" ? Unit::Degrees : Unit::None;
+}
+
+const char* UnitName( Unit unit )
+{
+	return unit == Unit::Seconds ? "a time (s)" : unit == Unit::Metres ? "a distance (m)" : unit == Unit::Speed ? "a speed (m/s)" : "an angle (deg)";
+}
+
+// What a word's number is in: None when any unit may follow it (a movement parameter, a param).
+Unit UnitFor( const std::string& word )
+{
+	static const char* const seconds[] = { "cooldown", "lasts", "wait", "within", "or", "every", "after", "for", "life", "time", "seconds", "ramp", "over", "delay" };
+	static const char* const metres[] = { "range", "radius", "ahead", "length", "sphere", "capsule" };
+	static const char* const speeds[] = { "speed", "impulse", "top", "lift", "reel" };
+	for ( const char* w : seconds )
+	{
+		if ( word == w )
+		{
+			return Unit::Seconds;
+		}
+	}
+	for ( const char* w : metres )
+	{
+		if ( word == w )
+		{
+			return Unit::Metres;
+		}
+	}
+	for ( const char* w : speeds )
+	{
+		if ( word == w )
+		{
+			return Unit::Speed;
+		}
+	}
+	return Unit::None;
+}
+
+// The line without its units: "cooldown 0.4 m" is a mistake (cooldown takes seconds).
+std::string WithoutUnits( const std::string& line, int number, Strings& errors )
+{
+	const size_t hash = CommentAt( line );
+	const std::string code = line.substr( 0, hash );
+	const std::vector<Word> w = WordsOf( code );
+	std::string out;
+	size_t from = 0;
+	for ( size_t k = 1; k < w.size(); ++k )
+	{
+		const Unit unit = UnitOf( w[k].text );
+		if ( unit == Unit::None || IsValidFloat( w[k - 1].text ) == false )
+		{
+			continue;
+		}
+		// The word the number is for: the nearest before it that is not a number.
+		std::string owner;
+		for ( size_t j = k - 1; j-- > 0; )
+		{
+			if ( IsValidFloat( w[j].text ) == false )
+			{
+				owner = w[j].text;
+				break;
+			}
+		}
+		const Unit wanted = UnitFor( owner );
+		if ( wanted != Unit::None && wanted != unit )
+		{
+			errors.push_back( "line " + Number( number ) + ": \"" + w[k - 1].text + " " + w[k].text + "\" is " + UnitName( unit ) + "; " + owner + " takes " +
+							  UnitName( wanted ) );
+		}
+		out += code.substr( from, w[k - 1].end - from );
+		from = w[k].end;
+	}
+	return out + code.substr( from ) + line.substr( hash );
+}
+
+bool IsDeclaration( const std::string& verb )
+{
+	return verb == "field" || verb == "event" || verb == "action" || verb == "param";
+}
+
 // --- Converting: version 0 to version 1 -----------------------------------------------------------
 
 bool StartsBlock( const std::string& verb )
@@ -1353,7 +1458,32 @@ int SheetVersion( const std::string& text )
 
 Lowered LowerVersion1( const std::string& text, Strings& errors )
 {
-	const std::vector<std::string> lines = LinesOf( text );
+	std::vector<std::string> lines = LinesOf( text );
+	for ( size_t k = 0; k < lines.size(); ++k )
+	{
+		lines[k] = WithoutUnits( lines[k], int( k + 1 ), errors );
+	}
+	// The params, as the numbers they stand for in this sheet's expressions.
+	Strings ignored;
+	std::map<std::string, std::string> params;
+	for ( const Declaration& d : ReadDeclarations( text, ignored ) )
+	{
+		if ( d.kind == Declaration::Kind::Param )
+		{
+			params[d.name] = Num( d.value );
+		}
+	}
+	struct Using
+	{
+		explicit Using( const std::map<std::string, std::string>* p )
+		{
+			t_params = p;
+		}
+		~Using()
+		{
+			t_params = nullptr;
+		}
+	} using_( &params );
 	Out out;
 	bool header = false;
 	size_t i = 0;
@@ -1406,6 +1536,10 @@ Lowered LowerVersion1( const std::string& text, Strings& errors )
 		{
 			errors.push_back( "line " + Number( number ) + ": the version is the first line only" );
 		}
+		else if ( IsDeclaration( verb ) )
+		{
+			// (ReadDeclarations reads it; ParseRules says its mistakes.)
+		}
 		else
 		{
 			errors.push_back( "line " + Number( number ) + ": \"" + verb + "\" starts no block: a sheet's blocks are motion, use, react, predict and hud" +
@@ -1434,6 +1568,7 @@ std::vector<Rule> ParseRules( const std::string& text, Strings& errors )
 		errors.push_back( "line 1: this game reads sheets of version 1 (cbsheet 1) and before" );
 		return {};
 	}
+	ReadDeclarations( text, errors );
 	const Lowered lowered = LowerVersion1( text, errors );
 	Strings found;
 	std::vector<Rule> rules = ParseVersion0( lowered.text, found );
@@ -1460,6 +1595,135 @@ std::vector<Rule> ParseRules( const std::string& text, Strings& errors )
 		RemapLines( properties, lowered.lineOf, seen );
 	}
 	return rules;
+}
+
+std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& errors )
+{
+	std::vector<Declaration> out;
+	if ( SheetVersion( text ) != 1 )
+	{
+		return out;
+	}
+	const std::vector<std::string> lines = LinesOf( text );
+	std::map<std::string, size_t> seen; // name -> its declaration
+	for ( size_t k = 0; k < lines.size(); ++k )
+	{
+		if ( Blank( lines[k] ) || Column( lines[k] ) > 0 )
+		{
+			continue;
+		}
+		const int number = int( k + 1 );
+		Strings unitErrors;
+		const std::string code = CodeOf( WithoutUnits( lines[k], number, unitErrors ) );
+		const std::vector<Word> w = WordsOf( code );
+		const std::string verb = w[0].text;
+		if ( IsDeclaration( verb ) == false )
+		{
+			continue;
+		}
+		auto fail = [&]( const std::string& why ) { errors.push_back( "line " + Number( number ) + ": " + why ); };
+		auto nameOk = [&]( const std::string& name ) {
+			if ( name.empty() || name.size() > 48 || name.find_first_not_of( "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_." ) != std::string::npos ||
+				 NameStart( name[0] ) == false )
+			{
+				return false;
+			}
+			return true;
+		};
+		Declaration d;
+		d.line = number;
+		bool ok = w.size() >= 2 && nameOk( w[1].text );
+		if ( ok )
+		{
+			d.name = w[1].text;
+		}
+		if ( verb == "field" )
+		{
+			d.kind = Declaration::Kind::Field;
+			ok = ok && w.size() >= 3 && ( w[2].text == "int" || w[2].text == "float" || w[2].text == "bool" );
+			if ( ok )
+			{
+				d.type = w[2].text;
+			}
+			for ( size_t i = 3; ok && i < w.size(); )
+			{
+				const std::string& word = w[i].text;
+				if ( word == "on" && i + 1 < w.size() && ( w[i + 1].text == "player" || w[i + 1].text == "world" || w[i + 1].text == "item" ) )
+				{
+					d.on = w[i + 1].text;
+					i += 2;
+				}
+				else if ( word == "shared" || word == "private" )
+				{
+					( word == "shared" ? d.shared : d.privately ) = true;
+					i += 1;
+				}
+				else if ( word == "=" && i + 1 < w.size() )
+				{
+					const std::string& v = w[i + 1].text;
+					ok = v == "true" || v == "false" || IsValidFloat( v );
+					d.value = v == "true" ? 1.0 : v == "false" ? 0.0 : ok ? ToFloat( v ) : 0.0;
+					i += 2;
+				}
+				else
+				{
+					ok = false;
+				}
+			}
+			ok = ok && ( d.shared && d.privately ) == false && ( d.on == "player" || ( d.shared == false && d.privately == false ) );
+			if ( ok == false )
+			{
+				fail( "field NAME int|float|bool [on player|world|item] [shared|private] [= VALUE] (shared and private for a player's field)" );
+				continue;
+			}
+		}
+		else if ( verb == "event" )
+		{
+			d.kind = Declaration::Kind::Event;
+			d.everyone = w.size() == 3 && w[2].text == "everyone";
+			if ( ok == false || ( w.size() != 2 && d.everyone == false ) )
+			{
+				fail( "event NAME [everyone]" );
+				continue;
+			}
+		}
+		else if ( verb == "action" )
+		{
+			d.kind = Declaration::Kind::Action;
+			if ( w.size() == 4 && w[2].text == "key" )
+			{
+				d.key = w[3].text;
+			}
+			if ( ok == false || ( w.size() != 2 && d.key.empty() ) )
+			{
+				fail( "action NAME [key KEY] (as Godot names keys: R, F, 1, MouseLeft)" );
+				continue;
+			}
+		}
+		else
+		{
+			d.kind = Declaration::Kind::Param;
+			if ( ok == false || w.size() != 3 || IsValidFloat( w[2].text ) == false )
+			{
+				fail( "param NAME NUMBER [UNIT]: a number of the item (gun.damage 25)" );
+				continue;
+			}
+			d.value = ToFloat( w[2].text );
+		}
+		auto before = seen.find( d.name );
+		if ( before != seen.end() )
+		{
+			const Declaration& was = out[before->second];
+			if ( was.kind != d.kind || was.type != d.type || was.on != d.on || d.kind == Declaration::Kind::Param )
+			{
+				fail( d.name + " is declared at line " + Number( was.line ) + " already" );
+			}
+			continue;
+		}
+		seen[d.name] = out.size();
+		out.push_back( d );
+	}
+	return out;
 }
 
 std::string Meaning( const std::string& text )

@@ -1,4 +1,4 @@
-rule motion line 8 head 0
+rule motion line 11 head 0
   name: text "Throw"
   trigger: text "use"
   conditions: texts
@@ -14,7 +14,7 @@ rule motion line 8 head 0
               kind: text "emit"
               text: text "grapple.fired"
               guard: text ""
-              line: int 11
+              line: int 14
           - dict
               verb: text "cast"
               range: float 40
@@ -25,12 +25,12 @@ rule motion line 8 head 0
               holds: texts
               statements: list
                 - dict
-                    line: int 13
+                    line: int 16
                     verb: text "emit"
                     kind: text "emit"
                     text: text "grapple.hooked"
                 - dict
-                    line: int 14
+                    line: int 17
                     verb: text "link"
                     kind: text "part"
                     part: dict
@@ -39,7 +39,7 @@ rule motion line 8 head 0
                         reel: float 4
                         react: bool false
                 - dict
-                    line: int 15
+                    line: int 18
                     verb: text "force"
                     kind: text "part"
                     part: dict
@@ -51,7 +51,7 @@ rule motion line 8 head 0
                         target: int 0
                         frame: int 5
                 - dict
-                    line: int 16
+                    line: int 19
                     verb: text "move"
                     kind: text "part"
                     part: dict
@@ -62,8 +62,8 @@ rule motion line 8 head 0
                           gravity: float 0
                           airborne: float 1
               guard: text ""
-              line: int 12
-rule motion line 19 head 0
+              line: int 15
+rule motion line 22 head 0
   name: text "Throwing"
   trigger: text "use"
   conditions: texts

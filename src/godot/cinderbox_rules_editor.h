@@ -13,6 +13,8 @@
 #include <godot_cpp/variant/dictionary.hpp>
 
 #include <map>
+#include <set>
+#include <string>
 
 namespace cb::gd
 {
@@ -39,6 +41,7 @@ private:
 	void Check();
 	godot::CodeEdit* m_edit = nullptr;
 	std::map<int, godot::String> m_problems; // by line, from 0
+	std::set<std::string> m_own;			 // the names the sheet declares itself
 };
 
 } // namespace cb::gd

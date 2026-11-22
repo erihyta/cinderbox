@@ -36,9 +36,6 @@ radius = 8.0
 [node name="Frag" type="CbItem" unique_id=1869682717]
 kind = "frag.grenade"
 display_name = "Grenade"
-properties = {
-"inventory.start": 1.0
-}
 animation_pack = "frag.throw_arm"
 use = 1
 slot = 6

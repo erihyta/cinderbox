@@ -84,6 +84,13 @@ bool LoadMotionsFolder( const std::string& dir, const std::string& set, std::str
 bool ListLookItemsItem( const std::string& zipPath, const ModItem& item, std::vector<LookItem>& out, std::string& error );
 bool ListLookItemsFolder( const std::string& dir, std::vector<LookItem>& out );
 
+// Every sheet of a mod's look (M286): each *.cbsheet of its workshop item (checked against its
+// SHA-256), or of a folder (a mod's client project: its starters/ and placeholder/ left out), as
+// (path, text), in the order of their paths.
+using Sheets = std::vector<std::pair<std::string, std::string>>;
+bool ListSheetsItem( const std::string& zipPath, const ModItem& item, Sheets& out, std::string& error );
+bool ListSheetsFolder( const std::string& dir, Sheets& out );
+
 // What of a workshop item the server reads, by file: items/*.cfg without the lines only the game
 // reads (the scene, the name, the first-person view), and everything under anim/, motions/ and
 // characters/ that is baked (.cfg, .ozz). Two items of a mod with the same parts differ in their

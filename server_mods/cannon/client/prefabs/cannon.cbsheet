@@ -2,6 +2,9 @@ cbsheet 1
 
 # The cannon: a ball where the camera looks, 36 m/s and a little lift, from just ahead; 1.2 s apart.
 
+# Its numbers.
+param inventory.start 1
+
 use
 	cooldown 1.2
 	emit cannon.fired

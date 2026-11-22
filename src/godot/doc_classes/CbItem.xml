@@ -10,7 +10,7 @@
 		- meshes, lights, particles: how it looks in the hand, put away and on the floor.
 		- [CbReaction] nodes: what it shows when its holder does something (a muzzle flash).
 		The scene is the item's frame: the grip at the origin, pointing along -Z. The root's own transform is not used.
-		Saving the scene bakes [code]res://items/&lt;kind&gt;.cfg[/code] (the Bake button and publishing the mod do too). The server reads the body, the grip and the [member properties] from that file in the mod's workshop item; the game finds the scene, the [member display_name] and the first-person settings (the [code]view_[/code] members) by it. A server mod declares the kind ([code]declare.ItemKind( "melee.bat" )[/code]) and says what it does.
+		Saving the scene bakes [code]res://items/&lt;kind&gt;.cfg[/code] (the Bake button and publishing the mod do too). The server reads the body, the grip and its sheet's params and item fields (param gun.damage 25, field gun.rounds int on item = 12: docs/sheets.md) from that file in the mod's workshop item; the game finds the scene, the [member display_name] and the first-person settings (the [code]view_[/code] members) by it. A server mod declares the kind ([code]declare.ItemKind( "melee.bat" )[/code]) and says what it does.
 		In the game the node does nothing: the simulation owns the item.
 	</description>
 	<tutorials>
@@ -53,12 +53,6 @@
 		</member>
 		<member name="mass" type="float" setter="set_mass" getter="get_mass" default="1.0">
 			What it weighs when it lies in the world, in kilograms.
-		</member>
-		<member name="fields" type="Dictionary" setter="set_fields" getter="get_fields" default="{}">
-			Its own state: a field of every copy of the item ([code]{"gun.rounds": 12}[/code]). The scene declares it; a new copy starts with the value and keeps its own from then on, as simulation state (predicted, rolled back, in a joining player's snapshot). The value's type is the field's: a whole number an Int, a decimal a Float, [code]true[/code] / [code]false[/code] a Bool. Server mods read and write it ([code]ctx.Get[/code] / [code]ctx.Set[/code] on the item's NetId); looks read the one in a player's hand as [code]hand.&lt;field&gt;[/code] ([code]{hand.gun.rounds}[/code]).
-		</member>
-		<member name="properties" type="Dictionary" setter="set_properties" getter="get_properties" default="{}">
-			Named numbers any server mod may read: [code]pickup.hold_seconds[/code] = 0.5, [code]inventory.slot[/code] = 3. They replace what the item's mod declared in code for the same names.
 		</member>
 		<member name="use" type="int" setter="set_use" getter="get_use" enum="CbItem.Use" default="0">
 			How long a use of it lasts, on a server with slots. Any copy is used from the hand (its slot's key takes it out, the left mouse button uses it), or by its own [member use_key] wherever it is carried. [b]While the button is down[/b]: a tool, a weapon. [b]Once a press[/b]: an ability, a consumable (the grenade, the dash boots, the grappling hook). [b]A press, and while held[/b]: in use as long as the button or key is down (a jetpack). Whichever way, its server mod is told the same thing ([code]ctx.Used[/code], [code]ctx.Using[/code], [code]ctx.UsedItem[/code]: which copy), conditions read [code]using.&lt;kind&gt;[/code], and the simulation records the event [code]&lt;kind&gt;.used[/code] on the press (declared for an item of a mod that takes its items from its look), so a [CbMotion] or a [CbReaction] on it starts at once on the player's own screen.

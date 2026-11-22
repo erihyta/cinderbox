@@ -92,7 +92,7 @@ Dictionary CbRulesHighlighter::_get_line_syntax_highlighting( int32_t line ) con
 			{
 				++end;
 			}
-			String kind = names::WordKind( text.substr( i, end - i ) );
+			String kind = names::WordKind( text.substr( i, end - i ), &m_own );
 			paint( i, kind == "word" ? kWord : kind == "number" ? kNumber : kind == "name" ? kName : kind == "unknown" ? kUnknown : kPlain );
 			i = end;
 			paint( i, kPlain );
@@ -126,6 +126,7 @@ void CbRulesHighlighter::Check()
 		return;
 	}
 	m_problems.clear();
+	m_own = names::SheetNames( m_edit->get_text() );
 	for ( const auto& [line, why] : names::SheetProblems( m_edit->get_text() ) )
 	{
 		m_problems[line - 1] = m_problems.count( line - 1 ) ? m_problems[line - 1] + "\n" + why : why;

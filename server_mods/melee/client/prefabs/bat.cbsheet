@@ -3,6 +3,16 @@ cbsheet 1
 # The bat (step 5, M282: every item a sheet): what it does to bodies (predicted: every simulation
 # runs it) and how it looks. The damage and the heat are the melee mod's (melee.cpp), on melee.hit.
 
+# Its names (the melee mod's C++ finds them) and its numbers.
+field melee.hot bool shared
+event melee.swing
+event melee.strike
+event melee.done
+event melee.hit
+param inventory.start 1
+param item.ruled 1
+param pickup.hold_seconds 0.5 s
+
 # A swing, on the left mouse button: the pack plays it (melee.swing), and at the clip's melee.strike
 # marker a box where the player looks, pitch and all: 1.9 m ahead, 1.4 m across, 1.4 m from low to
 # high, turned about the chest with the look. In it, the nearest player (hurt by the server, nudged

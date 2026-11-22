@@ -5,7 +5,7 @@
 ; items/MODNAME.item.cfg, which the server reads and the game finds this scene by.
 ;
 ;   Item        CbItem             the kind (the one the server mod declares), its name on the HUD,
-;                                  its mass, its first-person view, numbers for mods (properties)
+;                                  its mass, its first-person view, numbers for mods (its sheet's params)
 ;   Body        CollisionShape3D   its body when it lies in the world: a box or a sphere
 ;   Carry       Marker3D           where the carrying hand holds it (the item's carry_grip). Turn it
 ;                                  to turn the item in the hand

@@ -26,6 +26,8 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -50,7 +52,10 @@ std::vector<std::pair<int, godot::String>> SheetProblems( const godot::String& t
 godot::PackedStringArray Completions( const godot::String& prefix );
 // What a word of a sheet is, for its colour: "word" (one of the sheet's), "number", "name" (one a mod
 // declares), "unknown" (a name with a dot nobody declares), or "" (anything else: a path, a file).
-godot::String WordKind( const godot::String& word );
+godot::String WordKind( const godot::String& word, const std::set<std::string>* own = nullptr );
+// The names a sheet declares itself (M286: field, event, action, param), known as you type it with
+// no server build: SheetProblems counts them, and WordKind with them colours them as names.
+std::set<std::string> SheetNames( const godot::String& text );
 
 } // namespace cb::gd::names
 

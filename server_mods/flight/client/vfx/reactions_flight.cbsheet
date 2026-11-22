@@ -3,6 +3,16 @@ cbsheet 1
 # reactions_flight.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
 # from the scene's root.
 
+# The flight mod's names (its C++ finds them). Here, not in motion_sets/flight_moves.cbsheet: a
+# motion set's scene and sheet are not in the mod's item (only what they bake to is).
+field flight.on bool
+field flight.fuel float
+field flight.jetpack_on bool on world
+event flight.started
+event flight.stopped
+event flight.thrust
+action fly key T
+
 # Started
 react on flight.started
 	as actor

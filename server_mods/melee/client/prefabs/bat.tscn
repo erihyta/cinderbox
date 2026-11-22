@@ -138,11 +138,6 @@ _data = {
 [node name="Bat" type="CbItem" unique_id=1599722703]
 kind = "melee.bat"
 display_name = "Bat"
-properties = {
-"inventory.start": 1.0,
-"item.ruled": 1.0,
-"pickup.hold_seconds": 0.5
-}
 use = 1
 slot = 2
 holster = "Back"

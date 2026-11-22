@@ -26,9 +26,6 @@ size = Vector3(0.1, 0.1, 0.1)
 [node name="DashStrike" type="CbItem"]
 kind = "brawl.dash_strike"
 display_name = "Dash strike"
-properties = {
-"inventory.start": 1.0
-}
 use = 1
 slot = 2
 slot_key_uses = true

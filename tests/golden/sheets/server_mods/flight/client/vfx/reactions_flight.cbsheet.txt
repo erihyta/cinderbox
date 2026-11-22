@@ -1,4 +1,4 @@
-rule CbReaction line 10 head 7
+rule CbReaction line 20 head 17
   when: int 0
   event: text "flight.started"
   subject: text "$at"
@@ -7,14 +7,14 @@ rule CbReaction line 10 head 7
   volume_db: float -12
   pitch_scale: float 0.7
   max_distance: float 30
-rule CbReaction line 11 head 7
+rule CbReaction line 21 head 17
   when: int 0
   event: text "flight.started"
   subject: text "$at"
   place: int 1
   scene: text "res://vfx/jump.tscn"
   scene_lifetime: float 2
-rule CbReaction line 17 head 14
+rule CbReaction line 27 head 24
   when: int 0
   event: text "flight.stopped"
   subject: text "$at"
@@ -23,7 +23,7 @@ rule CbReaction line 17 head 14
   volume_db: float -14
   pitch_scale: float 0.8
   max_distance: float 30
-rule CbReaction line 24 head 20
+rule CbReaction line 34 head 30
   when: int 0
   event: text "flight.thrust"
   cooldown: float 0.2
@@ -33,7 +33,7 @@ rule CbReaction line 24 head 20
   volume_db: float -12
   pitch_scale: float 0.6
   max_distance: float 30
-rule CbReaction line 25 head 20
+rule CbReaction line 35 head 30
   when: int 0
   event: text "flight.thrust"
   cooldown: float 0.2

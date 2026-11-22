@@ -31,9 +31,6 @@ size = Vector3(0.1, 0.1, 0.1)
 [node name="Slam" type="CbItem"]
 kind = "brawl.slam"
 display_name = "Ground slam"
-properties = {
-"inventory.start": 1.0
-}
 use = 1
 slot = 4
 slot_key_uses = true

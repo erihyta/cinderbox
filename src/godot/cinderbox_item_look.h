@@ -78,18 +78,8 @@ public:
 	{
 		return m_animationPack;
 	}
-	// Its own fields: each copy of the item has them, starting with these values, and keeps its own
-	// ({"gun.rounds": 30}). The value's type is the field's: a whole number an Int, a decimal a
-	// Float, true / false a Bool. Server mods read and write them; looks read the one in a player's
-	// hand as "hand.<field>".
-	void set_fields( const godot::Dictionary& v )
-	{
-		m_fields = v;
-	}
-	godot::Dictionary get_fields() const
-	{
-		return m_fields;
-	}
+	// (Its own fields and its numbers are its sheet's since M286: "field gun.rounds int on item = 12",
+	// "param gun.damage 25" (docs/sheets.md, Declarations), baked into items/<kind>.cfg.)
 	// When used: what must hold for a use to do anything ("dash.charges > 0"), what a use changes
 	// ("dash.charges -= 1"), the seconds between two, and the event a use says. For the helper nodes
 	// under the item (its probe, effects, moves): what using it does.
@@ -228,16 +218,6 @@ public:
 	bool get_view_right_hand() const
 	{
 		return m_viewRightHand;
-	}
-	// Named numbers about the item ("pickup.hold_seconds": 0.5), baked with it. They replace what
-	// the item's mod declared in code for the same names.
-	void set_properties( const godot::Dictionary& v )
-	{
-		m_properties = v;
-	}
-	godot::Dictionary get_properties() const
-	{
-		return m_properties;
 	}
 
 	// In a player's slots (sim/types.h). Any copy is used from the hand (its slot selected, then the
@@ -534,8 +514,6 @@ private:
 	// edited); its reactions run.
 	void PreviewStage( godot::Node3D* under, const godot::Transform3D& hand, bool firstPerson, bool internal );
 	bool m_viewRightHand = true;
-	godot::Dictionary m_properties;
-	godot::Dictionary m_fields;
 	int m_use = USE_TOOL;
 	int m_hand = HAND_SELECTED;
 	bool m_bullet = false;

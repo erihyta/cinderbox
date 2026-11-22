@@ -112,6 +112,9 @@ struct ServerOptions
 	// Every item of a mod's look (items/*.cfg of its workshop item): for a mod that takes its
 	// items from its scenes (Declarations::ItemsOfLook). Without it such a mod has none.
 	std::function<std::vector<LookItem>( const std::string& mod )> lookItems;
+	// Every sheet of a mod's look (*.cbsheet of its workshop item, M286): the fields, events and
+	// actions they declare are the mod's, declared after its C++. Unset: only what the C++ declares.
+	std::function<std::vector<std::pair<std::string, std::string>>( const std::string& mod )> lookSheets; // (path, text)
 	// Reads an item kind's body from a mod's workshop item (items/<kind>.cfg, baked from its scene).
 	// Unset or false: the kind keeps the body its mod declared, or a small box.
 	std::function<bool( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error,

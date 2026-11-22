@@ -2,6 +2,10 @@ cbsheet 1
 
 # The guard, while it is held: slow, no jump; says brawl.guard.up when it goes up.
 
+# Its names (the brawl mod's C++ finds them) and its numbers.
+event brawl.guard.up
+param inventory.start 1
+
 use
 	emit brawl.guard.up
 	move jump_speed 0 sprint_speed 1.5 walk_speed 1.5

@@ -5,6 +5,9 @@ cbsheet 1
 # swing. It holds anything but moves only you: the rope and the pull act on the player alone. Using
 # it again, or a jump, lets go; it holds 2 s at most. A use while a line is out throws no other.
 
+# Its numbers.
+param inventory.start 1
+
 motion Throw on use if not linked
 	until grapple.hook.used or pressed.jump
 	lasts 2

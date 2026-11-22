@@ -1,4 +1,5 @@
 #include "mod_api.h"
+#include "sheet_v1.h"
 #include "navigation.h"
 
 #include "anim_graph.h"
@@ -43,6 +44,43 @@ void Declarations::BeginMod( const std::string& name )
 {
 	m_mod = name;
 	m_schema.mods.push_back( name );
+}
+
+void Declarations::DeclareSheet( const std::string& path, const std::string& text )
+{
+	sheet::Strings errors;
+	const std::vector<sheet::Declaration> declared = sheet::ReadDeclarations( text, errors );
+	for ( const std::string& error : errors )
+	{
+		m_errors.push_back( m_mod + ": " + path + " " + error );
+	}
+	for ( const sheet::Declaration& d : declared )
+	{
+		const size_t before = m_errors.size();
+		switch ( d.kind )
+		{
+			case sheet::Declaration::Kind::Field:
+				if ( d.on != "item" )
+				{
+					const BoardType type = d.type == "float" ? BoardType::Float : d.type == "bool" ? BoardType::Bool : BoardType::Int;
+					const BoardScope scope = d.on == "world" ? BoardScope::Global : d.privately ? BoardScope::Private : BoardScope::Entity;
+					Field( d.name, type, scope, d.shared );
+				}
+				break;
+			case sheet::Declaration::Kind::Event:
+				Event( d.name, d.everyone );
+				break;
+			case sheet::Declaration::Kind::Action:
+				Action( d.name, d.key );
+				break;
+			case sheet::Declaration::Kind::Param:
+				break; // (the item's: baked into items/<kind>.cfg)
+		}
+		for ( size_t e = before; e < m_errors.size(); ++e )
+		{
+			m_errors[e] += " (" + path + " line " + std::to_string( d.line ) + ")";
+		}
+	}
 }
 
 FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardScope scope, bool shared )

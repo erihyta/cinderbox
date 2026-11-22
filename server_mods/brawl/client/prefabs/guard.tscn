@@ -24,9 +24,6 @@ size = Vector3(0.1, 0.1, 0.1)
 [node name="Guard" type="CbItem"]
 kind = "brawl.guard"
 display_name = "Guard"
-properties = {
-"inventory.start": 1.0
-}
 use = 2
 slot = 5
 slot_key_uses = true

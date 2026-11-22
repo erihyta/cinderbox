@@ -2,6 +2,9 @@ cbsheet 1
 
 # What the dash boots do when used: a dash, if a charge is left.
 
+# Its numbers.
+param inventory.start 1
+
 use if dash.charges > 0
 	change dash.charges -= 1
 	cooldown 0.4

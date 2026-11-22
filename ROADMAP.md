@@ -79,7 +79,7 @@ Which steps launch needs: [the road](#the-road).
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284); version 1, one spelling, every sheet converted (M285) | yes: the sheet's format settled, with a version |
+| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284); version 1, one spelling, every sheet converted (M285); names and numbers declared in the sheet (M286) | yes: the sheet's format settled, with a version |
 | 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
@@ -348,7 +348,10 @@ baking as before (golden files, the Godot checks' bakes). M284, a sheet is a `.c
 `CbSheet` resource a `CbRules` node holds (no path in a string), opened in the editor's Sheet screen.
 M285, version 1 of the language (`cbsheet 1`: `react`, `hud`, scopes, `wait for`, `create`, short
 names, `known`, `of`, `active`), every shipped sheet converted and compiling to what it did;
-`cb_sheet check | fmt | convert`; [docs/sheets.md](docs/sheets.md) the reference.
+`cb_sheet check | fmt | convert`; [docs/sheets.md](docs/sheets.md) the reference. M286, a sheet declares
+its names (`field`, `event`, `action`: the server reads them from the mod's item, after its C++)
+and its item's numbers and own fields (`param`, `field ... on item`: the `CbItem`'s `properties` and
+`fields` went); units on numbers (`0.4 s`), checked.
 
 **The plan (2026-11-21): [docs/step6-plan.md](docs/step6-plan.md)**: the language as it would be, the
 shipped sheets before and after, the compiler, what the engine has to learn, ten milestones (M283 to
