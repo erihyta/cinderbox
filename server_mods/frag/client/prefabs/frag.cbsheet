@@ -1,3 +1,5 @@
+cbsheet 1
+
 # The frag grenade (frag.tscn, a CbItem: every simulation agrees on its body): a sphere 18 cm across,
 # 0.4 kg, bouncy (0.45), with some rolling and air drag (0.2 each) so it settles near where it lands.
 # It goes to slot 6 if that is free, out of sight, three to a stack; its own key (H) throws one from
@@ -16,18 +18,15 @@
 # The throw lets go at the arm clip's frag.release marker, or a moment later without it (a body the
 # arm's pack does not fit, the critter): a throw always happens.
 motion Throwing on use
-	item carried
+	for carrier
 	cooldown 0.7
 	lasts 0.7
-	then when frag.release within 0.3
-	emit frag.thrown
-	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
-	timeout
+	wait for frag.release or 0.3
 	emit frag.thrown
 	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
 
 motion Blast on expired
-	owner item
+	on item
 	emit frag.blast
 	break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
 	find Blast bodies

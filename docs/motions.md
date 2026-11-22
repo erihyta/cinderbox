@@ -16,7 +16,7 @@ cue, or while conditions hold, do this to the player (and to what it reaches)*. 
 and run by the simulation, the way a character's [state machine](characters.md#state-machines) is.
 
 **A motion is a block of a rules sheet** (M211: motion blocks; the grammar is
-[rules-language.md](rules-language.md)). Until M268 it could also be a tree of nodes (`CbMotion`,
+[sheets.md](sheets.md)). Until M268 it could also be a tree of nodes (`CbMotion`,
 `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`); no mod used them after M243, and
 they were deleted.
 
@@ -60,7 +60,7 @@ motion DoubleJump on press jump if not grounded and dash.double_jump_on
 ## The parts
 
 A motion block has a trigger and settings on its first lines (*when*, *for how long*), and lines
-under them (*what happens to whom*): [rules-language.md](rules-language.md#a-motion-block).
+under them (*what happens to whom*): [sheets.md](sheets.md#a-motion-block).
 
 | To make | In the block |
 |---|---|
@@ -95,36 +95,36 @@ item's **When used** settings joined. An item used while its key is held has it 
 held.
 
 **A motion block** (`motion NAME ...`) in a sheet under an item or a `CbMotionSet` is a whole
-motion as text: steps that wait (`then when grounded`, `after 0.5`, a
+motion as text: steps that wait (`wait for grounded`, `wait 0.5`, a
 `timeout`), `if` / `else`, `end`, and a trigger that fires once as an expression turns true
-(`when`). The grammar: [rules-language.md](rules-language.md).
+(`when`). The grammar: [sheets.md](sheets.md).
 
 ```
 # prefabs/slam.cbsheet: a dive, and where it lands said on the tick after it touches the ground
 motion Slam on use if brawl.cd_slam <= 0 and not grounded
-    lasts 3
-    change brawl.cd_slam = 5
-    emit brawl.slam.started
-    impulse 25 along world (0, -1, 0) replace vertical
-    then when grounded
-    emit brawl.slam.landed
+	lasts 3
+	change brawl.cd_slam = 5
+	emit brawl.slam.started
+	impulse 25 along world (0, -1, 0) replace vertical
+	wait for grounded
+	emit brawl.slam.landed
 ```
 
 ```
 # prefabs/boots.cbsheet
 use if dash.charges > 0
-    change dash.charges -= 1
-    cooldown 0.4
-    emit dash.started
-    impulse 11 replace horizontal
-    move for 0.18 friction 0
+	change dash.charges -= 1
+	cooldown 0.4
+	emit dash.started
+	impulse 11 replace horizontal
+	move for 0.18 friction 0
 ```
 
 | Line | Is |
 |---|---|
 | `use [if EXPRESSION]` | the When used conditions (added to the item's own) |
 | `change`, `cooldown`, `emit` | `use_changes` (one line each), `use_cooldown`, `use_emits` |
-| `impulse`, `force`, `move`, `launch`, `cast`, `find` ... | what a motion block's lines do ([effects](#effects-on-whom-in-which-direction), [rules-language.md](rules-language.md#lines)) |
+| `impulse`, `force`, `move`, `launch`, `cast`, `find` ... | what a motion block's lines do ([effects](#effects-on-whom-in-which-direction), [sheets.md](sheets.md#lines)) |
 
 - **One `use` rule an item.** (The boots, the slam, the guard and the dash strike were nodes once;
   converted to sheets, their `motions/*.cfg` came out the same.)
@@ -137,12 +137,12 @@ use if dash.charges > 0
 | `use_emits` | the event a use says (`dash.started`), for looks and state machines |
 
 - **One motion**: they bake with the item into a motion named `Use` (`motions/<kind>.cfg`): in a
-  condition `motion.<kind>.Use` (the boots' pose weighs by `motion.dash.boots.Use`), for a
+  condition `motion.<kind>.Use`, in a sheet `active <kind>.Use` (the boots' pose weighs by `motion.dash.boots.Use`), for a
   `CbLinkLook` `<kind>/Use`.
 - **When**: on `<kind>.used` (the press, or the use button's), or for an item used while held, for
   as long as it is (`using.<kind>`).
 - **For who has it only**: the use is the holder's own, so nothing else is asked.
-- **Other blocks of an item's sheet** are for whoever has it out (`item carried`: whoever carries
+- **Other blocks of an item's sheet** are for whoever has it out (`for carrier`: whoever carries
   it); movement with no item is a motion set's, which everyone has (the double jump, flight).
 
 ## When, how long, what changes
@@ -172,7 +172,7 @@ use if dash.charges > 0
 
 ## Effects: on whom, in which direction
 
-Every `impulse`, `force` and `link` has the same two questions ([rules-language.md](rules-language.md#who-and-which-way)).
+Every `impulse`, `force` and `link` has the same two questions ([sheets.md](sheets.md#who-and-which-way)).
 
 | `on WHO` | Acts on |
 |---|---|
@@ -247,7 +247,7 @@ Players weigh something: `mass` is a [movement parameter](server-mods.md#movemen
 ## Probes, forces and links: the grapple mod
 
 A probe is a line a motion throws at what the player looks at: a sheet's
-[`cast`](rules-language.md#finding) (which can also sweep a shape: a ball, a blade).
+[`cast`](sheets.md#finding) (which can also sweep a shape: a ball, a blade).
 `server_mods/grapple` is an item whose sheet has the hook's motion, its pose, and a look. Its C++
 declares the two events; the scene and its sheet say the rest, a hook for every life among it.
 
@@ -355,17 +355,14 @@ Frag    CbItem   kind "frag.grenade"   use: once a press   slot 6   use_key H   
 └── Rules       CbRules    frag.cbsheet:
 
 motion Throwing on use                 # the arm's throw (its pack reads it); its clip says frag.release
-    item carried
+    for carrier
     cooldown 0.7
     lasts 0.7
-    then when frag.release within 0.3   # the clip's marker: the one carried leaves the hand
-    emit frag.thrown
-    launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
-    timeout                             # no marker (a body the pack does not fit): a moment later
-    emit frag.thrown
+    wait for frag.release or 0.3        # the clip's marker, or a moment later without it (a body the
+    emit frag.thrown                    # pack does not fit): the one carried leaves the hand
     launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
 
-motion Blast on expired                # the grenade's own (owner item): see rules-language.md
+motion Blast on expired                # the grenade's own (on item): see sheets.md
     ...
 ```
 
@@ -380,7 +377,7 @@ simulation removes it, and first says `<kind>.expired` (where a mod declares tha
 mod declares `frag.grenade.expired`) at where it is, with the item as the first entity and who
 threw it as the second. It is the simulation's, so the thrower's own game has it on the same tick
 (`net_frag`: 240 ticks of flight, bounces and the fuse, the server's exactly). Before it goes, its
-own motions that answer it run (a sheet's [`owner item`](rules-language.md#settings)):
+own motions that answer it run (a sheet's [`on item`](sheets.md#settings)):
 the grenade's `frag.cbsheet` says `frag.blast`, breaks the walls near it and throws what is loose, on
 that tick on every machine. The frag mod hears the event (`ctx.RecentEvents()`) and hurts who was
 near, and flings the bodies it killed.

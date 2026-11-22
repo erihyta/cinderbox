@@ -1,4 +1,4 @@
-rule CbReaction line 8 head 5
+rule CbReaction line 10 head 7
   when: int 0
   event: text "combat.hurt"
   conditions: texts
@@ -7,7 +7,7 @@ rule CbReaction line 8 head 5
   place: int 1
   flash_color: color 0.8 0.05 0.05 0.24
   flash_time: float 0.3
-rule CbReaction line 14 head 11
+rule CbReaction line 16 head 13
   when: int 0
   event: text "combat.killed"
   conditions: texts

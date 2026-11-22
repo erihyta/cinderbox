@@ -967,7 +967,7 @@ each says what its tests prove. Sizes are guesses, in the M-numbers' usual size.
 |---|---|---|---|
 | **M283** (**done**, 2026-11-21) | **One compiler, today's language** | `src/sheet/`: lexer, parser, resolver, checker, lowering for version 0, producing what the two parsers produce; `ParseRules` and `BakeSheetMotion` become calls into it; golden tests of every shipped sheet | every shipped sheet's motions cfg is byte-identical and every reaction equal through the new compiler; the old parsing code deleted; the Godot checks pass |
 | **M284** (**done**, 2026-11-21: the node kept, see below the table) | **The file and the node** | `CbSheet` resource (`.cbsheet`, loader and saver), the `sheet` property on `CbItem`, `CbMotionSet`, world reactions and HUD roots (each saying which blocks it allows); `CbRules` goes; publish, bake and the pack check read it | every scene points at its sheet by resource; a renamed sheet keeps working; `CbRules` gone from the code |
-| **M285** | **Version 1: one spelling** | the language of [§6.1 to 6.3, 6.6 (words), 6.8, 6.9, 6.10](#6-the-language): block keywords, indentation scopes, `wait for X or S`, word anchors, `of`, `is`, words-only logic, short asset names, `create`; `cb_sheet convert` and `fmt`; every shipped sheet converted | every shipped sheet is version 1 and compiles to the same output as before; `rules-language.md` rewritten as `sheets.md` |
+| **M285** (**done**, 2026-11-22: as built, below the table) | **Version 1: one spelling** | the language of [§6.1 to 6.3, 6.6 (words), 6.8, 6.9, 6.10](#6-the-language): block keywords, indentation scopes, `wait for X or S`, word anchors, `of`, `is`, words-only logic, short asset names, `create`; `cb_sheet convert` and `fmt`; every shipped sheet converted | every shipped sheet is version 1 and compiles to the same output as before; `rules-language.md` rewritten as `sheets.md` |
 | **M286** | **Names and parameters in the sheet** | [§6.4, 6.5](#64-names-declared-in-the-sheet): `field`, `event`, `action`, `param`; the server reads them from mod items; `CbItem.properties` become parameters; the C++ looks names up; the editor needs no server build for a sheet's own names | the gun, the bat, the sword, brawl and flight declare their names in their sheets; no mod declares a name a sheet declares with another type; the pistol's numbers are in its sheet only |
 | **M287** | **State in the sheet** | [§6.4 item fields, `timer`; 6.7.3 `emit value`; 6.7.5 readable motion state](#6-the-language); the pistol's rounds and reload (`emit`, `on EVENT`, `wait`), the bat's heat (`field melee.hot_left timer on item`, set in its find), brawl's cooldowns and combo window move into sheets | `gun.cpp` keeps only the shot, the damage and the aim; `melee.cpp` only damage and facing; `brawl_moves.rules` and brawl's `cd_*` fields gone; the HUD lines read cooldowns; the `rifle`, `melee`, `brawl` tests pass |
 | **M288** | **How skills meet** | [§6.7.1 tags, `blocked by`, `cancels`, shared cooldowns, `on release / tap / hold`; 6.7.6 statuses; 6.7.7 combos as timed motions](#6-the-language) | the fist's window is a timer (no C++); the sword's stun is a status; the guard and the block block attacks by tag; the bots still fight (their test passes) |
@@ -983,6 +983,21 @@ the roots would have needed new root classes for world reactions (a plain `Node3
 (a `CanvasLayer`), and `CbRules` is also the place the reactions it makes hang under (a `Node3D`:
 where a rule with no place of its own puts things). Which blocks a root allows (a HUD's sheet with
 a motion) is checked where the parser learns the block keywords (M285).
+
+**M285 as built** (2026-11-22): version 1 is read by **lowering** it to version 0, line for line
+(`sheet_v1.h`), so the two cannot mean different things and every shipped sheet converted
+(`cb_sheet convert`) compiles to exactly what it did: the baked motions byte for byte, every
+reaction's properties (compared with no line numbers and keys in order). The lexer, syntax tree and
+resolver of §8.1 come with the words that need them (M286 on). In version 1 now: `cbsheet 1`;
+`react`, `hud`; scopes `as`, `at`, `after`, `chance`; `cooldown`, `server only`; `if actor is prop`;
+`create` and `sound` with short names; `shake`/`flash ... for S`; `wait for X [within S | or S]`,
+`wait S`; `for holder|carrier`, `on item`; `known`, `of`, `local`, `active`; paths from `holder`,
+`actor`, `target`, `me`, `local`, `world`. Not yet: `side`, `wait off`, `at here` (no shipped sheet
+says them); `wait for X or S` only as a motion's last wait (the engine's flag that goes on after a
+wait is M287's: the fist, the bat and the sword keep `within` and `timeout`); version 0's signs
+inside a HUD format's quotes; a reaction's default subject from where its sheet sits (`as` is
+written). Units (D8) and `per second` come with the declarations (M286). The sheet's uid: none
+(a scene names a sheet by its path; an id in a mod's exported scene was a warning in the game).
 
 **Order, and why.** M283 first: nothing else is safe while two parsers disagree. M284 and M285 before
 any new word: new words go into the new language only. M286 before M287: state needs declarations.

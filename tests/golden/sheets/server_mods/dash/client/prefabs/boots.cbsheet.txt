@@ -1,4 +1,4 @@
-rule motion line 3 head 0
+rule motion line 5 head 0
   name: text "Use"
   trigger: text "use"
   conditions: texts
@@ -12,13 +12,13 @@ rule motion line 3 head 0
               kind: text "change"
               text: text "dash.charges -= 1"
               guard: text ""
-              line: int 4
+              line: int 6
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "dash.started"
               guard: text ""
-              line: int 6
+              line: int 8
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -28,7 +28,7 @@ rule motion line 3 head 0
                   speed: float 11
                   replace: int 2
               guard: text ""
-              line: int 7
+              line: int 9
           - dict
               verb: text "move for"
               kind: text "part"
@@ -39,4 +39,4 @@ rule motion line 3 head 0
                   parameters: dict
                     friction: float 0
               guard: text ""
-              line: int 8
+              line: int 10

@@ -1,4 +1,4 @@
-rule motion line 5 head 0
+rule motion line 7 head 0
   name: text "FlyOn"
   trigger: text "press"
   action: text "fly"
@@ -12,14 +12,14 @@ rule motion line 5 head 0
               kind: text "change"
               text: text "flight.on = 1"
               guard: text ""
-              line: int 6
+              line: int 8
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "flight.started"
               guard: text ""
-              line: int 7
-rule motion line 9 head 0
+              line: int 9
+rule motion line 11 head 0
   name: text "FlyOff"
   trigger: text "press"
   action: text "fly"
@@ -33,14 +33,14 @@ rule motion line 9 head 0
               kind: text "change"
               text: text "flight.on = 0"
               guard: text ""
-              line: int 10
+              line: int 12
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "flight.stopped"
               guard: text ""
-              line: int 11
-rule motion line 13 head 0
+              line: int 13
+rule motion line 15 head 0
   name: text "Flying"
   trigger: text "while"
   expression: text "flight.on"
@@ -61,8 +61,8 @@ rule motion line 13 head 0
                     air_friction: float 3
                     move_frame: float 1
               guard: text ""
-              line: int 14
-rule motion line 16 head 0
+              line: int 16
+rule motion line 18 head 0
   name: text "Thrust"
   trigger: text "while"
   expression: text "flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0"
@@ -74,13 +74,13 @@ rule motion line 16 head 0
               kind: text "change"
               text: text "flight.fuel -= 30"
               guard: text ""
-              line: int 17
+              line: int 19
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "flight.thrust"
               guard: text ""
-              line: int 18
+              line: int 20
           - dict
               verb: text "force"
               kind: text "part"
@@ -90,8 +90,8 @@ rule motion line 16 head 0
                   strength: float 26
                   frame: int 3
               guard: text ""
-              line: int 19
-rule motion line 21 head 0
+              line: int 21
+rule motion line 23 head 0
   name: text "Refuel"
   trigger: text "while"
   expression: text "flight.jetpack_on and grounded and flight.fuel < 100"
@@ -103,8 +103,8 @@ rule motion line 21 head 0
               kind: text "change"
               text: text "flight.fuel += 40"
               guard: text ""
-              line: int 22
-rule motion line 24 head 0
+              line: int 24
+rule motion line 26 head 0
   name: text "Glide"
   trigger: text "while"
   expression: text "held.sprint and not grounded and vertical_speed < 0 and not flight.on"
@@ -122,4 +122,4 @@ rule motion line 24 head 0
                     gravity: float 3
                     max_fall: float 2.5
               guard: text ""
-              line: int 25
+              line: int 27

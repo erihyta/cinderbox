@@ -1,5 +1,5 @@
 extends SceneTree
-## Checks what a rules sheet's motion blocks bake to (docs/rules-language.md):
+## Checks what a rules sheet's motion blocks bake to (docs/sheets.md):
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_motion_blocks.gd
 ##

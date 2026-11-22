@@ -1,4 +1,4 @@
-rule motion line 11 head 0
+rule motion line 13 head 0
   name: text "Swing"
   trigger: text "use"
   cooldown: float 0.3
@@ -10,7 +10,7 @@ rule motion line 11 head 0
               kind: text "emit"
               text: text "melee.swing"
               guard: text ""
-              line: int 13
+              line: int 15
     - dict
         statements: list
           - dict
@@ -25,12 +25,12 @@ rule motion line 11 head 0
               who: text "players"
               statements: list
                 - dict
-                    line: int 16
+                    line: int 18
                     verb: text "emit"
                     kind: text "emit"
                     text: text "melee.hit"
                 - dict
-                    line: int 17
+                    line: int 19
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -40,7 +40,7 @@ rule motion line 11 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 15
+              line: int 17
           - dict
               verb: text "find"
               frame: text "look"
@@ -53,12 +53,12 @@ rule motion line 11 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 19
+                    line: int 21
                     verb: text "emit"
                     kind: text "emit"
                     text: text "melee.hit"
                 - dict
-                    line: int 20
+                    line: int 22
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -68,8 +68,8 @@ rule motion line 11 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 18
-        line: int 14
+              line: int 20
+        line: int 16
         within: float 0.6
         wait: text "melee.strike"
     - dict
@@ -86,12 +86,12 @@ rule motion line 11 head 0
               who: text "players"
               statements: list
                 - dict
-                    line: int 23
+                    line: int 25
                     verb: text "emit"
                     kind: text "emit"
                     text: text "melee.hit"
                 - dict
-                    line: int 24
+                    line: int 26
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -101,7 +101,7 @@ rule motion line 11 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 22
+              line: int 24
           - dict
               verb: text "find"
               frame: text "look"
@@ -114,12 +114,12 @@ rule motion line 11 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 26
+                    line: int 28
                     verb: text "emit"
                     kind: text "emit"
                     text: text "melee.hit"
                 - dict
-                    line: int 27
+                    line: int 29
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -129,28 +129,28 @@ rule motion line 11 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 25
-        line: int 21
+              line: int 27
+        line: int 23
         timeout: bool true
     - dict
         statements: list
-        line: int 28
+        line: int 30
         within: float 1.3
         wait: text "melee.done"
-rule CbReaction line 32 head 31
+rule CbReaction line 34 head 33
   when: int 1
   conditions: texts
     - "melee.hot"
   target: text "Model/Barrel"
   property: text "surface_material_override/0:emission_energy_multiplier"
   value: float 4
-rule CbReaction line 38 head 36
+rule CbReaction line 40 head 38
   when: int 0
   event: text "melee.swing"
   subject: text "^^"
   animation_player: text "AnimationPlayer"
   animation: text "slash"
-rule CbReaction line 40 head 36
+rule CbReaction line 42 head 38
   when: int 0
   event: text "melee.swing"
   subject: text "^^"
@@ -158,7 +158,7 @@ rule CbReaction line 40 head 36
   target: text "Model/Sparks"
   method: text "restart"
   method_args: list
-rule CbReaction line 45 head 43
+rule CbReaction line 47 head 45
   when: int 0
   event: text "melee.hit"
   subject: text "^^"

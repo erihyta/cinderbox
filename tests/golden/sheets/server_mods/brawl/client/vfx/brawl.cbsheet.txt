@@ -1,4 +1,4 @@
-rule CbReaction line 7 head 4
+rule CbReaction line 9 head 6
   when: int 0
   event: text "brawl.jab.hit"
   subject: text "$at"
@@ -7,7 +7,7 @@ rule CbReaction line 7 head 4
   volume_db: float -6
   pitch_jitter: float 0.1
   max_distance: float 40
-rule CbReaction line 12 head 9
+rule CbReaction line 14 head 11
   when: int 0
   event: text "brawl.finisher.hit"
   subject: text "$at"
@@ -15,7 +15,7 @@ rule CbReaction line 12 head 9
   sound: text "res://assets/sfx/brawl_hit.wav"
   pitch_jitter: float 0.1
   max_distance: float 40
-rule CbReaction line 17 head 14
+rule CbReaction line 19 head 16
   when: int 0
   event: text "brawl.dash_strike.hit"
   subject: text "$at"
@@ -24,7 +24,7 @@ rule CbReaction line 17 head 14
   volume_db: float -2
   pitch_jitter: float 0.1
   max_distance: float 40
-rule CbReaction line 22 head 19
+rule CbReaction line 24 head 21
   when: int 0
   event: text "brawl.uppercut.hit"
   subject: text "$at"
@@ -33,7 +33,7 @@ rule CbReaction line 22 head 19
   volume_db: float -2
   pitch_jitter: float 0.1
   max_distance: float 40
-rule CbReaction line 27 head 24
+rule CbReaction line 29 head 26
   when: int 0
   event: text "brawl.dash_strike.started"
   subject: text "$at"
@@ -43,7 +43,7 @@ rule CbReaction line 27 head 24
   volume_db: float -6
   pitch_jitter: float 0.08
   max_distance: float 30
-rule CbReaction line 32 head 29
+rule CbReaction line 34 head 31
   when: int 0
   event: text "brawl.uppercut.started"
   subject: text "$at"
@@ -53,7 +53,7 @@ rule CbReaction line 32 head 29
   volume_db: float -6
   pitch_jitter: float 0.08
   max_distance: float 30
-rule CbReaction line 37 head 34
+rule CbReaction line 39 head 36
   when: int 0
   event: text "brawl.slam.started"
   subject: text "$at"
@@ -63,7 +63,7 @@ rule CbReaction line 37 head 34
   volume_db: float -6
   pitch_jitter: float 0.08
   max_distance: float 30
-rule CbReaction line 42 head 39
+rule CbReaction line 44 head 41
   when: int 0
   event: text "brawl.slam.landed"
   subject: text "$at"

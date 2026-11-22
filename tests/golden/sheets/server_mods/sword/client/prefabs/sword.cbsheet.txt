@@ -1,4 +1,4 @@
-rule motion line 9 head 0
+rule motion line 11 head 0
   name: text "Swing"
   trigger: text "use"
   conditions: texts
@@ -12,7 +12,7 @@ rule motion line 9 head 0
               kind: text "emit"
               text: text "sword.swing"
               guard: text ""
-              line: int 11
+              line: int 13
     - dict
         statements: list
           - dict
@@ -27,12 +27,12 @@ rule motion line 9 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 14
+                    line: int 16
                     verb: text "emit"
                     kind: text "emit"
                     text: text "sword.hit"
                 - dict
-                    line: int 15
+                    line: int 17
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -42,8 +42,8 @@ rule motion line 9 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 13
-        line: int 12
+              line: int 15
+        line: int 14
         within: float 0.5
         wait: text "sword.strike"
     - dict
@@ -60,12 +60,12 @@ rule motion line 9 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 18
+                    line: int 20
                     verb: text "emit"
                     kind: text "emit"
                     text: text "sword.hit"
                 - dict
-                    line: int 19
+                    line: int 21
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -75,15 +75,15 @@ rule motion line 9 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 17
-        line: int 16
+              line: int 19
+        line: int 18
         timeout: bool true
     - dict
         statements: list
-        line: int 20
+        line: int 22
         within: float 1
         wait: text "sword.done"
-rule motion line 24 head 0
+rule motion line 26 head 0
   name: text "Block"
   trigger: text "while"
   expression: text "held.use2 and not motion.sword.blade.Swing"
@@ -101,22 +101,22 @@ rule motion line 24 head 0
                     sprint_speed: float 2
                     jump_speed: float 0
               guard: text ""
-              line: int 25
-rule CbReaction line 30 head 28
+              line: int 27
+rule CbReaction line 32 head 30
   when: int 0
   event: text "sword.hit"
   subject: text "^^"
   target: text "Model/Sparks"
   method: text "restart"
   method_args: list
-rule CbReaction line 35 head 33
+rule CbReaction line 37 head 35
   when: int 0
   event: text "sword.blocked"
   subject: text "^^"
   target: text "Model/Sparks"
   method: text "restart"
   method_args: list
-rule CbReaction line 40 head 38
+rule CbReaction line 42 head 40
   when: int 0
   event: text "sword.parried"
   subject: text "^^"

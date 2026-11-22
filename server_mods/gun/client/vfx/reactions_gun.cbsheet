@@ -1,8 +1,10 @@
+cbsheet 1
+
 # reactions_gun.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
 # from the scene's root.
 
 # Marked
-on mark.found
-	subject $other
-	at follow
-	scene res://vfx/mark_zone.tscn life 3
+react on mark.found
+	as target
+		at follow
+			create mark_zone for 3

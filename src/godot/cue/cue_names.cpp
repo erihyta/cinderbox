@@ -593,7 +593,10 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 									"refill", "ground", "item", "hand", "press", "find", "found", "away", "players", "bodies", "self", "max",
 									"sphere", "box", "capsule", "cast", "ray", "range", "holds", "level", "link", "length", "reel", "alone",
 								"target", "turned", "none", "every", "break", "radius", "remove", "owner", "player", "turn", "momentum",
-								"velocity", "acceleration", "world", "look", "facing", "up", "to", "hit", "curve", "distance", "reach" };
+								"velocity", "acceleration", "world", "look", "facing", "up", "to", "hit", "curve", "distance", "reach",
+								// (version 1's: docs/sheets.md)
+								"cbsheet", "hud", "create", "server", "only", "known", "of", "is", "local", "active", "holder",
+								"actor", "me", "carrier" };
 
 } // namespace
 

@@ -206,7 +206,7 @@ int Column( const std::string& line )
 
 // --- Where a line of a motion block may stand -------------------------------------------------------
 // One table: every refusal of a line for where it stands is made from it, and the reference
-// (docs/rules-language.md, "Where a line may stand") is the same table.
+// (docs/sheets.md, "Where a line may stand") is the same table.
 enum Place : uint8_t
 {
 	kInStep = 1,	 // a step's own lines (under an if in it too)
@@ -781,7 +781,8 @@ bool ParseChange( const std::string& text, Change& out, std::string* error )
 	return true;
 }
 
-std::vector<Rule> ParseRules( const std::string& text, Strings& errors )
+// Version 0 (sheet_v1.cpp reads version 1 by lowering it to this).
+std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 {
 	std::vector<Rule> out;
 	Building rule;
@@ -992,7 +993,7 @@ std::vector<Rule> ParseRules( const std::string& text, Strings& errors )
 			out.push_back( made );
 			continue;
 		}
-		// --- a motion block: for the bake, run by the simulation (docs/rules-language.md)
+		// --- a motion block: for the bake, run by the simulation (docs/sheets.md)
 		if ( verb == "motion" )
 		{
 			finish();

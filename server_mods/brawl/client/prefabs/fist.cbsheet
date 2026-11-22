@@ -1,3 +1,5 @@
+cbsheet 1
+
 # The fist: a jab, twice in a row; the third use within the combo's window is a finisher. A press
 # starts the punch (the pack, brawl.fists, plays it); the hit is where the fist lands: the clip's
 # brawl.fist.strike marker. Whoever is in the box in front of the body then (2.6 m ahead, knee to head
@@ -9,11 +11,11 @@
 # Without the markers (a body the pack does not fit, a server without the pack) the punch lands a
 # moment later anyway: the "within" gives up and its timeout hits the same way.
 
-motion Jab on use if not linked and brawl.combo < 2 and not motion.brawl.fist.Finisher
+motion Jab on use if not linked and brawl.combo < 2 and not active brawl.fist.Finisher
 	cooldown 0.3
 	change brawl.combo += 1
 	change brawl.combo_left = 1.5
-	then when brawl.fist.strike within 0.35
+	wait for brawl.fist.strike within 0.35
 	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 		emit brawl.jab.hit
 		impulse 4 along facing
@@ -21,12 +23,12 @@ motion Jab on use if not linked and brawl.combo < 2 and not motion.brawl.fist.Fi
 	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 		emit brawl.jab.hit
 		impulse 4 along facing
-	then when brawl.fist.ready within 0.7
+	wait for brawl.fist.ready within 0.7
 
-motion Finisher on use if brawl.combo >= 2 and not motion.brawl.fist.Jab
+motion Finisher on use if brawl.combo >= 2 and not active brawl.fist.Jab
 	cooldown 0.3
 	change brawl.combo = 0
-	then when brawl.fist.strike within 0.5
+	wait for brawl.fist.strike within 0.5
 	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 		emit brawl.finisher.hit
 		impulse 70 along facing
@@ -36,4 +38,4 @@ motion Finisher on use if brawl.combo >= 2 and not motion.brawl.fist.Jab
 		emit brawl.finisher.hit
 		impulse 70 along facing
 		impulse 5 along up
-	then when brawl.fist.ready within 0.9
+	wait for brawl.fist.ready within 0.9

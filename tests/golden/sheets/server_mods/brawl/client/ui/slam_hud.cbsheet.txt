@@ -1,21 +1,21 @@
-rule CbFieldBinding line 2 head 0
+rule CbFieldBinding line 5 head 0
   conditions: texts
     - "brawl.cd_slam <= 0"
   hides: bool false
   text_format: text "[{key:slot4}]  GROUND SLAM  READY"
   target: text "Line"
-rule CbFieldBinding line 3 head 0
+rule CbFieldBinding line 6 head 0
   conditions: texts
     - "brawl.cd_slam > 0"
   hides: bool false
   text_format: text "[{key:slot4}]  GROUND SLAM  {brawl.cd_slam}s"
   target: text "Line"
-rule CbFieldBinding line 4 head 0
+rule CbFieldBinding line 7 head 0
   hides: bool false
   property: text "modulate:r"
   field: text "1 - 0.45 * (brawl.cd_slam <= 0)"
   target: text "Line"
-rule CbFieldBinding line 5 head 0
+rule CbFieldBinding line 8 head 0
   hides: bool false
   property: text "modulate:b"
   field: text "1 - 0.45 * (brawl.cd_slam <= 0)"

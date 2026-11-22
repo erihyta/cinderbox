@@ -1,26 +1,28 @@
+cbsheet 1
+
 # reactions_sword.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain
 # paths are from the scene's root.
 
 # Swing
-on sword.swing
-	subject $at
-	at $at/RightHand
-	sound res://assets/sfx/sword_swing.wav volume -4 jitter 0.08 range 30
+react on sword.swing
+	as actor
+		at actor/RightHand
+			sound sword_swing volume -4 jitter 0.08 range 30
 
 # Hit
-on sword.hit
-	subject $at
-	at point
-	sound res://assets/sfx/sword_hit.wav volume -2 jitter 0.1 range 40
+react on sword.hit
+	as actor
+		at point
+			sound sword_hit volume -2 jitter 0.1 range 40
 
 # Blocked: a clang where the blades met.
-on sword.blocked
-	subject $at
-	at point
-	sound res://assets/sfx/sword_clang.wav volume -2 jitter 0.1 range 45
+react on sword.blocked
+	as actor
+		at point
+			sound sword_clang volume -2 jitter 0.1 range 45
 
 # Parried: a ringing clang.
-on sword.parried
-	subject $at
-	at point
-	sound res://assets/sfx/sword_parry.wav volume 0 jitter 0.05 range 50
+react on sword.parried
+	as actor
+		at point
+			sound sword_parry volume 0 jitter 0.05 range 50

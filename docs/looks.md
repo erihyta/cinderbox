@@ -167,7 +167,7 @@ read: a reaction, a prediction, a HUD node, a character's state machine.
 | `motion.Hook`, `motion.grapple.hook.Use` | that motion of the player's is on (the node's name alone when it is the only one of that name) |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | a comparison: 1 or 0 (`true` / `false` are 1 / 0) |
 | `+ - * /`, `-x`, `( )` | arithmetic; dividing by 0 gives 0 |
-| `curve(Name, x)` | 0 here; refused in a motion's sheet since M268 ([rules-language.md](rules-language.md#numbers)) |
+| `curve(Name, x)` | 0 here; refused in a motion's sheet since M268 ([sheets.md](sheets.md#numbers)) |
 | `and` / `&&`, `or` / `\|\|` | both, either |
 | a field against a field | `combat.health <= combat.max_health / 4` |
 
@@ -238,17 +238,21 @@ too: the controls stay nodes (where they are, their font), the logic is text. Ea
 
 ```
 # ui/hud_brawl.cbsheet: one plain Label says READY or the seconds left
-show Skills/Dash if carried.brawl.dash_strike
-text Skills/Dash "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
-text Skills/Dash "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
-bind Skills/Dash modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
+cbsheet 1
+
+hud Skills/Dash
+	show if carried.brawl.dash_strike
+	text "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
+	text "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
+	bind modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
 ```
 
 | Line | Does |
 |---|---|
-| `show PATH if EXPRESSION` | the control is shown while it holds |
-| `text PATH "FORMAT" [into PROPERTY] [if EXPRESSION]` | writes the words (into `text`, or the property named) while it holds; several may take turns at one control |
-| `bind PATH PROPERTY = EXPRESSION [if EXPRESSION]` | writes the number (`value`, `modulate:a`, `scale:x`) while it holds |
+| `hud PATH` | the control the lines under it are about |
+| `show if EXPRESSION` | the control is shown while it holds |
+| `text "FORMAT" [into PROPERTY] [if EXPRESSION]` | writes the words (into `text`, or the property named) while it holds; several may take turns at one control |
+| `bind PROPERTY = EXPRESSION [if EXPRESSION]` | writes the number (`value`, `modulate:a`, `scale:x`) while it holds |
 
 - **Where it pays**: a control with logic piled on it (the kit's skills: 20 nodes became 7 and a
   sheet of 22 lines). A single `CbFieldLabel` is already one node: keep it.
@@ -475,45 +479,55 @@ and a rule names it by its path.
 
 ```
 # vfx/brawl.cbsheet: a thud where each hit lands
-on brawl.jab.hit
-    subject $at
-    at point
-    sound res://assets/sfx/brawl_hit.wav volume -6 jitter 0.1 range 40
+cbsheet 1
 
-while melee.hot
-    set Barrel surface_material_override/0:emission_energy_multiplier 4 blend 0.2
+react on brawl.jab.hit
+	as actor
+		at point
+			sound brawl_hit volume -6 jitter 0.1 range 40
+
+react while melee.hot
+	set Barrel surface_material_override/0:emission_energy_multiplier 4 blend 0.2
 ```
+
+The language, every line of it: [sheets.md](sheets.md) (reactions, predictions, HUD blocks, motion
+blocks). In short:
 
 | Line | Means |
 |---|---|
-| `on <event> [if <expression>]`, `while <expression>` | a rule starts: when, as a reaction's |
-| `subject`, `side`, `kind`, `template`, `delay`, `chance`, `cooldown`, `wait [off]`, `at ... [from] [offset]`, `at here` | its settings: each holds for the actions below it |
-| `sound`, `scene`, `play`, `set`, `call`, `shake`, `flash` | its actions: each becomes one `CbReaction` |
+| `react on <event> [if <expression>]`, `react while <expression>` | a reaction starts: when |
+| `cooldown`, `server only` | its settings, first |
+| `as`, `at`, `after`, `chance` | scopes: each holds for the lines indented under it |
+| `sound`, `create`, `play`, `set`, `call`, `shake`, `flash` | its actions: each becomes one `CbReaction` |
 | `predict <action> as <cue> [if <expression>]`, then `cooldown`, `held`, `change`, `stance ... on ...` | a [prediction](#predictions): one `CbPrediction` |
-| `motion NAME on ...`, `while ...`, `when ...`, then its lines | a motion the simulation runs, not the viewer: baked with the item or the motion set ([rules-language.md](rules-language.md)) |
+| `hud PATH`, then `show`, `text`, `bind` | a [HUD's lines](#a-huds-sheet) |
+| `motion NAME on ...`, `while ...`, `when ...`, then its lines | a motion the simulation runs, not the viewer: baked with the item or the motion set ([sheets.md](sheets.md)) |
 
 ```
 # prefabs/pistol.cbsheet
+cbsheet 1
+
 motion Fire on use if gun.ammo > 0 and not gun.reloading
-    cooldown 0.2
-    change gun.ammo -= 1
-    emit item.use
+	cooldown 0.2
+	change gun.ammo -= 1
+	emit item.use
 
-on item.use
-    subject ^^
-    scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
-    at Muzzle
-    sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70
+react on item.use
+	as holder
+		create muzzle_flash under Muzzle for 0.3
+		at Muzzle
+			sound gunshot volume -5 jitter 0.06 range 70
 
-on item.reach
-    subject ^^
-    at beam from Muzzle
-    scene res://vfx/tracer.tscn life 0.06
+react on item.reach
+	as holder
+		at beam from Muzzle
+			create tracer for 0.06
 ```
 
 - **Every action is a `CbReaction`** under the `CbRules` node (never saved with the scene), so the
   director, the guard and the Cue Preview see nothing new.
-- **Plain paths** are from the node `CbRules` is under, and climb no higher than the scene.
+- **Plain paths** are from the node `CbRules` is under, and climb no higher than the scene; anchored
+  ones start with `holder`, `actor`, `target`, `me`, `local` or `world` (`holder/Head`).
 - **Mistakes say their line**: on the node in the editor, and at publish (a name no mod declares:
   `res://vfx/brawl.cbsheet line 22: event: no mod declares "brawl.upercut.hit" (did you mean
   brawl.uppercut.hit?)`). A rule with one is left out; the rest works.
@@ -529,15 +543,16 @@ on item.reach
   file, which tools, the bake and the cooker read.
 - **Every look of the game is written so** (M166): the game's own `vfx/reactions.cbsheet`, the
   pistol's and the bat's sheets, and every mod's `reactions_<mod>.cbsheet`: 48 nodes became 13 sheets.
-- **A setting holds for the actions below it**, top to bottom, until another line changes it:
-  one rule plays a flash, a tracer and a shot, each where it belongs. `at here`, `delay 0`,
-  `chance 1`, `cooldown 0` and `wait off` go back to the defaults; a setting after the last action
-  does nothing, and is said as a mistake. `python tools/merge_rules.py <sheet>` merges rules that
-  start the same way into one so.
-- **`under` attaches, `at` places**: `scene ... under Muzzle` rides on the muzzle; `at Muzzle` puts
+- **A scope holds for the lines indented under it** (M285): one reaction plays a flash, a tracer and
+  a shot, each where it belongs. Before M285 a setting held for the actions below it, top to bottom,
+  until another line changed it (version 0: still read; `cb_sheet convert` writes it as scopes).
+- **`under` attaches, `at` places**: `create ... under Muzzle` rides on the muzzle; `at Muzzle` puts
   it there, in the world, once. With neither, it goes where the `CbRules` node is (a `Node3D`).
+- **Short names**: `sound gunshot` is `res://assets/sfx/gunshot.wav`, `create tracer`
+  `res://vfx/tracer.tscn`; another file by its full `res://` path.
 - **Converting a scene**: `python tools/reactions_to_rules.py <project> <scene>` writes its sheet
-  and leaves one `CbRules` node (each rule keeps the node's name as a comment).
+  (version 0: then `cb_sheet convert` it) and leaves one `CbRules` node (each rule keeps the node's
+  name as a comment).
 - `check_rules.gd` checks it: `godot --headless --path godot --script res://addons/cinderbox_maps/check_rules.gd`.
 
 ### Cue Preview (editor)

@@ -1,3 +1,5 @@
+cbsheet 1
+
 # Flight: its key switches it on and off (one press, one switch: both read the field as the tick
 # found it); while on, no gravity and the camera's way is up. The jetpack: jump held in the air while
 # fuel lasts, refuelled on the ground. The glide: sprint held while falling.

@@ -79,7 +79,7 @@ Which steps launch needs: [the road](#the-road).
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284) | yes: the sheet's format settled, with a version |
+| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284); version 1, one spelling, every sheet converted (M285) | yes: the sheet's format settled, with a version |
 | 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
@@ -346,6 +346,9 @@ motion Strike on melee.strike
 **Done**: M283, the compiler as a plain C++ library (`src/sheet`), every shipped sheet parsing and
 baking as before (golden files, the Godot checks' bakes). M284, a sheet is a `.cbsheet` file, a
 `CbSheet` resource a `CbRules` node holds (no path in a string), opened in the editor's Sheet screen.
+M285, version 1 of the language (`cbsheet 1`: `react`, `hud`, scopes, `wait for`, `create`, short
+names, `known`, `of`, `active`), every shipped sheet converted and compiling to what it did;
+`cb_sheet check | fmt | convert`; [docs/sheets.md](docs/sheets.md) the reference.
 
 **The plan (2026-11-21): [docs/step6-plan.md](docs/step6-plan.md)**: the language as it would be, the
 shipped sheets before and after, the compiler, what the engine has to learn, ten milestones (M283 to
@@ -388,7 +391,7 @@ its format's version, and the compiler reads older ones, so words can still be a
 | **A cast and the owner's own effects in one step** | `dash_strike.cbsheet` needs two blocks with a copied condition |
 | **`change` on the item; a timer on a carried item** | the bat's heat, if it is ever more than a look |
 | **Curves as resources** (`curve(res://falloff.tres, reach)` or a curves dictionary on the node); the frag's falloff the first user | no shipped sheet used `curve()`; `CbCurve`, found by name from text, was deleted in M268 and a sheet's `curve()` is refused until this; the simulation still reads a motions file's `curve` lines |
-| **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/rules-language.md#planned)) | |
+| **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/sheets.md#planned)) | |
 | **Tools**: a formatter; errors in the editor as you type; headless sheet tests (a motion on a stand-in, then what moved) | |
 | **`.rules` becomes `.cbsheet`** (**done**, M284; the VS Code grammar not made: the editor's Sheet screen colours them) | the name says what the file is, one family with `.cbmap` |
 | **Last, not needed by the slice: items drawn as data and reactions run from the compiled sheet** | moved to [6b](#6b-cooked-items) (2026-11-17) |
@@ -790,7 +793,7 @@ Decided to wait; each says what it waits for.
 | How players find servers | a decision, taken later (the owner, 2026-11-17): a website's "play" link, the game's own list, a desktop shortcut (not Steam). Today: join by address, Test locally, a server's mods listed before joining. **Needed for launch**; [a game as one file](#postponed-kept-open) comes back with it |
 | The store's form | Cinderbox's own (not Steam, 2026-11-17), described in [6b](#6b-cooked-items); a folder today |
 | Ships | Box3D growing buoyancy rather than more patches (five already). In the simulation, so everyone predicts them: platform carry, a buoyancy component with a wave function the water's look shares |
-| **The player's body, for motions** | a mod that wants it; each a word of the sheet language ([planned list](docs/rules-language.md#planned)), in the simulation, so predicted. In likely order: |
+| **The player's body, for motions** | a mod that wants it; each a word of the sheet language ([planned list](docs/sheets.md#planned)), in the simulation, so predicted. In likely order: |
 | · Touching a wall | a condition (`wall`) and a frame along it: wallrunning, wall jumps, a ledge grab |
 | · Teleport | set where the player is: behind the target, or at a cast's point. Blink, swapping places |
 | · What the body passes through | `pass_players`, `pass_props`, `pass_level`: dashing through, phasing, a spectator through walls |

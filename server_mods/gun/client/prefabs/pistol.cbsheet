@@ -1,3 +1,5 @@
+cbsheet 1
+
 # The pistol (step 5, M282: every item a sheet): pulling its trigger, which every simulation runs
 # (predicted), and how it looks. The shot itself, the rounds and the reload's end are the gun mod's
 # (gun.cpp): it hears item.use, aims along the camera as it was, hit-tests posed bodies, and says
@@ -24,58 +26,58 @@ motion Reload on press reload if not gun.reloading and gun.ammo < gun.magazine
 	emit item.reload
 
 # Flash, ShotSound
-on item.use
-	subject ^^
-	scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
-	at Muzzle
-	sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70
+react on item.use
+	as holder
+		create muzzle_flash under Muzzle for 0.3
+		at Muzzle
+			sound gunshot volume -5 jitter 0.06 range 70
 
 # Tracer: from the muzzle to where the server's shot ended.
-on item.reach
-	subject ^^
-	at beam from Muzzle
-	scene res://vfx/tracer.tscn life 0.06
+react on item.reach
+	as holder
+		at beam from Muzzle
+			create tracer for 0.06
 
 # ScanBeam, MarkSound
-on item.use2
-	subject ^^
-	at beam from Muzzle
-	scene res://vfx/scan_beam.tscn life 0.15
-	at Muzzle
-	sound res://assets/sfx/dry_click.wav volume -4 pitch 1.8 range 25
+react on item.use2
+	as holder
+		at beam from Muzzle
+			create scan_beam for 0.15
+		at Muzzle
+			sound dry_click volume -4 pitch 1.8 range 25
 
 # PredictScan: the mark mod's scan (its use2), still the server's with a guess here
 predict use2 as item.use2 if !gun.reloading and !combat.dead
 	cooldown 0.95
 
 # DrySound
-on item.use_failed
-	subject ^^
-	at Muzzle
-	sound res://assets/sfx/dry_click.wav volume -8 range 12
+react on item.use_failed
+	as holder
+		at Muzzle
+			sound dry_click volume -8 range 12
 
 # ReloadSound
-on item.reload
-	subject ^^
-	at Muzzle
-	sound res://assets/sfx/reload.wav volume -10 range 25
+react on item.reload
+	as holder
+		at Muzzle
+			sound reload volume -10 range 25
 
 # HitSurface
-on item.hit if event.value == 0
-	subject ^^
-	at point
-	sound res://assets/sfx/ricochet.wav volume -16 jitter 0.3 range 30
-	scene res://vfx/bullet_spark.tscn life 1
+react on item.hit if event.value == 0
+	as holder
+		at point
+			sound ricochet volume -16 jitter 0.3 range 30
+			create bullet_spark for 1
 
 # HitPlayer
-on item.hit if event.value > 0
-	subject ^^
-	at point
-	sound res://assets/sfx/body_hit.wav volume -8 jitter 0.15 range 40
-	scene res://vfx/hit_puff.tscn life 1
+react on item.hit if event.value > 0
+	as holder
+		at point
+			sound body_hit volume -8 jitter 0.15 range 40
+			create hit_puff for 1
 
 # HitMarker
-on item.hit if is_local and event.value > 0
-	subject ^^
-	at ^^/Head
-	sound res://assets/sfx/hit_marker.wav volume -6
+react on item.hit if local and event.value > 0
+	as holder
+		at holder/Head
+			sound hit_marker volume -6

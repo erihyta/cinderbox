@@ -1403,14 +1403,14 @@ void DrawnBody::PlaceViewArms( const Transform3D& camera, const Transform3D& lef
 
 namespace
 {
-// Whether a rules sheet has anything the viewer runs: a reaction (on, while) or a prediction. A
-// motion is the simulation's.
+// Whether a sheet has anything the viewer runs: a reaction, a prediction, a HUD line. A motion is
+// the simulation's.
 bool RulesDoSomething( const String& text )
 {
-	const PackedStringArray lines = text.split( "\n" );
-	for ( const String& line : lines )
+	PackedStringArray errors;
+	for ( const cue::Rule& rule : cue::ParseRules( text, errors ) )
 	{
-		if ( line.begins_with( "on " ) || line.begins_with( "while " ) || line.begins_with( "predict " ) )
+		if ( rule.type != "motion" )
 		{
 			return true;
 		}

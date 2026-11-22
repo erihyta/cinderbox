@@ -1,4 +1,4 @@
-rule CbReaction line 8 head 5
+rule CbReaction line 10 head 7
   when: int 0
   event: text "grapple.fired"
   subject: text "$at"
@@ -9,7 +9,7 @@ rule CbReaction line 8 head 5
   pitch_scale: float 2
   pitch_jitter: float 0.1
   max_distance: float 30
-rule CbReaction line 14 head 11
+rule CbReaction line 16 head 13
   when: int 0
   event: text "grapple.hooked"
   subject: text "$at"

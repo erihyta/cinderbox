@@ -7,107 +7,22 @@
 // CbReaction under it, the same as one placed by hand, so the director, the guard and the Cue
 // Preview see nothing new.
 //
+//   cbsheet 1
+//
 //   # The kit's hits: a thud where they land.
-//   on brawl.jab.hit
-//       subject $at
-//       at point
-//       sound res://assets/sfx/bat_hit.wav volume -6 jitter 0.1 range 40
-//   on brawl.finisher.hit if $other:combat.health < 20
-//       subject $at
-//       at point
-//       sound res://assets/sfx/bat_hit.wav
-//       shake 0.2
-//   while melee.hot
+//   react on brawl.jab.hit
+//       as actor
+//           at point
+//               sound bat_hit volume -6 jitter 0.1 range 40
+//   react while melee.hot
 //       set Barrel surface_material_override/0:emission_energy_multiplier 4 blend 0.2
 //
-// A rule starts with "on <event> [if <expression>]" or "while <expression>"; the lines under it
-// (indenting is for the eye) are its settings and its actions:
-//
-//   settings   subject PATH, side a|b|either, kind KIND, template NAME, delay S, chance P,
-//              cooldown S, wait [off] (wait for the server's cue), at point|end|beam|follow|here|PATH
-//              [from PATH: a beam's start] [offset X Y Z]. A setting holds for the actions below
-//              it, until another line changes it (at here, delay 0, chance 1, cooldown 0, wait off
-//              go back to the defaults); one after the last action is a mistake:
-//                on item.use
-//                    subject ^^
-//                    scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
-//                    at beam from Muzzle
-//                    scene res://vfx/tracer.tscn life 0.06
-//                    at Muzzle
-//                    sound res://assets/sfx/gunshot.wav volume -5
-//   actions    sound PATH [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPR]
-//              scene PATH [under PATH] [life S]
-//              play PLAYER ANIMATION [off ANIMATION]
-//              set PATH PROPERTY VALUE [blend S]      (VALUE: a number, true, false, rgb(r,g,b),
-//                                                     rgba(r,g,b,a), (x,y,z), a word or "text")
-//              set PATH PROPERTY = EXPRESSION
-//              call PATH METHOD [ARGUMENT ...]
-//              shake AMOUNT [time S]
-//              flash rgba(r,g,b,a) [time S]
-//
-// A prediction (a CbPrediction: the viewer's own press shown at once, as the cue the server will
-// answer with) is a rule of its own, with no actions:
-//
-//   predict use as item.use if gun.ammo > 0 and !gun.reloading
-//       cooldown 0.19
-//       held                      (again and again while held, every cooldown: automatic fire)
-//       change gun.ammo -= 1      (until the server answers; one line each)
-//       stance melee_swing on full
-//
-// What using an item does, in the item's own sheet: "use [if EXPRESSION]" is "motion Use on use [if
-// EXPRESSION]", word for word (a motion block, below), baked with the item:
-//
-//   use if dash.charges > 0
-//       change dash.charges -= 1      (one line each)
-//       cooldown 0.4
-//       emit dash.started
-//       impulse 11 replace horizontal
-//       move for 0.18 friction 0
-//
-//   impulse SPEED [on self|target|FIELD] [along look|move|facing|up|to|away|world (x,y,z)|NODE]
-//                 [replace nothing|vertical|horizontal|all] [kind velocity|momentum]
-//   force STRENGTH [kind acceleration|force|velocity] [top SPEED] [ramp S] [react] [on ...] [along ...]
-//   move [for S] PARAMETER VALUE [PARAMETER VALUE ...]
-//   launch new KIND | launch carried, then [speed S] [lift L] [ahead M] [seconds S] [along ...]
-//
-// Every amount may be an expression: the words up to the next option word (a move's value, up to the
-// next parameter). The motion's times, counts and directions are numbers. Where each line may stand
-// is one table (kLineRules, in the .cpp; docs/rules-language.md).
-//
-// A motion block: a motion of its own, run by the simulation, baked with the item or the motion set
-// the sheet is under (docs/rules-language.md). Here indenting counts: an if's lines are further in.
-//
-//   motion Slam on use if brawl.cd_slam <= 0 and not grounded
-//       lasts 3                         (settings: cooldown S, uses N [refill ground | refill after S],
-//       emit brawl.slam.started          lasts S, until EXPR, item hand|carried; before any step)
-//       impulse 25 along world (0, -1, 0) replace vertical
-//       then when grounded within 2     (a step: once the wait is over; after S, by time)
-//       emit brawl.slam.landed
-//       if brawl.combo > 2              (decided when the step starts)
-//           move for 0.5 walk_speed 0
-//       else
-//           change brawl.combo = 0
-//       timeout                         (what a wait that gave up runs, before the motion ends)
-//       emit brawl.slam.missed
-//
-//   motion NAME on use | on press ACTION | on EVENT | while EXPR | when EXPR (once, as it turns true)
-//   statements: change, emit, end, every, find, cast, impulse, force, link, move, launch, follow, break, remove
-//
-// A HUD's logic is one line each, on the controls the HUD scene has (a CbFieldBinding each):
-//
-//   show Skills/Dash if carried.brawl.dash_strike         (shown while it holds)
-//   text Skills/Dash "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
-//   text Skills/Dash "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
-//   bind Health/Bar value = combat.health * 100 / combat.max_health
-//
-//   show PATH if EXPRESSION
-//   text PATH "FORMAT" [into PROPERTY] [if EXPRESSION]     (several may take turns at one label)
-//   bind PATH PROPERTY = EXPRESSION [if EXPRESSION]
-//
-// Paths are cue paths (cue_paths.h): an anchor ($at, $other, ^, ^^, $local, $world) and a path from
-// it, or a plain path from the node the CbRules node is under ("Barrel", "Muzzle/Sparks"; "." is
-// that node itself), which climbs no higher than the scene. # starts a comment. A line that cannot
-// be read is said with its number, and its rule is left out; the rest of the sheet still works.
+// The language (its blocks: motion, use, react, predict, hud; scopes; the words) is docs/sheets.md,
+// and the parser the sheet compiler's (src/sheet: sheet_rules.h, sheet_v1.h). A sheet without its
+// "cbsheet 1" line is version 0, the spelling before M285, read until none ships. Plain paths are
+// from the node the CbRules node is under ("Barrel"; "." is that node), and climb no higher than the
+// scene. A line that cannot be read is said with its number, and its rule is left out; the rest of
+// the sheet still works.
 
 #include "cue_sheet.h"
 

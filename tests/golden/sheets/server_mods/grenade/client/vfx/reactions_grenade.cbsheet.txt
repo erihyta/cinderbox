@@ -1,4 +1,4 @@
-rule CbReaction line 8 head 5
+rule CbReaction line 10 head 7
   when: int 0
   event: text "grenade.thrown"
   subject: text "$at"
@@ -8,7 +8,7 @@ rule CbReaction line 8 head 5
   pitch_scale: float 0.7
   pitch_jitter: float 0.1
   max_distance: float 25
-rule CbReaction line 14 head 11
+rule CbReaction line 16 head 13
   when: int 0
   event: text "grenade.blast"
   subject: text "$at"
@@ -18,14 +18,14 @@ rule CbReaction line 14 head 11
   pitch_scale: float 0.55
   pitch_jitter: float 0.08
   max_distance: float 80
-rule CbReaction line 15 head 11
+rule CbReaction line 17 head 13
   when: int 0
   event: text "grenade.blast"
   subject: text "$at"
   place: int 1
   scene: text "res://vfx/grenade_blast.tscn"
   scene_lifetime: float 2
-rule CbReaction line 16 head 11
+rule CbReaction line 18 head 13
   when: int 0
   event: text "grenade.blast"
   subject: text "$at"

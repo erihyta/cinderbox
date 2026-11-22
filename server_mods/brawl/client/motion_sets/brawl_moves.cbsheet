@@ -1,3 +1,5 @@
+cbsheet 1
+
 # The kit's timers: each counts down a second a second while above 0; the combo ends when its
 # window has run out (brawl.combo_left).
 

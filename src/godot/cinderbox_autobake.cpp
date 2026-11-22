@@ -36,7 +36,7 @@ const char* const kOfferedNodes[] = {
 };
 
 // Offered before M243, and taken out of the favorites again: the motion nodes (a motion is a sheet's
-// block now: docs/rules-language.md; the nodes were deleted in M268). Still taken out of an older
+// block now: docs/sheets.md; the nodes were deleted in M268). Still taken out of an older
 // editor's favorites.
 const char* const kWithdrawnNodes[] = { "CbMotion", "CbProbe", "CbLaunch", "CbImpulse", "CbForce", "CbLink", "CbMove" };
 
