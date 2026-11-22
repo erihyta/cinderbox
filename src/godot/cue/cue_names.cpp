@@ -94,7 +94,7 @@ const Book& TheBook()
 	{
 		fresh.byKind["event"].insert( cue );
 	}
-	for ( const char* kind : { "field", "event", "item", "status" } )
+	for ( const char* kind : { "field", "event", "item", "status", "row" } )
 	{
 		const std::set<std::string>& names = fresh.byKind[kind];
 		fresh.declared.insert( names.begin(), names.end() );
@@ -207,7 +207,7 @@ void CheckRead( const Book& book, const std::string& written, const String& prop
 		return; // one of the reader's own (speed, is_local, a stance), or declared
 	}
 	std::string prefix = name.substr( 0, dot );
-	for ( const char* own : { "ui", "event", "slot", "motion", "ready", "cooldown", "uses" } )
+	for ( const char* own : { "ui", "event", "slot", "row", "motion", "ready", "cooldown", "uses" } )
 	{
 		if ( prefix == own )
 		{
@@ -466,6 +466,14 @@ PackedStringArray Problems( const Node* node )
 	if ( const auto* rules = Object::cast_to<CbRules>( node ) )
 	{
 		String file = rules->SheetName();
+		{
+			const CharString utf8 = rules->SheetText().utf8();
+			const std::string why = sheet::NotVersion1( std::string( utf8.get_data(), size_t( utf8.length() ) ) );
+			if ( why.empty() == false )
+			{
+				out.push_back( file + " line 1: " + String::utf8( why.c_str() ) );
+			}
+		}
 		for ( const auto& [line, why] : SheetProblems( rules->SheetText() ) )
 		{
 			out.push_back( file + " line " + String::num_int64( line ) + ": " + why );
@@ -631,7 +639,9 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 								"field", "event", "action", "param", "status", "timer", "shared", "private", "ready", "uses",
 								"remaining", "tags", "blocked", "by", "cancels", "release", "tap", "hold", "apply", "let",
 								// (M290's)
-								"grab", "toward", "throw", "marks", "first" };
+								"grab", "toward", "throw", "marks", "first",
+								// (M292's)
+								"sight" };
 
 } // namespace
 

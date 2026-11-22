@@ -15,7 +15,8 @@
 // player carries frag.carry of them (a stack: the scene's stack), how big a blast is (its options,
 // published as fields the sheet reads: frag.radius, frag.push, frag.break_radius,
 // frag.rubble_seconds), and who it hurts: everyone near (the combat mod's "combat.damage", like any
-// other weapon's: less with distance); the bodies it kills, and those lying near, are flung. It does
+// other weapon's: less with distance); the bodies it kills, and those lying near, are flung. What
+// the level hides from it (a wall between, a rise) it does not hurt or fling (M292: cover). It does
 // not go off when it hits something: that was the impact grenade (the grenade mod, switched off).
 //
 // Server options: frag.damage (at the centre, default 90), frag.radius (metres, default 5),
@@ -169,7 +170,7 @@ private:
 			// (From the blast to the middle of the body.)
 			b3Vec3 to = b3Sub( b3Add( at->position, b3Vec3{ 0.0f, 0.9f, 0.0f } ), point );
 			float distance = b3Length( to );
-			if ( distance > m_radius )
+			if ( distance > m_radius || Covered( ctx, point, b3Add( point, to ) ) )
 			{
 				continue;
 			}
@@ -202,6 +203,10 @@ private:
 			{
 				continue; // (what is loose: its sheet's)
 			}
+			if ( Covered( ctx, point, body.position ) )
+			{
+				continue;
+			}
 			b3Vec3 to = b3Sub( body.position, point );
 			float share = 1.0f - body.distance / m_radius;
 			b3Vec3 away = body.distance > 0.01f ? b3MulSV( 1.0f / body.distance, to ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
@@ -211,6 +216,12 @@ private:
 					  b3Add( b3MulSV( m_push * ( 0.3f + 0.5f * share ), away ), b3Vec3{ 0.0f, 0.45f * m_push * ( 0.3f + 0.5f * share ), 0.0f } ),
 					  ImpulseThrow );
 		}
+	}
+
+	// Whether the level is between the blast (a little above where the grenade lay) and `to`.
+	static bool Covered( Context& ctx, b3Vec3 blast, b3Vec3 to )
+	{
+		return ctx.LevelBetween( b3Add( blast, b3Vec3{ 0.0f, 0.2f, 0.0f } ), to );
 	}
 
 	ItemKindHandle m_grenade;

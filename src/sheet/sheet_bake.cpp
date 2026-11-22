@@ -327,6 +327,11 @@ std::string BakeSheetPart( const Dict& part, const std::string& kind, const Scen
 		}
 		lines += "turn\t" + Num( turn.x ) + "\t" + Num( turn.y ) + "\n";
 	}
+	// (M292) an impulse's top.
+	if ( props.Has( "cap" ) )
+	{
+		lines += "cap\t" + Num( props.Get( "cap", 0.0 ).AsFloat() ) + "\n";
+	}
 	// (M290) toward a point; a throw's mark.
 	const std::string toward = Strip( props.Get( "toward", "" ).AsString() );
 	if ( toward.empty() == false )
@@ -952,7 +957,8 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 				}
 				text += "find\t" + statement.Get( "who", "all" ).AsString() + "\t" + ( statement.Get( "self", false ).AsBool() ? "1" : "0" ) + "\t" +
 						std::to_string( int( statement.Get( "most", 16 ).AsInt() ) ) + "\t" + statement.Get( "frame", "facing" ).AsString() +
-						( statement.Get( "first", false ).AsBool() ? "\tfirst" : "" ) + ( statement.Get( "grab", false ).AsBool() ? "\tgrab" : "" ) + "\n" +
+						( statement.Get( "first", false ).AsBool() ? "\tfirst" : "" ) + ( statement.Get( "grab", false ).AsBool() ? "\tgrab" : "" ) +
+						( statement.Get( "sight", false ).AsBool() ? "\tsight" : "" ) + "\n" +
 						( point.empty() ? std::string() : "point\t" + Replace( point, " ", "\t" ) + "\n" ) + shape;
 				const List inside = statement.Get( "statements", List() ).AsList();
 				std::string only;

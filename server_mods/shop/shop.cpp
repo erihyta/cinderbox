@@ -9,9 +9,14 @@
 // Coins: a private field of each player (shop.coins: only its own client sees it), shop.start of
 // them when it joins, one more for every kill (the combat mod's combat.killed).
 //
-//   offer 0   a frag grenade   1 coin
-//   offer 1   a bat            1 coin
-//   offer 2   a rifle          2 coins
+//   a frag grenade   1 coin
+//   a bat            1 coin
+//   a rifle          2 coins
+//
+// The offers are written here once (M292): those whose item a mod declares (the rifle is local
+// only) are published as the rows of shop.offers (Context::SetRows: shop.name, shop.cost,
+// shop.price), which the screen lists (ui/hud_shop.tscn, a CbList of rows); a row's click asks for
+// its offer by its place in the list (row.index).
 //
 // It says shop.bought (at the player, its value the offer) or shop.refused (too few coins, an
 // offer it does not have), for the screen's sounds. Server options: shop.start (default 3).
@@ -31,9 +36,10 @@ namespace
 struct Offer
 {
 	const char* kind;
+	const char* name;
 	int32_t price;
 };
-const Offer kOffers[] = { { "frag.grenade", 1 }, { "melee.bat", 1 }, { "gun.rifle", 2 } };
+const Offer kOffers[] = { { "frag.grenade", "Frag grenade", 1 }, { "melee.bat", "Bat", 1 }, { "gun.rifle", "Rifle", 2 } };
 
 class ShopMod final : public ServerMod
 {
@@ -51,15 +57,28 @@ public:
 		m_refused = declare.Event( "shop.refused" );
 		// The combat mod's (see combat.cpp): a = the killer, b = who died.
 		m_killed = declare.Event( "combat.killed" );
+		// Its offers, the rows of shop.offers (M292): what the screen's list shows.
+		declare.Rows( "shop.offers", { "shop.name", "shop.price", "shop.cost" } );
 	}
 
 	void Start( Context& ctx ) override
 	{
 		m_start = int32_t( std::clamp( ctx.Option( "shop.start", 3.0 ), 0.0, 1000.0 ) );
+		// What this server has to offer: what a mod declares, in this order, as the screen's rows.
+		std::vector<RowFields> rows;
 		for ( const Offer& offer : kOffers )
 		{
-			m_kinds.push_back( ctx.Schema().FindItemKind( offer.kind ) );
+			const int kind = ctx.Schema().FindItemKind( offer.kind );
+			if ( kind < 0 )
+			{
+				continue;
+			}
+			m_offers.push_back( { kind, offer.price } );
+			rows.push_back( { { "shop.name", offer.name },
+							  { "shop.price", std::to_string( offer.price ) },
+							  { "shop.cost", std::to_string( offer.price ) + ( offer.price == 1 ? " coin" : " coins" ) } } );
 		}
+		ctx.SetRows( "shop.offers", rows );
 	}
 
 	void Tick( Context& ctx ) override
@@ -86,14 +105,14 @@ public:
 			uint32_t player = ctx.PlayerNetId( asked.slot );
 			const Character* c = ctx.PlayerCharacter( asked.slot );
 			int32_t coins = player != 0 ? ctx.Get( player, m_coins ) : 0;
-			bool known = asked.a < m_kinds.size() && m_kinds[asked.a] >= 0;
-			if ( known == false || c == nullptr || c->dead != 0 || coins < kOffers[asked.a].price )
+			const bool known = asked.a < m_offers.size();
+			if ( known == false || c == nullptr || c->dead != 0 || coins < m_offers[asked.a].price )
 			{
 				ctx.Emit( m_refused, SlotTarget( asked.slot ), 0, int32_t( asked.a ), {} );
 				continue;
 			}
-			ctx.Set( SlotTarget( asked.slot ), m_coins, coins - kOffers[asked.a].price );
-			ctx.GiveItem( SlotTarget( asked.slot ), ItemKindHandle{ m_kinds[asked.a] } );
+			ctx.Set( SlotTarget( asked.slot ), m_coins, coins - m_offers[asked.a].price );
+			ctx.GiveItem( SlotTarget( asked.slot ), ItemKindHandle{ m_offers[asked.a].kind } );
 			ctx.Emit( m_bought, SlotTarget( asked.slot ), 0, int32_t( asked.a ), {} );
 		}
 	}
@@ -105,7 +124,13 @@ private:
 	EventHandle m_refused;
 	EventHandle m_killed;
 	int32_t m_start = 3;
-	std::vector<int> m_kinds; // the offers' item kinds (-1: no mod declares it)
+	// The offers this server has (their item kinds declared), in the rows' order.
+	struct Available
+	{
+		int kind = -1;
+		int32_t price = 0;
+	};
+	std::vector<Available> m_offers;
 };
 
 } // namespace

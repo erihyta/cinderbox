@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -92,6 +93,16 @@ struct SaidText
 	std::string text;
 	PlayerSlot from = kNoPlayer; // the player it is from (kNoPlayer: the server's own words)
 	PlayerSlot to = kNoPlayer;	 // kNoPlayer: everyone
+};
+
+// A row of a list a mod publishes (Context::SetRows, M292): named fields, words (a number as its
+// words: "2"). A HUD's CbList shows the rows; a format in a row reads {shop.name}.
+using RowFields = std::vector<std::pair<std::string, std::string>>;
+// The lists the mods published, and which changed this tick (the server sends those).
+struct PublishedRows
+{
+	std::map<std::string, std::vector<RowFields>> lists;
+	std::set<std::string> changed;
 };
 
 // One a player sent (Context::Intents): who, and its two numbers.
@@ -280,6 +291,18 @@ public:
 	// a CbClick's mod_intent sends it in the player's input; Context::Intents reads it. What it
 	// does is the mod's to say (on the server: it is not predicted).
 	IntentHandle Intent( const std::string& name );
+	// A list whose rows the mod publishes (Context::SetRows, M292), and its rows' field names: the
+	// editor's names (a HUD's "{shop.name}" in a row of it is a name someone declares).
+	void Rows( const std::string& list, const std::vector<std::string>& fields );
+	struct RowList
+	{
+		std::string list;
+		std::vector<std::string> fields;
+	};
+	const std::vector<RowList>& RowLists() const
+	{
+		return m_rowLists;
+	}
 	// A channel players can type into ("chat"): what they type there reaches the mods
 	// (Context::Typed). Text for a channel no mod declared goes nowhere. Names are short (at most
 	// 32 bytes): letters, digits, '.', '_' and '-'.
@@ -405,6 +428,7 @@ private:
 	const std::map<std::string, std::string>* m_options = nullptr;
 	ModSchema m_schema;
 	std::vector<std::string> m_errors;
+	std::vector<RowList> m_rowLists;
 	std::string m_mod;
 	std::function<std::vector<LookItem>( const std::string& mod )> m_lookItems;
 	std::map<int, std::vector<ItemShape::FieldDefault>> m_itemFieldDefaults;
@@ -600,6 +624,9 @@ public:
 	// player (`ignoreNetId`: its own body, as a shot or a swing does) meets the other characters as
 	// that player saw them, on a hybrid server (lag compensation, M250); the world as it is.
 	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const;
+	// Whether the level (anything static: a wall, a wall that breaks, the ground) is in the way from
+	// one point to another: a blast's cover (M292).
+	bool LevelBetween( b3Vec3 from, b3Vec3 to ) const;
 
 	// What kind of entity a NetId is.
 	bool IsPlayer( uint32_t netId ) const
@@ -686,6 +713,10 @@ public:
 	// kNoPlayer) from nobody: the server's own words. Words only: it never touches the simulation,
 	// and recordings do not keep it. Printable characters, at most net::kMaxText bytes.
 	void Say( const std::string& channel, const std::string& text, PlayerSlot from = kNoPlayer, PlayerSlot to = kNoPlayer );
+	// The rows of a list everyone's HUD shows (M292: the shop's offers): all of them, replacing what
+	// it had; every client is sent them (and whoever joins later). Words only, outside the simulation
+	// and its hash: at most 64 rows of 16 fields, names of 32 bytes, values of net::kMaxText.
+	void SetRows( const std::string& list, const std::vector<RowFields>& rows );
 
 	// --- Commands -----------------------------------------------------------------------------
 	// Targets are NetIds; use SlotTarget( slot ) for a player, which also works for one joining
@@ -871,6 +902,10 @@ public:
 	SocketHandle ItemSocket( ItemKindHandle kind, const std::string& name ) const;
 	// Where private fields live: one board per player slot, kept by the server (not the simulation)
 	// and sent to that player alone. `changed` gets the slots a Set wrote to.
+	void SetRows( PublishedRows* rows )
+	{
+		m_rows = rows;
+	}
 	void SetTexts( const std::vector<TypedText>* typed, std::vector<SaidText>* said )
 	{
 		m_typed = typed;
@@ -941,6 +976,7 @@ private:
 	std::array<bool, kMaxPlayers>* m_privatesChanged = nullptr;
 	const std::vector<TypedText>* m_typed = nullptr;
 	std::vector<SaidText>* m_said = nullptr;
+	PublishedRows* m_rows = nullptr;
 	const std::map<int, int>* m_itemLayers = nullptr;
 	// Which layer of the character `layer` names, and whose slot `target` is (-1: neither a slot nor
 	// a player).

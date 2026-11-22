@@ -28,10 +28,13 @@ motion Throwing on use
 	emit frag.thrown
 	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
 
+# The blast (M292): what the level hides from it is not thrown (in sight: a wall, a rise);
+# the rest is shoved by momentum, as a blast shoves: a 6 kg body at frag.push at the centre, a heavier
+# one slower, a lighter one faster, up to 30 m/s (top), less further out.
 motion Blast on expired
 	on item
 	emit frag.blast
 	break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
-	find Blast bodies
-		impulse (distance < frag.radius) * frag.push * (1 - distance / frag.radius) along away
-		impulse (distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius) along up
+	find Blast bodies in sight
+		impulse (distance < frag.radius) * 6 * frag.push * (1 - distance / frag.radius) kind momentum top 30 along away
+		impulse (distance < frag.radius) * 6 * 0.35 * frag.push * (1 - distance / frag.radius) kind momentum top 12 along up

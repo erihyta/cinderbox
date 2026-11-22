@@ -5698,8 +5698,13 @@ void Simulation::ImpulseEnd( const MotionEffect& effect, float strength, const M
 			keep = { 0.0f, 0.0f, 0.0f };
 			break;
 	}
-	// Momentum (N s) moves a heavy target less: its change of velocity is the momentum over its mass.
-	const float change = effect.momentum ? ( target.mass > 0.0f ? strength / target.mass : 0.0f ) : strength;
+	// Momentum (N s) moves a heavy target less: its change of velocity is the momentum over its mass;
+	// at most its top (M292: what a blast's momentum does to something light).
+	float change = effect.momentum ? ( target.mass > 0.0f ? strength / target.mass : 0.0f ) : strength;
+	if ( effect.kind == MotionEffect::Kind::Impulse && effect.speed > 0.0f )
+	{
+		change = std::clamp( change, -effect.speed, effect.speed );
+	}
 	if ( target.kind == MotionEnd::Kind::Player && m_deferPlayerPushes )
 	{
 		// Another player, while the motions run: what it replaces is taken from its velocity when the
@@ -5916,6 +5921,27 @@ void Simulation::RunItemEvents()
 			RunItemMotions( item, said[i].second, false );
 		}
 	}
+}
+
+bool Simulation::LevelBetween( b3Vec3 from, b3Vec3 to ) const
+{
+	const b3Vec3 way = b3Sub( to, from );
+	const float length = b3Length( way );
+	if ( length < 0.01f )
+	{
+		return false;
+	}
+	PhysicsArena::Scope scope( *m_arena );
+	b3QueryFilter filter = { ~uint64_t( 0 ), CatStatic, 0, nullptr };
+	float closest = 1.0f;
+	auto nearest = []( b3ShapeId, b3Pos, b3Vec3, float fraction, uint64_t, int, int, void* context ) -> float {
+		float& best = *static_cast<float*>( context );
+		best = std::min( best, fraction );
+		return fraction;
+	};
+	b3World_CastRay( m_physicsWorld, from, way, filter, nearest, &closest );
+	// (What it ends in, a body lying against a wall, is not behind it: the last 10 cm do not count.)
+	return closest * length < length - 0.1f;
 }
 
 std::vector<uint32_t> Simulation::BreakablesNear( b3Vec3 point, float radius ) const
@@ -6181,6 +6207,11 @@ void Simulation::FindAll( flecs::entity e, const Transform& t, const MotionFind&
 		bool player = end.kind == MotionEnd::Kind::Player || end.kind == MotionEnd::Kind::Self;
 		if ( end.kind == MotionEnd::Kind::None || ( player && ( find.who & kProbeHoldsPlayers ) == 0 ) ||
 			 ( end.kind == MotionEnd::Kind::Body && ( find.who & kProbeHoldsBodies ) == 0 ) )
+		{
+			continue;
+		}
+		// (M292) Hidden from the place by the level: not found.
+		if ( find.inSight && LevelBetween( b3Add( place, b3Vec3{ 0.0f, 0.2f, 0.0f } ), end.point ) )
 		{
 			continue;
 		}

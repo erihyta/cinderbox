@@ -4297,6 +4297,28 @@ void TestShop()
 	CHECK( coinsBefore == 3 && batsBefore == 1 );
 	CHECK( coinsEnd == 0 && batsEnd == 4 && refusals == 1 );
 	CHECK( bot.client->Privates().values[coins->slot] == 0 && bot.client->GetStats().desyncs == 0 );
+	// Its offers, as the shop published them (M292): the rows of shop.offers, on the client; the bat
+	// second (what intentA 1 asked for), the rifle only where it is (a local look).
+	const auto& lists = bot.client->PublishedRows();
+	const auto offers = lists.find( "shop.offers" );
+	const size_t count = offers != lists.end() ? offers->second.size() : 0;
+	CHECK( count >= 2 && count <= 3 );
+	if ( count >= 2 )
+	{
+		const auto& second = offers->second[1];
+		auto field = [&]( const std::string& name ) {
+			for ( const auto& [n, v] : second )
+			{
+				if ( n == name )
+				{
+					return v;
+				}
+			}
+			return std::string();
+		};
+		std::printf( "    the offers: %zu rows; the second: %s, %s\n", count, field( "shop.name" ).c_str(), field( "shop.cost" ).c_str() );
+		CHECK( field( "shop.name" ) == "Bat" && field( "shop.price" ) == "1" && field( "shop.cost" ) == "1 coin" );
+	}
 }
 
 // The brawler's kit (the brawl mod, step 5's measure): bot A walks up to bot B and goes through it,
@@ -4581,6 +4603,12 @@ void TestSheetDeclarations()
 	again.BeginMod( "test" );
 	again.DeclareSheet( "ui/h.cbsheet", "cbsheet 1\nfield test.z int maybe\n" );
 	CHECK( again.Errors().size() == 1 && again.Errors()[0].find( "ui/h.cbsheet line 2" ) != std::string::npos );
+	// A sheet of version 0 is refused (M292): the server says which, and does not start.
+	mods::Declarations old;
+	old.BeginMod( "test" );
+	old.DeclareSheet( "prefabs/o.cbsheet", "on test.e\n    sound res://x.wav\n" );
+	old.DeclareSheet( "prefabs/empty.cbsheet", "\n# nothing yet\n" );
+	CHECK( old.Errors().size() == 1 && old.Errors()[0].find( "prefabs/o.cbsheet: a sheet of version 0" ) != std::string::npos );
 }
 
 // M291: every sheet test of the mods (server_mods/*/client/**/*.cbtest), as cb_sheet test runs them,

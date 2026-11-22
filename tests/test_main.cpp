@@ -6891,6 +6891,93 @@ std::string SheetMotionsText( const std::string& sheetText, std::string& errors 
 	return text;
 }
 
+// M292 a blast's cover and a shove by momentum (the frag's): a find "in sight" leaves out what the
+// level hides from it (a crate behind a wall stays where it is); an impulse of momentum moves a light
+// crate faster than a heavy one, never past its top.
+void TestMotionBlastCover()
+{
+	ModSchema schema;
+	schema.actions.push_back( { "blast", 0, "Q" } );
+	const std::string sheetText = "cbsheet 1\nmotion Blast on press blast\n"
+								  "\tfind sphere 6 bodies in sight\n"
+								  "\t\timpulse 6 * 12 kind momentum top 30 along away\n";
+	std::string errors;
+	const std::string text = SheetMotionsText( sheetText, errors );
+	CHECK( errors.empty() );
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 1 );
+	if ( motions == nullptr || motions->list.size() != 1 )
+	{
+		std::printf( "    %s %s%s", errors.c_str(), warnings.c_str(), text.c_str() );
+		return;
+	}
+	const MotionFind& find = motions->list[0].First().finds.at( 0 );
+	CHECK( find.inSight && find.effects.size() == 1 && find.effects[0].momentum && find.effects[0].speed == 30.0f );
+
+	LevelLayout map = FlatMap();
+	map.statics.push_back( { { 0.0f, 1.0f, -1.8f }, { 2.0f, 1.0f, 0.1f }, 0.0f, 0.0f } ); // a wall between the player and one crate
+	QuantizeLayout( map );
+	Simulation sim( TestConfig(), map );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto crate = [&]( b3Vec3 at, float half ) {
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.value = -1;
+		c.a = { at.x, at.y, at.z };
+		c.c = { half, half, half };
+		f.commands.push_back( c );
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 2 );
+	SimCommand place;
+	place.type = CommandType::Respawn;
+	place.target = sim.PlayerNetId( 0 );
+	place.mode = 1;
+	place.a = { 0.0f, 1.0f, 0.0f };
+	f.commands.push_back( place );
+	crate( { 3.0f, 0.15f, 0.0f }, 0.15f );	 // light, in the open
+	crate( { -3.0f, 0.4f, 0.0f }, 0.4f );	 // heavy, in the open
+	crate( { 0.0f, 0.3f, -3.0f }, 0.3f );	 // behind the wall
+	step( 60 );
+	std::vector<uint32_t> crates;
+	for ( const auto& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			crates.push_back( r.netId );
+		}
+	}
+	CHECK( crates.size() == 3 );
+	if ( crates.size() != 3 )
+	{
+		return;
+	}
+	auto speed = [&]( uint32_t netId ) {
+		const PhysicsBody* pb = sim.FindEntity( netId ).try_get<PhysicsBody>();
+		return pb != nullptr ? b3Length( b3Body_GetLinearVelocity( sim.BodyOf( *pb ) ) ) : -1.0f;
+	};
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const float light = speed( crates[0] ), heavy = speed( crates[1] ), hidden = speed( crates[2] );
+	std::printf( "    the blast: the light crate at %.1f m/s, the heavy one at %.1f, the one behind the wall at %.2f%s", double( light ),
+				 double( heavy ), double( hidden ), "\n" );
+	CHECK( light > heavy && light <= 30.5f && heavy > 0.5f && hidden < 0.05f );
+}
+
 // M290 where and on what: the owner's telekinesis (docs/step6-plan.md section 7) and the bat's one
 // find. A pull: a cast that holds a player, says it, makes it "pulled" and draws it to the owner. A
 // hold: a ball 6 m along the look (stopped by the level) that grabs the crates in it and brings them
@@ -14782,6 +14869,7 @@ int main( int argc, char** argv )
 		{ "prop_leaves_walls", TestPropLeavesWalls },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_telekinesis", TestMotionTelekinesis },
+		{ "motion_blast_cover", TestMotionBlastCover },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_lag_compensation", TestMotionLagCompensation },
 		{ "motion_curves", TestMotionCurves },

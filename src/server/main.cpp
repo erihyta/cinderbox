@@ -212,6 +212,15 @@ bool DumpNames( const char* path, const std::string& lookSource )
 	{
 		text += "motions\t" + set.name + "\n";
 	}
+	// The lists mods publish rows of (M292), and their rows' fields.
+	for ( const auto& rows : declarations.RowLists() )
+	{
+		text += "rows\t" + rows.list + "\n";
+		for ( const std::string& field : rows.fields )
+		{
+			text += "row\t" + field + "\n";
+		}
+	}
 	// Written only when it changed, so nothing that watches the file is woken for nothing.
 	{
 		std::ifstream in( path, std::ios::binary );

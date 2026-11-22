@@ -664,6 +664,10 @@ private:
 	std::vector<mods::SaidText> m_said;
 	void HandleText( const Client& client, const net::MsgText& text );
 	void SendSaid();
+	// The lists the mods published (M292: Context::SetRows): those changed to everyone, or every one
+	// to a client just welcomed.
+	void SendRows( net::PeerId only = 0 );
+	mods::PublishedRows m_rows;
 };
 
 } // namespace cb

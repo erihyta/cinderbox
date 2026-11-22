@@ -1407,6 +1407,19 @@ int SheetVersion( const std::string& text )
 	return 0;
 }
 
+std::string NotVersion1( const std::string& text )
+{
+	bool any = false;
+	for ( const std::string& line : LinesOf( text ) )
+	{
+		any = any || Blank( line ) == false;
+	}
+	const int version = SheetVersion( text );
+	return any == false || version == 1 ? std::string()
+		   : version == 0				? std::string( "a sheet of version 0: this game reads version 1 (cbsheet 1); cb_sheet convert (or the Sheet screen's Convert) writes it" )
+										: std::string( "this game reads sheets of version 1 (cbsheet 1)" );
+}
+
 Lowered LowerVersion1( const std::string& text, Strings& errors )
 {
 	std::vector<std::string> lines = LinesOf( text );

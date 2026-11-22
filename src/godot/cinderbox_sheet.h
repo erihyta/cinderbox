@@ -45,6 +45,7 @@ public:
 	void on_tab_close( int64_t tab );
 	void on_tab_changed( int64_t tab );
 	void on_format();
+	void on_convert();
 
 protected:
 	static void _bind_methods();
@@ -61,6 +62,9 @@ private:
 	void Status();
 	godot::VBoxContainer* m_screen = nullptr;
 	godot::Label* m_status = nullptr;
+	godot::Control* m_convert = nullptr; // (shown for a sheet of version 0, M292)
+	// The open sheet's text box replaced by `text`, as one change the undo takes back.
+	void Replace( godot::CodeEdit* edit, const godot::String& text );
 	godot::TabContainer* m_tabs = nullptr;
 	std::vector<Open> m_open;
 };

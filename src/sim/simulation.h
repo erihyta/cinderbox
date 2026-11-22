@@ -509,6 +509,9 @@ public:
 	// The breakable walls near a point, nearest first: one entity each (a standing piece of it, or
 	// the whole wall), to break with BreakWall. A wall is near when one of its pieces' centres is.
 	std::vector<uint32_t> BreakablesNear( b3Vec3 point, float radius ) const;
+	// (M292) Whether something static (the level, a wall that breaks) is in the way from `from` to
+	// `to`: a blast's cover.
+	bool LevelBetween( b3Vec3 from, b3Vec3 to ) const;
 	// A motion's probe from `origin` along `translation`: its shape swept, turned to the line (a line
 	// without one: CastRay). What it meets first.
 	bool CastProbe( const Motion& m, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit );

@@ -2,9 +2,11 @@
 
 ; The shop mod's screen, on B. No scripts: a CbKey ("shop", B, each press switches it, the cursor
 ; free meanwhile) keeps ui.shop, Shown (a CbFieldBinding) shows the panel while it is 1, and each
-; offer is a button: a CbClick whose mod_intent is "shop.buy" and intent_a the offer's number. The
-; click goes out in the player's input; the shop mod (shop.cpp) takes the price from shop.coins (a
-; private field: yours alone) and gives the item, and the screen shows it when that arrives.
+; offer is a button: a row of Offers (a CbList of the rows the shop mod publishes, shop.offers:
+; M292, the offers written once, in shop.cpp), a CbClick whose mod_intent is "shop.buy" and intent_a
+; the row's place (row.index). The click goes out in the player's input; the shop mod takes the price
+; from shop.coins (a private field: yours alone) and gives the item, and the screen shows it when that
+; arrives.
 
 [sub_resource type="StyleBoxFlat" id="Panel"]
 bg_color = Color(0.05, 0.05, 0.07, 0.88)
@@ -77,44 +79,23 @@ label_settings = SubResource("Title")
 horizontal_alignment = 1
 text_format = "SHOP     {shop.coins} coins     click to buy"
 
-[node name="Grenade" type="PanelContainer" parent="Shop/Rows"]
+[node name="Offers" type="CbList" parent="Shop/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 10
+vertical = true
+of = 6
+rows = "shop.offers"
+
+[node name="Offer" type="PanelContainer" parent="Shop/Rows/Offers"]
 custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
 theme_override_styles/panel = SubResource("Button")
 
-[node name="Buy" type="CbClick" parent="Shop/Rows/Grenade"]
+[node name="Buy" type="CbClick" parent="Shop/Rows/Offers/Offer"]
 mod_intent = "shop.buy"
-intent_a = "0"
+intent_a = "row.index"
 
-[node name="Label" type="Label" parent="Shop/Rows/Grenade"]
+[node name="Label" type="CbFieldLabel" parent="Shop/Rows/Offers/Offer"]
 layout_mode = 2
-text = "Frag grenade          1 coin"
 label_settings = SubResource("Offer")
-
-[node name="Bat" type="PanelContainer" parent="Shop/Rows"]
-custom_minimum_size = Vector2(360, 0)
-layout_mode = 2
-theme_override_styles/panel = SubResource("Button")
-
-[node name="Buy" type="CbClick" parent="Shop/Rows/Bat"]
-mod_intent = "shop.buy"
-intent_a = "1"
-
-[node name="Label" type="Label" parent="Shop/Rows/Bat"]
-layout_mode = 2
-text = "Bat                         1 coin"
-label_settings = SubResource("Offer")
-
-[node name="Rifle" type="PanelContainer" parent="Shop/Rows"]
-custom_minimum_size = Vector2(360, 0)
-layout_mode = 2
-theme_override_styles/panel = SubResource("Button")
-
-[node name="Buy" type="CbClick" parent="Shop/Rows/Rifle"]
-mod_intent = "shop.buy"
-intent_a = "2"
-
-[node name="Label" type="Label" parent="Shop/Rows/Rifle"]
-layout_mode = 2
-text = "Rifle                       2 coins"
-label_settings = SubResource("Offer")
+text_format = "{shop.name}          {shop.cost}"

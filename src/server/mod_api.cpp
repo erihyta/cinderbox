@@ -70,6 +70,11 @@ void Declarations::DeclareSheets( const std::vector<std::pair<std::string, std::
 
 void Declarations::DeclareSheet( const std::string& path, const std::string& text )
 {
+	if ( const std::string why = sheet::NotVersion1( text ); why.empty() == false )
+	{
+		m_errors.push_back( m_mod + ": " + path + ": " + why );
+		return;
+	}
 	sheet::Strings errors;
 	const std::vector<sheet::Declaration> declared = sheet::ReadDeclarations( text, errors );
 	for ( const std::string& error : errors )
@@ -172,6 +177,11 @@ EventHandle Declarations::Event( const std::string& name, bool everyone )
 	}
 	m_schema.events.push_back( name );
 	return forEveryone( int( m_schema.events.size() - 1 ) );
+}
+
+void Declarations::Rows( const std::string& list, const std::vector<std::string>& fields )
+{
+	m_rowLists.push_back( { list, fields } );
 }
 
 IntentHandle Declarations::Intent( const std::string& name )
@@ -616,6 +626,11 @@ int Context::SlotOf( uint32_t netId ) const
 		}
 	}
 	return -1;
+}
+
+bool Context::LevelBetween( b3Vec3 from, b3Vec3 to ) const
+{
+	return m_sim.LevelBetween( from, to );
 }
 
 bool Context::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const
@@ -1277,6 +1292,37 @@ const std::vector<TypedText>& Context::Typed() const
 {
 	static const std::vector<TypedText> none;
 	return m_typed != nullptr ? *m_typed : none;
+}
+
+void Context::SetRows( const std::string& list, const std::vector<RowFields>& rows )
+{
+	if ( m_rows == nullptr || list.empty() || list.size() > net::kMaxRowName )
+	{
+		return;
+	}
+	std::vector<RowFields> kept;
+	for ( size_t i = 0; i < rows.size() && i < net::kMaxRows; ++i )
+	{
+		RowFields row;
+		for ( size_t k = 0; k < rows[i].size() && k < net::kMaxRowFields; ++k )
+		{
+			if ( rows[i][k].first.empty() == false && rows[i][k].first.size() <= net::kMaxRowName )
+			{
+				row.push_back( { rows[i][k].first, net::SanitizeText( rows[i][k].second, net::kMaxText ) } );
+			}
+		}
+		kept.push_back( std::move( row ) );
+	}
+	auto& had = m_rows->lists[list];
+	if ( had != kept || m_rows->lists.size() > net::kMaxRowLists )
+	{
+		had = std::move( kept );
+		m_rows->changed.insert( list );
+	}
+	while ( m_rows->lists.size() > net::kMaxRowLists )
+	{
+		m_rows->lists.erase( std::prev( m_rows->lists.end() ) );
+	}
 }
 
 void Context::Say( const std::string& channel, const std::string& text, PlayerSlot from, PlayerSlot to )

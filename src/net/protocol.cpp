@@ -201,7 +201,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::InputLoss ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Rows ) )
 	{
 		return std::nullopt;
 	}
@@ -360,6 +360,57 @@ bool Decode( ByteReader& r, MsgPlayerNames& m )
 		m.names.push_back( { slot, std::move( name ) } );
 	}
 	return true;
+}
+
+void Encode( const MsgRows& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::Rows );
+	ByteWriter w( out );
+	WriteShortString( w, m.list, kMaxRowName );
+	const size_t rows = std::min( m.rows.size(), kMaxRows );
+	w.Write( uint8_t( rows ) );
+	for ( size_t i = 0; i < rows; ++i )
+	{
+		const size_t fields = std::min( m.rows[i].size(), kMaxRowFields );
+		w.Write( uint8_t( fields ) );
+		for ( size_t k = 0; k < fields; ++k )
+		{
+			WriteShortString( w, m.rows[i][k].first, kMaxRowName );
+			WriteShortString( w, m.rows[i][k].second, kMaxText );
+		}
+	}
+}
+
+bool Decode( ByteReader& r, MsgRows& m )
+{
+	if ( ReadShortString( r, m.list, kMaxRowName ) == false )
+	{
+		return false;
+	}
+	const uint8_t rows = r.Read<uint8_t>();
+	if ( r.Ok() == false || rows > kMaxRows )
+	{
+		return false;
+	}
+	m.rows.assign( rows, {} );
+	for ( uint8_t i = 0; i < rows; ++i )
+	{
+		const uint8_t fields = r.Read<uint8_t>();
+		if ( r.Ok() == false || fields > kMaxRowFields )
+		{
+			return false;
+		}
+		for ( uint8_t k = 0; k < fields; ++k )
+		{
+			std::string name, value;
+			if ( ReadShortString( r, name, kMaxRowName ) == false || ReadShortString( r, value, kMaxText ) == false )
+			{
+				return false;
+			}
+			m.rows[i].push_back( { std::move( name ), std::move( value ) } );
+		}
+	}
+	return r.Ok();
 }
 
 void Encode( const MsgText& m, std::vector<uint8_t>& out )

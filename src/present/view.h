@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <variant>
 #include <vector>
@@ -106,6 +107,12 @@ struct ViewFrame
 	static constexpr size_t kViewTexts = 32;
 	std::vector<ViewText> texts;
 	uint64_t textCount = 0;
+
+	// The lists' rows the mods published (M292: net::MsgRows, a shop's offers), by list; the
+	// generation changes with any. A row is named fields, words.
+	using Row = std::vector<std::pair<std::string, std::string>>;
+	std::map<std::string, std::vector<Row>> rows;
+	uint64_t rowsGeneration = 0;
 };
 
 class ViewSource

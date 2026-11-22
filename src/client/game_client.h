@@ -17,6 +17,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -220,6 +221,16 @@ public:
 	{
 		return m_textCount;
 	}
+	// The lists' rows the mods published (M292: a shop's offers), by list, and how often any came.
+	using Rows = std::vector<std::vector<std::pair<std::string, std::string>>>;
+	const std::map<std::string, Rows>& PublishedRows() const
+	{
+		return m_rows;
+	}
+	uint64_t RowsGeneration() const
+	{
+		return m_rowsGeneration;
+	}
 	// This player's private fields, as the server last sent them (all 0 until it does).
 	const Blackboard& Privates() const
 	{
@@ -327,6 +338,8 @@ private:
 	Blackboard m_privates;
 	std::vector<net::MsgText> m_texts;
 	uint64_t m_textCount = 0;
+	std::map<std::string, Rows> m_rows;
+	uint64_t m_rowsGeneration = 0;
 
 	ClientState m_state = ClientState::Idle;
 	std::string m_rejectReason;

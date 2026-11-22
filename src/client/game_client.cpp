@@ -251,6 +251,17 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					}
 					break;
 				}
+				case MsgType::Rows:
+				{
+					// A list's rows a mod published (M292): whole, in place of what it had.
+					MsgRows msg;
+					if ( Decode( r, msg ) && ( m_rows.count( msg.list ) != 0 || m_rows.size() < kMaxRowLists ) )
+					{
+						m_rows[msg.list] = std::move( msg.rows );
+						m_rowsGeneration += 1;
+					}
+					break;
+				}
 				case MsgType::Text:
 				{
 					MsgText msg;

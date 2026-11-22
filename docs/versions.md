@@ -12,6 +12,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 100 | The message `Rows` (a list's rows a mod published, `Context::SetRows`: the shop's offers); view files carry them (M292) |
 | 99 | Two snapshot components: what a player's grab holds (`MotionGrab`) and the bodies it threw marked (`ThrownMarks`); a motion's finds and breaks at a point (`look D`, `hit`), players first, grabs, their lines' per-thing conditions (`only`); `toward`, `marks`, `hold_apply`; expressions read `player` and what was found (`$other:FIELD`) (M290) |
 | 98 | Statuses (the schema's list; a player's motion state carries up to 8, and when each of its first 16 actions went down; the command `ApplyStatus`); a motion's tags, what blocks it, what it cancels, a shared cooldown; triggers release, tap, hold; `apply` (M288) |
 | 97 | A motion may be an item's (`item KIND hand|carried`): its lines read and change that item's own fields (`item:FIELD`); a motion's state is readable (`ready.X`, `cooldown.X`, `uses.X`); an item's timers count down; an item's field may be shared (M287) |

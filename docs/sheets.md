@@ -289,7 +289,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 |---|---|
 | `change FIELD = VALUE` / `+= VALUE` / `-= VALUE` | a field of the owner (in a find: once for each thing found) |
 | `emit EVENT [value VALUE]` | a mod event, at the owner: for looks, state machines and a mod's C++ (`event.value` in a look; M287: the value, a number or an expression, read when it happens; not yet in a find). In a find, A is the player and B what it found, at it |
-| `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace nothing\|vertical\|horizontal\|all]` | a change of velocity (m/s whatever it weighs, to 200), or of momentum (`kind momentum`: N·s, to 100000, shared out by what the target weighs). `replace`: that part of the velocity is cleared first |
+| `impulse VALUE [kind velocity\|momentum] [top S] [on WHO] [along DIRECTION] [replace nothing\|vertical\|horizontal\|all]` | a change of velocity (m/s whatever it weighs, to 200), or of momentum (`kind momentum`: N·s, to 100000, shared out by what the target weighs). `top` (M292): the change of velocity at most S m/s (momentum on something light). `replace`: that part of the velocity is cleared first |
 | `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | an item into the world: a new one of a kind, or the one carried (in a hand first, else the lowest slot's), with the player's own velocity; `seconds` until it is removed (0: it stays); `from` a marker's place instead of `ahead` of where the look starts |
 | `break radius R [speed S] [seconds S] [at POINT]` | breakable walls whose nearest piece is within R of the owner (or of the point, M290: `look D`, `hit`) lose their pieces that near, flung at S (10), staying S seconds (0: for good) |
 | `remove self` | the owner item leaves the world |
@@ -323,6 +323,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 |---|---|
 | `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at POINT] [players first]` | everything the shape overlaps when its step starts; the lines further in run once for each, nearest first, at most N (16). Players and bodies (props, items lying about) unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), as it looks (with the pitch, about the chest: 1 m up, M279), or not at all. `players first` (M290): every player before any body, whatever is nearer (the bat: one find, a player never missed for a ball lying nearer) |
 | `grab SHAPE [players] [bodies] [max N] [turned ...] [at POINT] [players first]` | (M290) a find whose catch is **held** while its step lasts (8 at most): its once lines (impulses, throws, emits, changes, applies, `move for`) on each when the step starts, its forces on everything it holds **every tick**. It takes in what comes into its shape while it holds fewer than it may; what is further from the shape's middle than twice its size is let go, and so is what the player threw (a mark). In a step, not after an `every` |
+| `find ... in sight` | (M292) only what the level does not hide from its place: a line from a little above it to each thing, which nothing static (a wall, a wall that breaks, a rise of the ground) may stop. A blast behind a wall throws nothing |
 | `if EXPRESSION` / `else` under a find or a grab | (M290) decided **for each thing found**, not when the step starts: `if player`, `if combat.health of target < 30` |
 | `cast SHAPE range R [speed V] [holds level bodies players] [along look\|facing]` | a line thrown along the look (`along facing`: level along the body's facing, whatever the camera does: a punch's) when the motion starts: at once (speed 0: it holds what is there, or the motion does not happen) or flying at V m/s, holding what it meets first. The lines further in act **while it holds**; with a cast, what the first step does to bodies goes under it |
 
@@ -576,9 +577,13 @@ Each line becomes a `CbFieldBinding` on the control.
 
 ## Version 0
 
-A sheet without the `cbsheet 1` line is read as version 0, the spelling before M285. `cb_sheet
-convert` writes it as version 1, comments kept, and writes nothing if the result would mean anything
-else (each action's settings, compared); every shipped sheet was converted so.
+A sheet without the `cbsheet 1` line is version 0, the spelling before M285. **The game reads
+version 1 only** (M292): a mod's sheet of version 0 is a mistake the server says (and does not
+start), publishing refuses it, `cb_sheet check` says it, and the Sheet screen offers **Convert**.
+`cb_sheet convert` (and Convert) writes it as version 1, comments kept, and writes nothing if the
+result would mean anything else (each action's settings, compared); every shipped sheet was
+converted so. Version 0 stays the compiler's own form: version 1 is lowered to it (`sheet_v1.h`),
+and its reader is tested as such.
 
 | Version 0 | Version 1 |
 |---|---|

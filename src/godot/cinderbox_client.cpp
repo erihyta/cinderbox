@@ -29,6 +29,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "is_typing" ), &CinderboxClient::is_typing );
 	ClassDB::bind_method( D_METHOD( "wants_cursor" ), &CinderboxClient::wants_cursor );
 	ClassDB::bind_method( D_METHOD( "get_slot_count", "player" ), &CinderboxClient::get_slot_count );
+	ClassDB::bind_method( D_METHOD( "get_rows", "list" ), &CinderboxClient::get_rows );
 	ClassDB::bind_method( D_METHOD( "get_selected_slot", "player" ), &CinderboxClient::get_selected_slot );
 	ClassDB::bind_method( D_METHOD( "get_slot_item", "player", "slot" ), &CinderboxClient::get_slot_item );
 	ClassDB::bind_method( D_METHOD( "get_item_count", "item" ), &CinderboxClient::get_item_count );
@@ -366,6 +367,28 @@ bool CinderboxClient::wants_cursor() const
 		}
 	}
 	return false;
+}
+
+Array CinderboxClient::get_rows( const String& list ) const
+{
+	Array out;
+	const CharString name = list.utf8();
+	const auto it = m_frame.rows.find( std::string( name.get_data(), size_t( name.length() ) ) );
+	if ( it == m_frame.rows.end() )
+	{
+		return out;
+	}
+	for ( const present::ViewFrame::Row& row : it->second )
+	{
+		Dictionary fields;
+		for ( const auto& [field, value] : row )
+		{
+			const String words = String::utf8( value.c_str() );
+			fields[String::utf8( field.c_str() )] = words.is_valid_float() ? Variant( words.to_float() ) : Variant( words );
+		}
+		out.push_back( fields );
+	}
+	return out;
 }
 
 int64_t CinderboxClient::get_slot_count( int64_t player ) const
