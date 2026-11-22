@@ -12,6 +12,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 97 | A motion may be an item's (`item KIND hand|carried`): its lines read and change that item's own fields (`item:FIELD`); a motion's state is readable (`ready.X`, `cooldown.X`, `uses.X`); an item's timers count down; an item's field may be shared (M287) |
 | 96 | A field may be a timer (the schema's scope byte, bit 0x40: it counts down to 0 by itself, a second a second); a motion's wait may go on when it gives up (`goon`); an emit may carry a value (M287) |
 | 95 | A body that breaks a wall it strikes makes its hole around where it struck (from half a metre behind until now: a thick wall's pieces were mostly out of reach; M280) |
 | 94 | Maps of version 13: places a mod names (a `CbSpawn`'s tag: `team1`), after the bodies (M277) |
