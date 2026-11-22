@@ -271,11 +271,16 @@ std::vector<Declarations::OwnItem> Declarations::ItemsOfLook()
 		// Its own fields: each copy has them, starting as the scene says.
 		for ( const LookItem::Field& field : look.fields )
 		{
-			BoardType type = field.type == "float" ? BoardType::Float : field.type == "bool" ? BoardType::Bool : BoardType::Int;
-			FieldHandle handle = Field( field.name, type, BoardScope::Entity );
+			BoardType type = field.type == "float" || field.type == "timer" ? BoardType::Float : field.type == "bool" ? BoardType::Bool : BoardType::Int;
+			FieldHandle handle = Field( field.name, type, BoardScope::Entity, field.shared );
 			if ( handle.Valid() == false )
 			{
 				continue;
+			}
+			// (A timer counts down by itself while the item is carried: M287.)
+			for ( BoardField& f : m_schema.fields )
+			{
+				f.timer = f.timer || ( field.type == "timer" && f.name == field.name );
 			}
 			int32_t raw = type == BoardType::Float	 ? BoardFromFloat( field.value )
 						  : type == BoardType::Bool ? ( field.value != 0.0f ? 1 : 0 )

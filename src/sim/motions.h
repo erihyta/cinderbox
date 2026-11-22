@@ -245,6 +245,7 @@ struct MotionFind
 		uint8_t op = 0; // MotionStep::ChangeOp: set, add, subtract
 		float value = 0.0f;
 		int16_t expr = -1; // its value as an expression, read for each thing found (-1: `value`)
+		bool item = false; // a field of the motion's item (M287: the bat's heat when it hits)
 	};
 	std::vector<Change> changes;
 	// How far out along the ground its shape reaches from the player (its points and radius): what
@@ -276,6 +277,7 @@ struct MotionStep
 		float value = 0.0f;
 		int8_t guard = -1;
 		int16_t expr = -1; // its value as an expression, read when it happens (-1: `value`)
+		bool item = false; // a field of the motion's item, not the player's (M287: "item:FIELD")
 	};
 	struct Param
 	{
@@ -395,6 +397,11 @@ struct Motion
 	// the item (its own expiry: "<kind>.expired").
 	bool ownerItem = false;
 	int itemKind = -1;
+	// A player's motion that is an item's (M287: a sheet's "item KIND hand|carried" line, written when
+	// its lines name the item's own fields): the copy of the kind in the hand, or the first carried
+	// (`carried`), whose board "item:FIELD" reads and writes. -1: none.
+	int heldKind = -1;
+	bool heldCarried = false;
 
 	// On from when it starts until something ends it (its condition, what its probe holds going away,
 	// a wait for its next step).
@@ -483,6 +490,16 @@ struct MotionInputs
 	void* user = nullptr;
 	// Where to say why a motion asked to start did not (none: not said).
 	std::vector<MotionRefusal>* refusals = nullptr;
+	// The boards of what the player carries (M287), for its items' motions: the simulation's, which
+	// writes back those `changed`.
+	struct ItemBoard
+	{
+		uint16_t kind = 0;
+		bool stowed = false;
+		Blackboard board;
+		bool changed = false;
+	};
+	std::vector<ItemBoard>* items = nullptr;
 };
 
 // A motion that is on this tick, for the simulation to apply its effects.

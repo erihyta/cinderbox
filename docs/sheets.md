@@ -86,7 +86,7 @@ param gun.reload_seconds 1.5 s
 
 | Line | Is |
 |---|---|
-| `field NAME int\|float\|bool\|timer [on player\|world\|item] [shared\|private] [= VALUE]` | (`timer`, M287: a float that counts down to 0 by itself, a second a second, in every simulation: a player's or the world's; `change brawl.cd_dash = 3` and it is a cooldown the HUD shows.) | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
+| `field NAME int\|float\|bool\|timer [on player\|world\|item] [shared\|private] [= VALUE]` | (`timer`, M287: a float that counts down to 0 by itself, a second a second, in every simulation: a player's, the world's, or an item's (while it is carried or lies in the world); `change brawl.cd_dash = 3` and it is a cooldown the HUD shows. `on item`: **in the sheet's motions the name is the item's own field**, read in their conditions and changed by their lines, a find's too: the copy in the hand, or the first carried for a motion `for carrier`; a look reads the one in the hand as `hand.FIELD`. An item's field may be `shared`: every player is sent it, the bat's heat.) | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
 | `event NAME [everyone]` | an event, the same way |
 | `action NAME [key KEY]` | an action, its key as Godot names keys (`R`, `F`, `1`, `MouseLeft`) |
 | `param NAME NUMBER [UNIT]` | a number of the item whose scene holds the sheet: baked into `items/<kind>.cfg` as its property, which server mods read (`ctx.ItemProperty`; was the `CbItem`'s `properties`). **In the sheet it is its number**: `gun.ammo < gun.magazine` reads `gun.ammo < 12` |
@@ -110,6 +110,7 @@ The same [expression language](looks.md#expressions) everywhere: a condition, a 
 | `combat.health of target`, `combat.dead of holder` | another entity's field: `of me`, `holder`, `actor`, `target`, `local`, `world` |
 | `local` | the viewer's own player is the subject (looks only) |
 | `active Slam`, `active brawl.fist.Jab` | a motion is on now (its own sheet's by name, another item's by its kind) |
+| `ready Fire`, `cooldown Fire`, `uses Fire` | in a motion (M287): the motion could start now (not on, off cooldown, a use left); the seconds of cooldown it has left; its uses left (0 without a limit). A HUD does not read them yet: a timer field is what it shows |
 | everything else | numbers, fields, `+ - * /`, comparisons, `( )`, `grounded`, `speed`, `held.jump`, `pressed.dash`, `using.gun.rifle`, `carried.KIND`, `hand.FIELD`, `event.value`, `time`, `distance`, `reach` |
 
 A HUD line's format (`"{brawl.cd_dash}s"`) is read as written: inside quotes, version 0's signs

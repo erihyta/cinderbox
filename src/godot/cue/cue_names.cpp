@@ -186,6 +186,12 @@ void CheckRead( const Book& book, const std::string& written, const String& prop
 			return;
 		}
 	}
+	if ( name.rfind( "hand.", 0 ) == 0 )
+	{
+		// "hand.gun.rounds": a field of the item in the hand (M287: its sheet's, on item).
+		CheckName( book, "field", Gd( name.substr( 5 ) ), property, out );
+		return;
+	}
 	for ( const char* key : { "carried.", "using." } )
 	{
 		if ( name.rfind( key, 0 ) == 0 )
@@ -201,7 +207,7 @@ void CheckRead( const Book& book, const std::string& written, const String& prop
 		return; // one of the reader's own (speed, is_local, a stance), or declared
 	}
 	std::string prefix = name.substr( 0, dot );
-	for ( const char* own : { "ui", "event", "slot", "motion" } )
+	for ( const char* own : { "ui", "event", "slot", "motion", "ready", "cooldown", "uses" } )
 	{
 		if ( prefix == own )
 		{
@@ -420,6 +426,11 @@ void CheckValue( const Book& book, Holds holds, const Variant& value, const Stri
 						field = field.get_slice( op, 0 ).strip_edges();
 					}
 					std::string name = Std( field );
+					if ( name.rfind( "item:", 0 ) == 0 )
+					{
+						name = name.substr( 5 ); // (an item's own field, M287)
+						field = field.substr( 5 );
+					}
 					if ( name.empty() == false && Has( book, "field", name ) == false )
 					{
 						out.push_back( property + String( ": no mod declares the field \"" ) + field + "\"" +

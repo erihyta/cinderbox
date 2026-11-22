@@ -1135,6 +1135,7 @@ Dictionary CbItem::bake() const
 	// goes are properties the engine reads; said here, they are the item's.
 	Dictionary all;
 	Dictionary ownFields;
+	Dictionary ownTypes; // (a timer's: "timer", M287)
 	{
 		TypedArray<Node> sheets = find_children( "*", "CbRules", true, false );
 		for ( int64_t s = 0; s < sheets.size(); ++s )
@@ -1156,6 +1157,7 @@ Dictionary CbItem::bake() const
 				else if ( d.kind == sheet::Declaration::Kind::Field && d.on == "item" )
 				{
 					ownFields[name] = d.type == "bool" ? Variant( d.value != 0.0 ) : d.type == "int" ? Variant( int64_t( d.value ) ) : Variant( d.value );
+					ownTypes[name] = String::utf8( d.type.c_str() ) + ( d.shared ? String( " shared" ) : String() );
 				}
 			}
 		}
@@ -1219,7 +1221,10 @@ Dictionary CbItem::bake() const
 		{
 			return fail( "field \"" + name + "\" needs a name without spaces and a value: a whole number, a decimal, or true / false" );
 		}
-		text += "field " + name + " " + String( type ) + " " + String::num( double( value ), 4 ) + "\n";
+		// ("field NAME TYPE VALUE [shared]": a shared one goes to every player, the bat's heat.)
+		const String typeAndShared = ownTypes.has( fieldNames[i] ) ? String( ownTypes[fieldNames[i]] ) : String( type );
+		const bool sharedField = typeAndShared.ends_with( " shared" );
+		text += "field " + name + " " + typeAndShared.trim_suffix( " shared" ) + " " + String::num( double( value ), 4 ) + ( sharedField ? String( " shared" ) : String() ) + "\n";
 	}
 	// What the other hand does: at the marker (0), turned with it (1), or as the animations have it
 	// (2; no place of its own).

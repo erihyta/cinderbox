@@ -959,6 +959,20 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "a step's moves read at most " + std::to_string( kMoveValues ) + " values from expressions" );
 			}
 		}
+		else if ( key == "item" )
+		{
+			// item KIND hand|carried: whose board "item:FIELD" is (M287).
+			if ( whole() == false )
+			{
+				return false;
+			}
+			if ( w.size() < 3 || ( w[2] != "hand" && w[2] != "carried" ) )
+			{
+				return fail( "item wants a kind and hand or carried" );
+			}
+			m.heldKind = schema.FindItemKind( w[1] );
+			m.heldCarried = w[2] == "carried";
+		}
 		else if ( key == "change" )
 		{
 			Motion::Change change;
@@ -967,7 +981,9 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "change wants a field, an operator (=, +=, -=) and a number" );
 			}
 			change.op = w[2] == "=" ? Motion::ChangeOp::Set : ( w[2] == "+=" ? Motion::ChangeOp::Add : Motion::ChangeOp::Sub );
-			const BoardField* field = schema.FindField( w[1] );
+			// (item:FIELD: the motion's item's, M287.)
+			change.item = w[1].rfind( "item:", 0 ) == 0;
+			const BoardField* field = schema.FindField( change.item ? w[1].substr( 5 ) : w[1] );
 			if ( field == nullptr || field->scope != BoardScope::Entity )
 			{
 				warnings += m.name + ": \"" + w[1] + "\" is not a field of the player a mod declares: the change is skipped; ";
@@ -979,7 +995,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( inFind )
 			{
 				// The owner's field, once for each thing found (the find's guard holds for all of it).
-				step.finds.back().changes.push_back( { change.slot, change.type, uint8_t( change.op ), change.value, change.expr } );
+				step.finds.back().changes.push_back( { change.slot, change.type, uint8_t( change.op ), change.value, change.expr, change.item } );
 				continue;
 			}
 			step.changes.push_back( change );
@@ -1458,9 +1474,49 @@ bool MotionGuardHolds( const MotionSlot& slot, int8_t guard )
 	return guard < 0 || ( ( slot.guards >> guard ) & 1u ) != 0;
 }
 
+namespace
+{
+
+// What "ready.X", "cooldown.X", "uses.X" read (M287): a motion's state as the tick found it.
+struct StateReader
+{
+	const Motions* motions = nullptr;
+	const MotionState* state = nullptr;
+	uint32_t tick = 0;
+	uint32_t tickRate = 60;
+};
+
+float ReadMotionState( const void* user, AnimExpr::VarKind kind, uint16_t index )
+{
+	const StateReader& r = *static_cast<const StateReader*>( user );
+	if ( size_t( index ) >= r.motions->list.size() || size_t( index ) >= r.state->slots.size() )
+	{
+		return 0.0f;
+	}
+	const Motion& m = r.motions->list[index];
+	const MotionSlot& slot = r.state->slots[index];
+	// (lastTick: its last start's tick plus one; 0: never.)
+	const uint32_t cooldownEnds = slot.lastTick != 0 ? slot.lastTick - 1 + Ticks( m.cooldown, r.tickRate ) : 0;
+	const float cooldownLeft = cooldownEnds > r.tick ? float( cooldownEnds - r.tick ) / float( r.tickRate ) : 0.0f;
+	const uint32_t usesLeft = m.uses > slot.used ? m.uses - slot.used : 0;
+	if ( kind == AnimExpr::VarKind::MotionCooldown )
+	{
+		return cooldownLeft;
+	}
+	if ( kind == AnimExpr::VarKind::MotionUses )
+	{
+		return float( usesLeft ); // (0 for one without a limit of uses)
+	}
+	const bool on = slot.lastTick != 0 && slot.sinceTick <= r.tick && r.tick < slot.untilTick;
+	return on == false && cooldownLeft <= 0.0f && ( m.uses == 0 || usesLeft > 0 ) ? 1.0f : 0.0f;
+}
+
+} // namespace
+
 void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, const Character& c, Blackboard& board,
 				 bool& boardChanged, std::vector<ModEventRecord>& events, std::vector<MotionActive>& active )
 {
+	const StateReader reader{ &motions, &state, in.tick, in.tickRate };
 	const uint32_t now = in.tick + 1; // 0 in a slot means "never"
 	const float dt = 1.0f / float( in.tickRate );
 	for ( size_t i = 0; i < motions.list.size(); ++i )
@@ -1475,6 +1531,21 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		// What its expressions read: the player's values, its curves, and its step's time (0 when off).
 		AnimGraphInputs values = *in.values;
 		values.curves = &m.curves;
+		// An item's motion: its item's board (the copy in the hand, or the first carried).
+		MotionInputs::ItemBoard* mine = nullptr;
+		if ( m.heldKind >= 0 && in.items != nullptr )
+		{
+			for ( MotionInputs::ItemBoard& one : *in.items )
+			{
+				if ( one.kind == uint16_t( m.heldKind ) && ( mine == nullptr || ( mine->stowed && one.stowed == false ) ) && ( m.heldCarried || one.stowed == false ) )
+				{
+					mine = &one;
+				}
+			}
+		}
+		values.itemBoard = mine != nullptr ? &mine->board.values : nullptr;
+		values.motionState = ReadMotionState;
+		values.motionUser = &reader;
 		values.builtins[AnimExpr::Time] =
 			slot.lastTick != 0 && in.tick < slot.untilTick && in.tick >= MotionStepStart( slot ) ? float( in.tick - MotionStepStart( slot ) ) * dt : 0.0f;
 		// A while motion that was on last tick goes on without asking its cooldown again.
@@ -1573,20 +1644,29 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				}
 				// A value that is an expression: read now.
 				change.value = MotionAmount( m, change.value, change.expr, values, -1.0e9f, 1.0e9f );
+				if ( change.item && mine == nullptr )
+				{
+					continue; // (its item is not there)
+				}
+				Blackboard& to = change.item ? mine->board : board;
+				if ( change.item )
+				{
+					mine->changed = true;
+				}
 				if ( perSecond == false )
 				{
-					ApplyChange( change, board );
+					ApplyChange( change, to );
 				}
 				else if ( change.op != Motion::ChangeOp::Set )
 				{
 					// Per second.
 					MotionStep::Change part = change;
 					part.value = change.value * dt;
-					ApplyChange( part, board );
+					ApplyChange( part, to );
 				}
 				else if ( firstOfWhile )
 				{
-					ApplyChange( change, board );
+					ApplyChange( change, to );
 				}
 				else
 				{

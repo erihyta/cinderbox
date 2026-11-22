@@ -936,6 +936,13 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 		}
 	}
 
+	// Its lines name the item's own fields ("item:gun.rounds", M287): which copy they are of.
+	if ( Contains( text, "item:" ) && kind.empty() == false && ownerItem == false )
+	{
+		const size_t first = text.find( '\n' ) + 1;
+		const bool carried = p.Get( "item", "hand" ).AsString() == "carried";
+		text.insert( first, "item\t" + kind + "\t" + ( carried ? "carried" : "hand" ) + "\n" );
+	}
 	// What the simulation's own compiler says about it.
 	std::vector<Motion> compiled;
 	std::string compileError, ignored;
