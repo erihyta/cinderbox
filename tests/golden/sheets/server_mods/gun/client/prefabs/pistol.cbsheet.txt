@@ -1,4 +1,4 @@
-rule motion line 9 head 0
+rule motion line 11 head 0
   name: text "Fire"
   trigger: text "use"
   conditions: texts
@@ -12,14 +12,14 @@ rule motion line 9 head 0
               kind: text "change"
               text: text "gun.ammo -= 1"
               guard: text ""
-              line: int 11
+              line: int 13
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.use"
               guard: text ""
-              line: int 12
-rule motion line 15 head 0
+              line: int 14
+rule motion line 17 head 0
   name: text "Dry"
   trigger: text "use"
   conditions: texts
@@ -33,20 +33,20 @@ rule motion line 15 head 0
               kind: text "change"
               text: text "gun.reloading = 1"
               guard: text ""
-              line: int 17
+              line: int 19
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.use_failed"
               guard: text ""
-              line: int 18
+              line: int 20
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.reload"
               guard: text ""
-              line: int 19
-rule motion line 22 head 0
+              line: int 21
+rule motion line 24 head 0
   name: text "Reload"
   trigger: text "press"
   action: text "reload"
@@ -60,21 +60,21 @@ rule motion line 22 head 0
               kind: text "change"
               text: text "gun.reloading = 1"
               guard: text ""
-              line: int 23
+              line: int 25
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.reload"
               guard: text ""
-              line: int 24
-rule CbReaction line 29 head 27
+              line: int 26
+rule CbReaction line 31 head 29
   when: int 0
   event: text "item.use"
   subject: text "^^"
   scene: text "res://vfx/muzzle_flash.tscn"
   scene_parent: text "Muzzle"
   scene_lifetime: float 0.3
-rule CbReaction line 31 head 27
+rule CbReaction line 33 head 29
   when: int 0
   event: text "item.use"
   subject: text "^^"
@@ -84,7 +84,7 @@ rule CbReaction line 31 head 27
   volume_db: float -5
   pitch_jitter: float 0.06
   max_distance: float 70
-rule CbReaction line 37 head 34
+rule CbReaction line 39 head 36
   when: int 0
   event: text "item.reach"
   subject: text "^^"
@@ -92,7 +92,7 @@ rule CbReaction line 37 head 34
   place_node: text "Muzzle"
   scene: text "res://vfx/tracer.tscn"
   scene_lifetime: float 0.06
-rule CbReaction line 43 head 40
+rule CbReaction line 45 head 42
   when: int 0
   event: text "item.use2"
   subject: text "^^"
@@ -100,7 +100,7 @@ rule CbReaction line 43 head 40
   place_node: text "Muzzle"
   scene: text "res://vfx/scan_beam.tscn"
   scene_lifetime: float 0.15
-rule CbReaction line 45 head 40
+rule CbReaction line 47 head 42
   when: int 0
   event: text "item.use2"
   subject: text "^^"
@@ -110,13 +110,13 @@ rule CbReaction line 45 head 40
   volume_db: float -4
   pitch_scale: float 1.8
   max_distance: float 25
-rule CbPrediction line 48 head 0 prediction
+rule CbPrediction line 50 head 0 prediction
   action: text "use2"
   cue: text "item.use2"
   conditions: texts
     - "!gun.reloading and !combat.dead"
   cooldown: float 0.95
-rule CbReaction line 55 head 52
+rule CbReaction line 57 head 54
   when: int 0
   event: text "item.use_failed"
   subject: text "^^"
@@ -125,7 +125,7 @@ rule CbReaction line 55 head 52
   sound: text "res://assets/sfx/dry_click.wav"
   volume_db: float -8
   max_distance: float 12
-rule CbReaction line 61 head 58
+rule CbReaction line 63 head 60
   when: int 0
   event: text "item.reload"
   subject: text "^^"
@@ -134,7 +134,7 @@ rule CbReaction line 61 head 58
   sound: text "res://assets/sfx/reload.wav"
   volume_db: float -10
   max_distance: float 25
-rule CbReaction line 67 head 64
+rule CbReaction line 69 head 66
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -145,7 +145,7 @@ rule CbReaction line 67 head 64
   volume_db: float -16
   pitch_jitter: float 0.3
   max_distance: float 30
-rule CbReaction line 68 head 64
+rule CbReaction line 70 head 66
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -154,7 +154,7 @@ rule CbReaction line 68 head 64
   place: int 1
   scene: text "res://vfx/bullet_spark.tscn"
   scene_lifetime: float 1
-rule CbReaction line 74 head 71
+rule CbReaction line 76 head 73
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -165,7 +165,7 @@ rule CbReaction line 74 head 71
   volume_db: float -8
   pitch_jitter: float 0.15
   max_distance: float 40
-rule CbReaction line 75 head 71
+rule CbReaction line 77 head 73
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -174,7 +174,7 @@ rule CbReaction line 75 head 71
   place: int 1
   scene: text "res://vfx/hit_puff.tscn"
   scene_lifetime: float 1
-rule CbReaction line 81 head 78
+rule CbReaction line 83 head 80
   when: int 0
   event: text "item.hit"
   conditions: texts

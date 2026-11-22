@@ -1,4 +1,4 @@
-rule CbReaction line 8 head 5
+rule CbReaction line 10 head 7
   when: int 0
   event: text "mark.found"
   subject: text "$other"

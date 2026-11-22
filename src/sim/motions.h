@@ -45,7 +45,7 @@
 //   emit        a mod event at the player: looks react to it, state machines enter on it, server
 //               mods hear it
 //
-// Steps (a rules sheet's motion block: docs/rules-language.md):
+// Steps (a rules sheet's motion block: docs/sheets.md):
 //   step        what comes after the step before: it starts once its wait is over (`after` seconds
 //               since the step before started, then `when` its condition holds), at the earliest the
 //               tick after. With `within`, a wait that takes longer gives up: the step's timeout step

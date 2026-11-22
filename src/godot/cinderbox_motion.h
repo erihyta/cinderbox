@@ -1,7 +1,7 @@
 #pragma once
 
 // A mod's motions: what its players can do besides walking and jumping, with no code. A motion is a
-// block of a rules sheet (docs/rules-language.md); a CbMotionSet is the scene a mod's sets of them
+// block of a rules sheet (docs/sheets.md); a CbMotionSet is the scene a mod's sets of them
 // live in, with its sheets under it:
 //
 //   Moves               CbMotionSet   set_name "dash.moves"       (motion_sets/dash_moves.tscn)

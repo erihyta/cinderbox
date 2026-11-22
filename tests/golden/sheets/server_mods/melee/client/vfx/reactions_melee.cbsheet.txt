@@ -1,4 +1,4 @@
-rule CbReaction line 8 head 5
+rule CbReaction line 10 head 7
   when: int 0
   event: text "melee.swing"
   subject: text "$at"
@@ -8,7 +8,7 @@ rule CbReaction line 8 head 5
   volume_db: float -6
   pitch_jitter: float 0.08
   max_distance: float 30
-rule CbReaction line 15 head 12
+rule CbReaction line 17 head 14
   when: int 0
   event: text "melee.hit"
   subject: text "$at"

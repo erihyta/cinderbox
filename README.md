@@ -8,7 +8,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | The simulation | one deterministic C++ simulation on the server and every client, bit-exact across Windows, Linux and macOS/ARM64 and across Clang, GCC and MSVC |
 | Netcode | an authoritative server, client prediction and rollback, recordings that replay |
 | Rules | C++ server mods that change the world only through commands: `inventory`, `combat`, `gun`, `melee`, `brawl`, `pickup`, `deathmatch`, `waves`, ... |
-| The rules language | what moves on screen (an item's use, a dash, a hook, a skill) is a sheet the simulation runs, so it is predicted: [docs/rules-language.md](docs/rules-language.md) |
+| The rules language | what moves on screen (an item's use, a dash, a hook, a skill) is a sheet the simulation runs, so it is predicted: [docs/sheets.md](docs/sheets.md) |
 | Looks | Godot scenes with no scripts (reactions, predictions, HUD nodes), shipped as workshop items. Checked for scripts before they load; Godot's parsers are not safe against malformed files, so install only packs you trust ([ROADMAP.md](ROADMAP.md#6b-cooked-items)) |
 | Bodies | a player drives a body: its own character, another character's, or a loose prop; a mod drives bodies too (NPCs), which walk the server's navigation mesh |
 | The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
@@ -26,7 +26,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | [docs/characters.md](docs/characters.md) | characters, what an animation tree bakes to, layers and stances, aiming, animation packs, bodies and possession, NPCs |
 | [docs/items.md](docs/items.md) | held items, sockets, the inventory, grips, items in the world |
 | [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: a rules sheet's motion blocks (impulses, forces, casts, links, launches); what players weigh |
-| [docs/rules-language.md](docs/rules-language.md) | the rules language's reference: every line a sheet may hold, where it may stand, what it reads |
+| [docs/sheets.md](docs/sheets.md) | the rules language's reference: every line a sheet may hold, where it may stand, what it reads |
 | [docs/maps.md](docs/maps.md) | maps, templates and components |
 | [docs/testing.md](docs/testing.md) | the tools, the determinism checks, CI |
 | [docs/playtest.md](docs/playtest.md) | the playtest checklist, and playing two games against yourself |

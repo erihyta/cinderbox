@@ -1,3 +1,5 @@
+cbsheet 1
+
 # The second jump: in the air, once until the ground (when the server allows it: dash.double_jump_on).
 
 motion DoubleJump on press jump if not grounded and dash.double_jump_on

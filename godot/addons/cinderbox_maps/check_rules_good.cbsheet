@@ -1,24 +1,27 @@
-# check_rules.gd's sheet: an item's rules, its plain paths from the item.
-while melee.hot
-    set Barrel visible false
+cbsheet 1
 
-on melee.hit if $other:combat.health < 50
-    subject ^^
-    call Timer hide
-    shake 0.2 time 0.1
+# check_rules.gd's sheet: an item's rules, its plain paths from the item.
+react while melee.hot
+	set Barrel visible false
+
+react on melee.hit if combat.health of target < 50
+	as holder
+		call Timer hide
+		shake 0.2 for 0.1
 
 predict use as melee.swing if !combat.dead
-    cooldown 0.5
-    change melee.swings += 1
-    stance melee_swing on full
+	cooldown 0.5
+	change melee.swings += 1
+	stance melee_swing on full
 
-on test.two
-    at end
-    call Timer hide
-    at point
-    delay 0.5
-    call Barrel hide
+react on test.two
+	at end
+		call Timer hide
+	at point
+		after 0.5
+			call Barrel hide
 
-show Panel if combat.health > 0
-text Panel "HP {combat.health}" into tooltip_text if combat.health < 50
-bind Panel modulate:a = combat.health / 100 if ?combat.health
+hud Panel
+	show if combat.health > 0
+	text "HP {combat.health}" into tooltip_text if combat.health < 50
+	bind modulate:a = combat.health / 100 if known combat.health

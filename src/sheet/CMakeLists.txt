@@ -11,6 +11,7 @@ add_library(cb_sheet STATIC
 	sheet_dump.cpp
 	sheet_rules.cpp
 	sheet_text.cpp
+	sheet_v1.cpp
 	sheet_value.cpp
 )
 target_include_directories(cb_sheet PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -22,3 +23,9 @@ add_library(cb_sheet_bake STATIC sheet_bake.cpp)
 target_link_libraries(cb_sheet_bake PUBLIC cb_sheet cb_sim_data)
 set_target_properties(cb_sheet_bake PROPERTIES POSITION_INDEPENDENT_CODE ON)
 cb_target_warnings(cb_sheet_bake)
+
+# The command line tool (docs/sheets.md, Tools): cb_sheet check | fmt | convert FILE...
+add_executable(cb_sheet_tool cb_sheet.cpp)
+set_target_properties(cb_sheet_tool PROPERTIES OUTPUT_NAME cb_sheet)
+target_link_libraries(cb_sheet_tool PRIVATE cb_sheet)
+cb_target_warnings(cb_sheet_tool)

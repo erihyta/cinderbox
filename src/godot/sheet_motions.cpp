@@ -20,7 +20,7 @@
 #include <cmath>
 #include <vector>
 
-// A rules sheet's motion blocks, baked for the simulation (docs/rules-language.md). Moved out of
+// A rules sheet's motion blocks, baked for the simulation (docs/sheets.md). Moved out of
 // cinderbox_motion.cpp in M268, when the motion nodes it baked through were deleted; since M283 the
 // bake is the sheet compiler's (src/sheet, sheet_bake.h), and this is the scene it asks about the
 // nodes a sheet names: a find's shape, a marker, a path.

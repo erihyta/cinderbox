@@ -1,64 +1,60 @@
+cbsheet 1
+
 # reactions.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
 # from the scene's root.
 
 # PropSpawn
-on spawned
-    subject $at
-    kind prop
-    cooldown 0.05
-    at point
-    sound res://assets/sfx/prop_spawn.wav volume -8 jitter 0.15 range 40
-    scene res://vfx/prop_spawn.tscn life 3
+react on spawned if actor is prop
+	cooldown 0.05
+	as actor
+		at point
+			sound prop_spawn volume -8 jitter 0.15 range 40
+			create prop_spawn for 3
 
 # PropDestroy
-on destroying
-    subject $at
-    kind prop
-    cooldown 0.08
-    at point
-    sound res://assets/sfx/prop_destroy.wav volume -12 jitter 0.2 range 35
-    scene res://vfx/prop_destroy.tscn life 3
+react on destroying if actor is prop
+	cooldown 0.08
+	as actor
+		at point
+			sound prop_destroy volume -12 jitter 0.2 range 35
+			create prop_destroy for 3
 
 # Jump
-on jumped
-    subject $at
-    kind player
-    at point
-    sound res://assets/sfx/jump.wav volume -14 jitter 0.1 range 25
-    scene res://vfx/jump.tscn life 2
+react on jumped if actor is player
+	as actor
+		at point
+			sound jump volume -14 jitter 0.1 range 25
+			create jump for 2
 
 # Land
-on landed
-    subject $at
-    kind player
-    at point
-    sound res://assets/sfx/land.wav volume -10 jitter 0.12 range 30
-    scene res://vfx/land.tscn life 2
+react on landed if actor is player
+	as actor
+		at point
+			sound land volume -10 jitter 0.12 range 30
+			create land for 2
 
 # BouncyTrail
-on spawned
-    subject $at
-    template bouncy_ball
-    at follow
-    scene res://vfx/bouncy_trail.tscn life 25
+react on spawned if actor is bouncy_ball
+	as actor
+		at follow
+			create bouncy_trail for 25
 
 # Footstep
-on footstep
-    subject $at
-    kind player
-    at point
-    sound res://assets/sfx/footstep.wav volume -20 jitter 0.18 range 18
+react on footstep if actor is player
+	as actor
+		at point
+			sound footstep volume -20 jitter 0.18 range 18
 
 # Impact
-on impact if event.strength >= 2.5
-    subject $at
-    cooldown 0.03
-    at point
-    sound res://assets/sfx/impact.wav volume -18 jitter 0.25 range 30
+react on impact if event.strength >= 2.5
+	cooldown 0.03
+	as actor
+		at point
+			sound impact volume -18 jitter 0.25 range 30
 
 # HardImpact
-on impact if event.strength >= 8.0
-    subject $at
-    cooldown 0.1
-    at point
-    scene res://vfx/prop_destroy.tscn life 1.5
+react on impact if event.strength >= 8.0
+	cooldown 0.1
+	as actor
+		at point
+			create prop_destroy for 1.5

@@ -31,6 +31,7 @@
 #include "scenario.h"
 #include "sheet_dump.h"
 #include "sheet_rules.h"
+#include "sheet_v1.h"
 #include "simulation.h"
 
 #include "box3d/box3d.h"
@@ -1850,6 +1851,116 @@ void TestSheetsGolden()
 	std::printf( "    %zu sheets: %d as their golden files say, %d differ, %d without one%s\n", sheets.size(), same, differ, missing,
 				 update ? " (golden files written)" : "" );
 	CHECK( sheets.size() >= 40 && differ == 0 && missing == 0 );
+}
+
+// Version 1 of the sheets (M285: sheet_v1.h): every shipped sheet is version 1, in the one style;
+// version 0 converts to it meaning the same (each shipped sheet lowered to version 0 and converted
+// back); and version 1's own mistakes say their line.
+void TestSheetsVersion1()
+{
+	namespace fs = std::filesystem;
+	const fs::path root = CB_SOURCE_DIR;
+	auto read = []( const fs::path& path ) {
+		std::ifstream in( path, std::ios::binary );
+		std::stringstream text;
+		text << in.rdbuf();
+		return text.str();
+	};
+	int sheets = 0, version1 = 0, styled = 0, roundTrips = 0;
+	std::error_code error;
+	for ( fs::recursive_directory_iterator it( root, fs::directory_options::skip_permission_denied, error ), end; it != end; it.increment( error ) )
+	{
+		const std::string name = it->path().filename().string();
+		if ( it->is_directory() && ( name.empty() || name[0] == '.' || name == "bin" || name == "build" || name == "_deps" || name == "golden" ) )
+		{
+			it.disable_recursion_pending();
+			continue;
+		}
+		// (The check of mistakes is version 0's on purpose: version 0 is read until none ships.)
+		if ( it->is_regular_file() == false || it->path().extension() != ".cbsheet" || name == "check_rules_bad.cbsheet" || name == "rifle.cbsheet" )
+		{
+			continue;
+		}
+		++sheets;
+		const std::string text = read( it->path() );
+		if ( sheet::SheetVersion( text ) != 1 )
+		{
+			std::printf( "    %s: not version 1\n", fs::relative( it->path(), root ).generic_string().c_str() );
+			continue;
+		}
+		++version1;
+		std::string formatted, why;
+		if ( sheet::FormatVersion1( text, formatted, why ) && formatted == text )
+		{
+			++styled;
+		}
+		else
+		{
+			std::printf( "    %s: not in the one style %s\n", fs::relative( it->path(), root ).generic_string().c_str(), why.c_str() );
+		}
+		sheet::Strings errors;
+		const sheet::Lowered lowered = sheet::LowerVersion1( text, errors );
+		std::string again;
+		if ( errors.empty() && sheet::ConvertToVersion1( lowered.text, again, why ) && sheet::Meaning( again ) == sheet::Meaning( text ) )
+		{
+			++roundTrips;
+		}
+		else
+		{
+			std::printf( "    %s: lowered and converted back: %s\n", fs::relative( it->path(), root ).generic_string().c_str(), why.c_str() );
+		}
+	}
+	std::printf( "    %d sheets: %d version 1, %d in the one style, %d back from version 0 the same\n", sheets, version1, styled, roundTrips );
+	CHECK( sheets >= 40 && version1 == sheets && styled == sheets && roundTrips == sheets );
+
+	// A version 0 rule whose settings hold for the actions below them, as scopes.
+	const std::string v0 = "# a gun\non item.use if is_local and ?gun.ammo\n    subject ^^\n    scene res://vfx/flash.tscn under Muzzle life 0.3\n"
+						   "    at Muzzle\n    sound res://assets/sfx/shot.wav volume -5\n    sound res://other/far.ogg\n"
+						   "motion Throw on use if not motion.Dry and $other:combat.health > 0\n    item carried\n"
+						   "    then when x.release within 0.3\n    emit x.thrown\n    timeout\n    emit x.thrown\n"
+						   "show Line if combat.health > 0\ntext Line \"HP\" if ^^:combat.dead\n";
+	std::string v1, why;
+	const bool converted = sheet::ConvertToVersion1( v0, v1, why );
+	const std::string expected = "cbsheet 1\n\n# a gun\nreact on item.use if local and known gun.ammo\n\tas holder\n\t\tcreate flash under Muzzle for 0.3\n"
+								 "\t\tat Muzzle\n\t\t\tsound shot volume -5\n\t\t\tsound res://other/far.ogg\n"
+								 "motion Throw on use if not active Dry and combat.health of target > 0\n\tfor carrier\n"
+								 "\twait for x.release or 0.3\n\temit x.thrown\nhud Line\n\tshow if combat.health > 0\n\ttext \"HP\" if combat.dead of holder\n";
+	if ( v1 != expected )
+	{
+		std::printf( "    converted:\n%s    (%s)\n", v1.c_str(), why.c_str() );
+	}
+	CHECK( converted && v1 == expected );
+
+	// Version 1's mistakes, at their lines.
+	auto errorsOf = []( const std::string& text ) {
+		sheet::Strings errors;
+		sheet::ParseRules( text, errors );
+		return errors;
+	};
+	auto says = []( const sheet::Strings& errors, const std::string& line, const std::string& part ) {
+		for ( const std::string& e : errors )
+		{
+			if ( e.rfind( "line " + line + ":", 0 ) == 0 && e.find( part ) != std::string::npos )
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	const sheet::Strings bad = errorsOf( "cbsheet 1\non x\n\tsound a\nreact on y\n\tat Muzzle\nreact on z if actor is player\n\tsound b\n"
+										 "motion M on use\n\twait for a or 0.3\n\temit b\n\twait 1\nreact on w\n\tas holder\n\t\tsound c volume loud\n" );
+	CHECK( says( bad, "2", "react on" ) );					 // a version 0 rule
+	CHECK( says( bad, "5", "nothing is under it" ) );		 // a scope with no lines
+	CHECK( says( bad, "7", "must be under as actor" ) );	 // what its subject is, with no subject
+	CHECK( says( bad, "9", "last wait" ) );					 // a wait ... or before another wait
+	CHECK( says( bad, "14", "volume wants a number" ) );	 // version 0's mistake, at version 1's line
+	CHECK( says( errorsOf( "cbsheet 2\n" ), "1", "version 1" ) ); // a later version
+	// What it means: the same as version 0's spelling of it.
+	CHECK( sheet::Meaning( "cbsheet 1\nreact on a if actor is prop and local\n\tcooldown 0.1\n\tas actor\n\t\tat point\n\t\t\tshake 0.2 for 0.1\n" ) ==
+		   sheet::Meaning( "on a if is_local\n    subject $at\n    kind prop\n    cooldown 0.1\n    at point\n    shake 0.2 time 0.1\n" ) );
+	sheet::Strings none;
+	const std::vector<sheet::Rule> rules = sheet::ParseRules( "cbsheet 1\n\n# a\nreact on a\n\tsound b\n\tsound c\n", none );
+	CHECK( none.empty() && rules.size() == 2 && rules[0].line == 5 && rules[1].line == 6 && rules[0].head == 4 );
 }
 
 // The arena's walls (M280): the baked map (godot/maps/arena.cbmap) as the server loads it.
@@ -4456,7 +4567,7 @@ void TestItemMotions()
 	CHECK( carried() > carriedThen );
 }
 
-// A motion's steps (a rules sheet's motion block, docs/rules-language.md): a wait for a condition, a
+// A motion's steps (a rules sheet's motion block, docs/sheets.md): a wait for a condition, a
 // wait that gives up, a wait by time, guards decided when a step starts, an end, an edge trigger.
 void TestMotionSteps()
 {
@@ -4665,7 +4776,7 @@ void TestMotionSteps()
 	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nstep\t0\t0\n" ) == false );
 }
 
-// A motion's finds (a sheet's "find SHAPE", docs/rules-language.md): what a shape overlaps when its
+// A motion's finds (a sheet's "find SHAPE", docs/sheets.md): what a shape overlaps when its
 // step starts, each in turn: thrown away from the player, slowed for a while, said with who it was.
 // Which slot a player has changes nothing (M212): every player's motions run on the world as the
 // tick found it, and what they do to other players lands after the targets' own motions, on the
@@ -6752,7 +6863,7 @@ void TestMotionCasts()
 	CHECK( fails( "motion\tA\nwhen\tpress\tray\nprobe\t10\t0\nprobe_shape\t50\t0\t0\t0\n" ) );
 }
 
-// Numbers that are expressions (docs/rules-language.md): a strength read when it acts, from a field,
+// Numbers that are expressions (docs/sheets.md): a strength read when it acts, from a field,
 // from a curve over how far out a find's target is ("reach"), and "time" since a step started.
 void TestMotionCurves()
 {
@@ -6905,7 +7016,7 @@ void TestMotionCurves()
 	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tself\tcurve(C, 1)\tup\tnone\ncurve\tC\t0\t1\t0\t1\n" ) ); // named before it is
 }
 
-// Directions and places drawn in the scene (docs/rules-language.md): a marker's forward, turned with
+// Directions and places drawn in the scene (docs/sheets.md): a marker's forward, turned with
 // the look; a direction turned by degrees; a launch from a marker's place; a leap along a path.
 void TestMotionMarkers()
 {
@@ -7053,7 +7164,7 @@ void TestMotionMarkers()
 	CHECK( fails( "motion\tA\nwhen\tpress\tmark\nimpulse\tself\t1\tup\tnone\nturn\t0\t100\n" ) );						 // past straight up
 }
 
-// An item's own motions (a sheet's "owner item", docs/rules-language.md): a bomb whose fuse runs out
+// An item's own motions (a sheet's "owner item", docs/sheets.md): a bomb whose fuse runs out
 // throws what is near it, harder the nearer, said as its thrower's; one a mod pokes removes itself.
 // Run by the simulation where the item is, so every machine has the blast on the same tick.
 void TestItemBlast()
@@ -14058,6 +14169,7 @@ int main( int argc, char** argv )
 		{ "toss", TestToss },
 		{ "arena_walls", TestArenaWalls },
 		{ "sheets_golden", TestSheetsGolden },
+		{ "sheets_version1", TestSheetsVersion1 },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },

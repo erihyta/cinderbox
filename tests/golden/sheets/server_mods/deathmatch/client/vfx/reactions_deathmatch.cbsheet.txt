@@ -1,11 +1,11 @@
-rule CbReaction line 8 head 5
+rule CbReaction line 10 head 7
   when: int 0
   event: text "deathmatch.round_end"
   subject: text "$at"
   place: int 1
   sound: text "res://assets/sfx/round_end.wav"
   volume_db: float -4
-rule CbReaction line 14 head 11
+rule CbReaction line 16 head 13
   when: int 0
   event: text "deathmatch.round_end"
   conditions: texts
@@ -14,7 +14,7 @@ rule CbReaction line 14 head 11
   place: int 1
   flash_color: color 1 0.85 0.3 0.35
   flash_time: float 1
-rule CbReaction line 20 head 17
+rule CbReaction line 22 head 19
   when: int 0
   event: text "game.round_start"
   subject: text "$at"

@@ -1,4 +1,4 @@
-rule motion line 4 head 0
+rule motion line 6 head 0
   name: text "Slam"
   trigger: text "press"
   action: text "slam"
@@ -14,7 +14,7 @@ rule motion line 4 head 0
               kind: text "emit"
               text: text "slam.started"
               guard: text ""
-              line: int 7
+              line: int 9
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -26,7 +26,7 @@ rule motion line 4 head 0
                   direction: vec3 0 -1 0
                   replace: int 1
               guard: text ""
-              line: int 8
+              line: int 10
           - dict
               verb: text "move"
               kind: text "part"
@@ -36,7 +36,7 @@ rule motion line 4 head 0
                   parameters: dict
                     gravity: float 30
               guard: text ""
-              line: int 9
+              line: int 11
     - dict
         statements: list
           - dict
@@ -44,13 +44,13 @@ rule motion line 4 head 0
               kind: text "emit"
               text: text "slam.landed"
               guard: text ""
-              line: int 11
+              line: int 13
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "slam.big_landed"
               guard: text "( slam.big > 0 )"
-              line: int 13
+              line: int 15
           - dict
               verb: text "move for"
               kind: text "part"
@@ -61,26 +61,26 @@ rule motion line 4 head 0
                   parameters: dict
                     walk_speed: float 0
               guard: text "( slam.big > 0 )"
-              line: int 14
+              line: int 16
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "slam.small_landed"
               guard: text "not ( slam.big > 0 )"
-              line: int 16
+              line: int 18
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "slam.loud"
               guard: text "not ( slam.big > 0 ) and ( slam.loud )"
-              line: int 18
+              line: int 20
           - dict
               verb: text "change"
               kind: text "change"
               text: text "slam.count += 1"
               guard: text ""
-              line: int 19
-        line: int 10
+              line: int 21
+        line: int 12
         within: float 2
         wait: text "grounded"
     - dict
@@ -90,10 +90,10 @@ rule motion line 4 head 0
               kind: text "emit"
               text: text "slam.missed"
               guard: text ""
-              line: int 21
-        line: int 20
+              line: int 23
+        line: int 22
         timeout: bool true
-rule motion line 24 head 0
+rule motion line 26 head 0
   name: text "Land"
   trigger: text "when"
   expression: text "grounded"
@@ -107,8 +107,8 @@ rule motion line 24 head 0
               kind: text "emit"
               text: text "landed"
               guard: text ""
-              line: int 25
-rule motion line 28 head 0
+              line: int 27
+rule motion line 30 head 0
   name: text "Later"
   trigger: text "press"
   action: text "later"
@@ -122,7 +122,7 @@ rule motion line 28 head 0
               kind: text "emit"
               text: text "later.a"
               guard: text ""
-              line: int 30
+              line: int 32
     - dict
         statements: list
           - dict
@@ -130,12 +130,12 @@ rule motion line 28 head 0
               kind: text "emit"
               text: text "later.b"
               guard: text ""
-              line: int 32
+              line: int 34
           - dict
               verb: text "end"
               kind: text "end"
               guard: text "( later.stop )"
-              line: int 34
+              line: int 36
           - dict
               verb: text "move for"
               kind: text "part"
@@ -146,10 +146,10 @@ rule motion line 28 head 0
                   parameters: dict
                     friction: float 0
               guard: text ""
-              line: int 35
-        line: int 31
+              line: int 37
+        line: int 33
         after: float 0.5
-rule CbReaction line 38 head 37
+rule CbReaction line 40 head 39
   when: int 0
   event: text "slam.landed"
   shake: float 0.3

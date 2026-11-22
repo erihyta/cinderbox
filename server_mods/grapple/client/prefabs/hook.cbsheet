@@ -1,3 +1,5 @@
+cbsheet 1
+
 # The grappling hook: thrown at what is under the crosshair (its key, Q), it flies (80 m/s, out to
 # 40 m), takes hold of what it meets first and pulls you in on a rope reeled in at 4 m/s, so you
 # swing. It holds anything but moves only you: the rope and the pull act on the player alone. Using

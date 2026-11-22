@@ -1,4 +1,4 @@
-rule motion line 3 head 0
+rule motion line 5 head 0
   name: text "DoubleJump"
   trigger: text "press"
   action: text "jump"
@@ -14,7 +14,7 @@ rule motion line 3 head 0
               kind: text "emit"
               text: text "dash.double_jump"
               guard: text ""
-              line: int 5
+              line: int 7
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -25,4 +25,4 @@ rule motion line 3 head 0
                   frame: int 3
                   replace: int 1
               guard: text ""
-              line: int 6
+              line: int 8

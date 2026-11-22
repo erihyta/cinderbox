@@ -1,7 +1,7 @@
 #pragma once
 
 // A rules sheet, parsed (M283: the one parser of the sheet language, plain C++). The language is
-// docs/rules-language.md (motion blocks) and docs/looks.md (reactions, predictions, HUD lines);
+// docs/sheets.md (motion blocks) and docs/looks.md (reactions, predictions, HUD lines);
 // docs/step6-plan.md is where it goes next. Until M283 this was cue_rules.cpp's ParseRules, on
 // Godot's types: the same lines read the same way, to the same properties, so every sheet that
 // shipped parses as it did (the golden files: tests/golden/sheets).

@@ -1,36 +1,98 @@
-# Rules as a language
+# Sheets
 
-A **motion block** in a `.cbsheet` sheet is a motion the simulation runs: every machine (the server,
-every client) runs the same lines on the same input, so what a player does to bodies is predicted
-on their own screen and rolled back like movement. A mod's C++ keeps only what the server alone
-should decide (damage, score, rounds). This page is the reference: **everything on it is built**;
-what is planned is listed [at the end](#planned).
+A **sheet** (a `.cbsheet` file, a `CbSheet` resource a `CbRules` node holds) is an item's, a motion
+set's, a world's or a HUD's logic as lines of text. Its **motion blocks** are motions the
+simulation runs: every machine (the server, every client) runs the same lines on the same input, so
+what a player does to bodies is predicted on their own screen and rolled back like movement. Its
+**reactions, predictions and HUD lines** are the viewer's: sounds, effects, a guess of what the
+server will say, a label. A mod's C++ keeps only what the server alone should decide (damage,
+score, rounds). This page is the reference: **everything on it is built**; what is planned is listed
+[at the end](#planned), and where the language goes next is [step6-plan.md](step6-plan.md).
 
 ```
 a .cbsheet sheet ──bake──> motions/<set>.cfg ──> every simulation runs it (server and clients)
-    └── names nodes by path: shapes, markers, paths, curves (drawn in the 3D view)
+    │   └── names nodes by path: shapes, markers, paths, curves (drawn in the 3D view)
+    └── reactions, predictions, HUD lines ──> the viewer's nodes (CbReaction, CbPrediction, CbFieldBinding)
 
 a server mod (C++) ──> damage, score, rounds, shops, who wins: the server's only, a lead late
 ```
 
-| In the sheet (every simulation) | In a mod's C++ (the server) | In looks (the viewer) |
+| In the sheet's motions (every simulation) | In a mod's C++ (the server) | In the sheet's reactions (the viewer) |
 |---|---|---|
 | what moves a body, starts or ends a motion, finds who is near, changes a movement parameter, launches, breaks a wall, changes the player's fields | damage, health, score, inventories, round timers, anything secret | sounds, particles, shakes, HUD text: reactions and predictions |
 
 See also: [motions.md](motions.md) (what motions are, what conditions read, the baked file),
-[looks.md](looks.md#expressions) (the expression language).
+[looks.md](looks.md#expressions) (the expression language), [looks.md](looks.md#rules-sheets)
+(the editor's Sheet screen).
+
+## A sheet
+
+```
+cbsheet 1                                   # the version: the first line
+
+# The pistol: its trigger (every simulation) and how it looks (the viewer).
+motion Fire on use if gun.ammo > 0 and not gun.reloading
+	cooldown 0.2
+	change gun.ammo -= 1
+	emit item.use
+
+react on item.use
+	as holder
+		create muzzle_flash under Muzzle for 0.3
+		at Muzzle
+			sound gunshot volume -5 jitter 0.06 range 70
+
+predict use2 as item.use2 if !gun.reloading
+	cooldown 0.95
+
+hud Line
+	text "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
+```
+
+| Block | Runs | |
+|---|---|---|
+| `motion NAME TRIGGER [if EXPRESSION]` | **every simulation** | [below](#a-motion-block) |
+| `use [if EXPRESSION]` | the same: `motion Use on use [if EXPRESSION]` | an item's use |
+| `react on EVENT [if EXPRESSION]`, `react while EXPRESSION` | **the viewer**: effects, sounds, properties, shakes | [Reactions](#reactions) |
+| `predict ACTION as EVENT [if EXPRESSION]` | the viewer: its own press shown at once, as the cue the server will answer with | [Predictions](#predictions) |
+| `hud PATH` | the viewer: one control's lines | [HUD blocks](#hud-blocks) |
+
+- **One rule for scope: a line governs what is indented under it.** A block's lines are under it; an
+  `if`'s, a `find`'s, a `cast`'s, a reaction's `as` and `at` are further in. A tab is four columns;
+  `cb_sheet fmt` writes tabs.
+- **`#` starts a comment**, to the line's end. Blank lines mean nothing.
+- **A mistake is said with its line**: in the editor as you type, and when the look is published (a
+  name no mod declares too). Its rule is left out; the rest of the sheet still works.
+- **Version 0**, the spelling before M285 (no first line, `on`/`while` rules whose settings hold for
+  the actions below them, `then when`, `subject ^^`, ...), is still read, until nothing ships it.
+  [Version 0's words and their version 1 spelling](#version-0).
+
+### Words in expressions
+
+The same [expression language](looks.md#expressions) everywhere: a condition, a value, a HUD line.
+
+| Write | Means |
+|---|---|
+| `not a` / `!a`, `a and b` / `a && b`, `a or b` / `a \|\| b` | logic: both spellings |
+| `known gun.ammo` | its mod runs (the server declared it) |
+| `combat.health of target`, `combat.dead of holder` | another entity's field: `of me`, `holder`, `actor`, `target`, `local`, `world` |
+| `local` | the viewer's own player is the subject (looks only) |
+| `active Slam`, `active brawl.fist.Jab` | a motion is on now (its own sheet's by name, another item's by its kind) |
+| everything else | numbers, fields, `+ - * /`, comparisons, `( )`, `grounded`, `speed`, `held.jump`, `pressed.dash`, `using.gun.rifle`, `carried.KIND`, `hand.FIELD`, `event.value`, `time`, `distance`, `reach` |
+
+A HUD line's format (`"{brawl.cd_dash}s"`) is read as written: inside quotes, version 0's signs
+(`?name`, `$other:name`) for now.
 
 **The compiler** (M283): `src/sheet`, plain C++ with no Godot types: one parser of every block of a
-sheet (`sheet_rules.h`) and the bake of its motion blocks (`sheet_bake.h`, the scene it is in
-answering for the nodes a line names). The editor, the bake and the names check use it; the server,
-the cooker and the tests can. Every shipped sheet's parse is a golden file
-(`tests/golden/sheets`, the `sheets_golden` test), and every mod's committed bakes are checked to be
-what its sheets bake to now (the Godot checks). Where it goes next: [step6-plan.md](step6-plan.md).
+sheet (`sheet_rules.h`; version 1 read by lowering it to version 0, line for line: `sheet_v1.h`)
+and the bake of its motion blocks (`sheet_bake.h`, the scene it is in answering for the nodes a
+line names). The editor, the bake and the names check use it; the server, the cooker and the tests
+can. Every shipped sheet's parse is a golden file (`tests/golden/sheets`, the `sheets_golden` test),
+and every mod's committed bakes are checked to be what its sheets bake to now (the Godot checks).
 
 **The file** (M284): a sheet is a `.cbsheet` file, a `CbSheet` resource (the extension's own loader
 and saver: the file is the text, whole), held by a `CbRules` node in the scene (`sheet`). It opens in
-the editor's Sheet screen ([looks.md](looks.md#rules-sheets)). Before M284 it was a `.rules` file a
-`CbRules` node named by its path (`file`).
+the editor's Sheet screen ([looks.md](looks.md#rules-sheets)).
 
 ## What the language may not do
 
@@ -53,10 +115,10 @@ motion NAME TRIGGER [if EXPRESSION]
 
 - **`use [if EXPRESSION]`** is `motion Use on use [if EXPRESSION]`, word for word: an item's use.
   An item has one motion named `Use`; its `CbItem`'s *When used* fields join it.
-- A sheet's other blocks (`on`, `while`, `predict`, `show`, `text`, `bind`) are the viewer's
-  ([looks.md](looks.md)); the first word keeps the two apart.
+- A sheet's other blocks (`react`, `predict`, `hud`) are the viewer's; the first word keeps the
+  two apart.
 - Indenting counts: an `if`'s lines, a `find`'s and a `cast`'s are further in. A tab is four spaces.
-- In an **item's sheet** a motion is for whoever has the item out (`item carried`: whoever carries
+- In an **item's sheet** a motion is for whoever has the item out (`for carrier`: whoever carries
   it); in a **motion set** (`CbMotionSet`), everyone's.
 
 ### Triggers
@@ -71,7 +133,7 @@ motion NAME TRIGGER [if EXPRESSION]
 
 ### Settings
 
-As far in as the motion's first line, not under an `if`, before its first `then` or `after`.
+As far in as the motion's first line, not under an `if`, before its first `wait`.
 
 | Setting | Means |
 |---|---|
@@ -79,28 +141,31 @@ As far in as the motion's first line, not under an `if`, before its first `then`
 | `uses N`, `uses N refill ground`, `uses N refill after S` | charges |
 | `lasts S` | it ends S seconds after it starts |
 | `until EXPRESSION` | it ends when this holds (several lines: any) |
-| `item hand` / `item carried` | in an item's sheet: whoever has it out (the default), or whoever carries it |
-| `owner player` / `owner item` | who runs it: the player (the default), or the item while it lies in the world ([an item's motion](#an-items-motion)) |
+| `for holder` / `for carrier` | in an item's sheet: whoever has it out (the default), or whoever carries it |
+| `on item` | the item runs it, while it lies in the world ([an item's motion](#an-items-motion)); without it the player does |
 
 ### How a block runs
 
-- **Steps.** `then when EXPRESSION` or `after S` starts a new step. The first step is what happens
-  when the motion starts; each next one starts once its wait is over (`after` seconds since the step
-  before started, then its condition), at the earliest on the tick after.
+- **Steps.** `wait for EXPRESSION` or `wait S` starts a new step. The first step is what happens
+  when the motion starts; each next one starts once its wait is over (S seconds since the step
+  before started, or its condition), at the earliest on the tick after.
 - **Once and lasting.** A step's once lines (`change`, `emit`, `impulse`, `launch`, `break`,
   `find`, `end`) happen when it starts; its lasting ones (`force`, `move`, `link`, `follow`) act
   while it is the current step (`move for S`: S seconds from its start).
 - **`if` is decided when its step starts** and holds for the whole step. A condition asked every
   tick is a `while` motion's.
 - **Waiting for an animation's marker.** A marker's event is said after the motions have run in
-  its tick, so a motion hears it the tick after, in a trigger (`on EVENT`), a wait (`then when EVENT`)
+  its tick, so a motion hears it the tick after, in a trigger (`on EVENT`), a wait (`wait for EVENT`)
   or an `if` alike (before M240 a wait or an `if` never heard one). The fist waits for its punch's
   `brawl.fist.strike` (the hit) and then `brawl.fist.ready` (the next punch may start).
-- **Giving up.** `then when EXPRESSION within S` gives up after S seconds: its `timeout` lines run,
+- **Giving up.** `wait for EXPRESSION within S` gives up after S seconds: its `timeout` lines run,
   and the motion ends (without a `timeout`, it just ends).
+- **Or after a while.** `wait for EXPRESSION or S`: the lines after it run once it holds, or after S
+  seconds without it (a marker an animation may not have). For now it is its motion's last wait
+  (it is a `within` whose `timeout` repeats the lines: the frag's and the grenade's throws).
 - **It ends** when its `lasts` run out, its `until` holds, an `end` is reached, a wait gives up, or,
   with neither `lasts` nor `until`, when its last step's longest `move for` is over (one tick at
-  least). A motion that waits is on while it waits (`motion.<name>` is true), so a press does not
+  least). A motion that waits is on while it waits (`active <name>` is true), so a press does not
   start it again.
 - **Its effects on other players** land after their own motions, on the same tick, whatever their
   slots (M212); pushes from several players on one add up.
@@ -157,8 +222,9 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 
 | Line | Does |
 |---|---|
-| `then when EXPRESSION [within S]` | the next step, once this holds (giving up after S seconds) |
-| `after S` | the next step, S seconds after this one started |
+| `wait for EXPRESSION [within S]` | the next step, once this holds (giving up after S seconds) |
+| `wait for EXPRESSION or S` | the next lines, once this holds or after S seconds (its motion's last wait) |
+| `wait S` | the next step, S seconds after this one started |
 | `timeout` | what a `within` that gave up runs, before the motion ends |
 | `every S` | the lines after it in its step happen when the step starts and every S seconds while it is the step (64 times at most) |
 | `if EXPRESSION` / `else` | the lines further in happen or not, decided when the step starts |
@@ -200,9 +266,9 @@ An `Area3D` under an item is not part of the item's body.
 
 ## An item's motion
 
-`owner item` in an item's sheet: the item runs it, where it lies in the world, **in one tick**, when
+`on item` in an item's sheet: the item runs it, where it lies in the world, **in one tick**, when
 its event is said at it (`on expired`: its time is up, before it goes; `on EVENT`: a mod's, said at
-it). So: no `then`, `after` or `timeout`, no settings but `owner`, no `if` on its first line (an
+it). So: no `wait` or `timeout`, no settings but `on item`, no `if` on its first line (an
 `if` block is fine), and only what [the table's](#where-a-line-may-stand) last column allows. It has
 no look or keys, so it pushes along `up`, `world`, `away` or `to`. Its events are said as its
 thrower's (A the thrower, B the item); its expressions read its fields, the game's, and `speed`.
@@ -219,7 +285,7 @@ line acts, within the same limits as a number.
 | for each thing found | in a find: an `impulse`'s, a `change`'s, a `move for`'s values |
 | every tick | a `force`'s value and its `top`; a `link`'s length and reel |
 
-**Numbers, always**: the motion's own times (`cooldown`, `lasts`, `after`, `within`, `every`, `move
+**Numbers, always**: the motion's own times (`cooldown`, `lasts`, `wait`, `within`, `every`, `move
 for`'s seconds, `follow ... over`, a force's `ramp`), counts (`uses`, `max`), directions and places
 (`world (x, y, z)`, `turn`, `at`), and a cast's `range` and `speed`. They shape the motion, or are
 needed before anything is read.
@@ -277,7 +343,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	change brawl.cd_slam = 5
 	emit brawl.slam.started
 	impulse 25 along world (0, -1, 0) replace vertical
-	then when grounded
+	wait for grounded
 	emit brawl.slam.landed
 	find Shockwave players
 		impulse 9 along away
@@ -292,18 +358,15 @@ options, published as fields.
 
 ```
 motion Throwing on use
-	item carried
+	for carrier
 	cooldown 0.7
 	lasts 0.7
-	then when frag.release within 0.3
-	emit frag.thrown
-	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
-	timeout
+	wait for frag.release or 0.3
 	emit frag.thrown
 	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
 
 motion Blast on expired
-	owner item
+	on item
 	emit frag.blast
 	break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
 	find Blast bodies
@@ -330,11 +393,11 @@ The dash boots (`server_mods/dash/client/prefabs/boots.cbsheet`) and flight's je
 
 ```
 use if dash.charges > 0
-    change dash.charges -= 1
-    cooldown 0.4
-    emit dash.started
-    impulse 11 replace horizontal
-    move for 0.18 friction 0
+	change dash.charges -= 1
+	cooldown 0.4
+	emit dash.started
+	impulse 11 replace horizontal
+	move for 0.18 friction 0
 
 motion Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
 	change flight.fuel -= 30          # per second, in a while motion
@@ -342,22 +405,137 @@ motion Thrust while flight.jetpack_on and held.jump and not grounded and not fli
 	force 26 along up
 ```
 
+## Reactions
+
+```
+react on item.hit if event.value > 0 and local      # when: on an event (its "if" read then), or while
+	cooldown 0.1                                     # settings of the block: first
+	server only
+	as holder                                        # scopes: for the lines under them
+		at point
+			sound body_hit volume -8 jitter 0.15 range 40
+			create hit_puff for 1
+		at holder/Head
+			after 0.1
+				sound hit_marker volume -6
+```
+
+| Line | Means |
+|---|---|
+| `react on EVENT [if EXPRESSION]` | on the cue; its condition read then, about its lines' subject |
+| `react while EXPRESSION` | while it holds (a set property goes back when it stops) |
+| `cooldown S` | a setting: not more often than every S seconds |
+| `server only` | a setting: on the server's cue only, not on a press of the viewer's that is guessed |
+| `as holder` / `actor` / `target` / `me` / `local` / `world` / PATH | a scope: whose the lines are (whose fields the condition reads, who the cue must name). An item's holder, the cue's two (world reactions), the sheet's own entity, the viewer's player, the world. With none: `me` |
+| `at point` / `end` / `beam from PATH` / `follow` / PATH `[offset X Y Z]` | a scope: where what is created and heard goes: the cue's point or end (where a shot ended), a beam from a node to the end, following the subject, at a node. With none: where the `CbRules` node is |
+| `after S` | a scope: S seconds later |
+| `chance P` | a scope: only so often (0 to 1) |
+| `if actor is prop`, `if actor is bouncy_ball` (first in the `if`) | only when the subject is this kind of entity (`player`, `prop`, `static`, `ragdoll`, `item`) or comes from this template; its lines must be `as` that subject |
+
+| Action | Does |
+|---|---|
+| `sound NAME [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPRESSION]` | a sound: `NAME` is `assets/sfx/NAME.wav` of the sheet's project, or a full `res://` path |
+| `create NAME [under PATH] [for S]` | an effect: `vfx/NAME.tscn` of the sheet's project (or a full path), riding `under` a node, removed after S seconds |
+| `play PATH ANIMATION [off ANIMATION]` | an `AnimationPlayer` plays it (and the other when a `while` stops) |
+| `set PATH PROPERTY VALUE [blend S]`, `set PATH PROPERTY = EXPRESSION` | a property: a number, `true`, `false`, `rgb(r, g, b)`, `rgba(r, g, b, a)`, `(x, y, z)`, a word or `"text"`; or the expression's value |
+| `call PATH METHOD [ARGUMENT ...]` | a method of a node |
+| `shake AMOUNT [for S]` | the camera shakes (0 to 1) |
+| `flash rgba(r, g, b, a) [for S]` | the screen flashes |
+
+**Paths** are from the node the `CbRules` node is under (`Barrel`, `Model/Sparks`; `.` is that
+node), and climb no higher than the scene; or from an anchor: `holder/RightHand`, `actor/Hip`,
+`target/Head`, `local@pickup.target` (the entity a field names). Every action becomes one
+`CbReaction` node under the `CbRules` node (never saved with the scene), so the director, the guard
+and the Cue Preview see nothing new.
+
+## Predictions
+
+```
+predict use as gun.shot if gun.ammo > 0 and not gun.reloading
+	cooldown 0.19
+	held                      # again and again while held, every cooldown: automatic fire
+	change gun.ammo -= 1      # until the server answers; one line each
+	stance melee_swing on full
+```
+
+A prediction is the viewer's own press shown at once, as the cue a server mod will answer with (a
+`CbPrediction`). What every simulation runs is a motion's, not a prediction's.
+
+## HUD blocks
+
+```
+hud Skills/Dash
+	show if carried.brawl.dash_strike
+	text "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
+	text "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" into text if brawl.cd_dash > 0
+	bind modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
+```
+
+| Line | Means |
+|---|---|
+| `hud PATH` | the block: a control of the HUD scene, its path written once |
+| `show if EXPRESSION` | shown while it holds |
+| `text "FORMAT" [into PROPERTY] [if EXPRESSION]` | words, `{field}` filled in (several may take turns) |
+| `bind PROPERTY = EXPRESSION [if EXPRESSION]` | an expression into a property, or a part of one (`modulate:a`) |
+
+Each line becomes a `CbFieldBinding` on the control.
+
+## Version 0
+
+A sheet without the `cbsheet 1` line is read as version 0, the spelling before M285. `cb_sheet
+convert` writes it as version 1, comments kept, and writes nothing if the result would mean anything
+else (each action's settings, compared); every shipped sheet was converted so.
+
+| Version 0 | Version 1 |
+|---|---|
+| (no first line) | `cbsheet 1` |
+| `on EVENT` / `while EXPRESSION` at the start of a line, its settings holding for the actions below them | `react on EVENT` / `react while EXPRESSION`, scopes with the actions indented under them |
+| `subject ^` / `^^` / `$at` / `$other` / `$local` / `$world` | `as me` / `holder` / `actor` / `target` / `local` / `world` |
+| `kind prop`, `template NAME` | `if actor is prop`, `if actor is NAME` |
+| `delay S` | `after S` (a scope) |
+| `wait` | `server only` |
+| `scene res://vfx/NAME.tscn [under N] [life S]` | `create NAME [under N] [for S]` |
+| `sound res://assets/sfx/NAME.wav ...` | `sound NAME ...` |
+| `shake A time S`, `flash C time S` | `shake A for S`, `flash C for S` |
+| `show PATH ...`, `text PATH ...`, `bind PATH ...` | `hud PATH` with `show ...`, `text ...`, `bind ...` under it |
+| `then when EXPRESSION [within S]` | `wait for EXPRESSION [within S]` |
+| `then when X within S`, lines, `timeout`, the same lines, the end | `wait for X or S`, the lines |
+| `after S` (a step) | `wait S` |
+| `item hand` / `item carried`, `owner item` | `for holder` / `for carrier`, `on item` |
+| `?name`, `$other:name`, `^^:name`, `is_local`, `motion.NAME` | `known name`, `name of target`, `name of holder`, `local`, `active NAME` |
+| `^^/Head`, `$at/RightHand`, `$local@pickup.target` | `holder/Head`, `actor/RightHand`, `local@pickup.target` |
+
+Not in version 1 yet (no shipped sheet says them): `side`, `wait off`, `at here`.
+
+## Tools
+
+| Tool | |
+|---|---|
+| `cb_sheet check FILE...` | reads each sheet, its mistakes as `FILE:LINE: why`; exit code 1 if any. A motion's nodes (a find's shape) are the scene's: the editor and the bake check those |
+| `cb_sheet fmt [--check] FILE...` | writes each version 1 sheet in the one style: tabs, no spaces at the ends of lines, one blank line at most; what it means is checked to stay the same |
+| `cb_sheet convert FILE...` | version 0 to version 1, in place |
+| the editor's Sheet screen | colours, names offered, mistakes on their lines as you type ([looks.md](looks.md#rules-sheets)) |
+
+`cb_sheet` is built with the tests (`bin/cb_sheet`). `cb_tests sheets_version1` checks that every
+shipped sheet is version 1, in the one style, and converts back to itself from version 0.
+
 ## Grammar, in short
 
 ```
-block      := motion | use
+sheet      := "cbsheet 1" { block }
+block      := motion | use | react | predict | hud
 motion     := "motion" NAME trigger [ "if" expr ] NEWLINE INDENT { setting } { line } DEDENT
 use        := "use" [ "if" expr ] ...                          (exactly "motion Use on use" ...)
 trigger    := "on use" | "on press" ACTION | "on" EVENT | "while" expr | "when" expr
 setting    := "cooldown" num | "uses" num [ "refill" ( "ground" | "after" num ) ] | "lasts" num
-            | "until" expr | "item" ( "hand" | "carried" ) | "owner" ( "player" | "item" )
+            | "until" expr | "for" ( "holder" | "carrier" ) | "on item"
 line       := once | lasting | order | finding          (where each may stand: the table above)
 once       := "change" FIELD op amount | "emit" EVENT | "impulse" amount { option }
             | "launch" ( "new" KIND | "carried" ) { launch-option } | "break" { break-option }
             | "remove self" | "end"
 lasting    := "force" amount { option } | "move" [ "for" num ] { PARAM amount }
             | "link" { link-option } | "follow" NODE "over" num
-order      := "then when" expr [ "within" num ] | "after" num | "timeout" | "every" num
+order      := "wait for" expr [ ( "within" | "or" ) num ] | "wait" num | "timeout" | "every" num
             | "if" expr ... [ "else" ... ]
 finding    := "find" shape { find-option } ... | "cast" shape "range" num [ "speed" num ] [ "holds" ... ] [ "along" ( "look" | "facing" ) ] ...
 amount     := a number, or an expression up to the next option word
@@ -365,6 +543,15 @@ option     := "on" who | "along" direction [ "turn" vec2 ] | "replace" ... | "ki
             | "ramp" num | "react"
 who        := "self" | "target" | FIELD
 direction  := "look" | "move" | "facing" | "up" | "to" | "away" | "world" vec | NODE
+react      := "react" ( "on" EVENT [ "if" expr ] | "while" expr ) NEWLINE INDENT { "cooldown" num | "server only" } { rline } DEDENT
+rline      := ( "as" subject | "at" place | "after" num | "chance" num ) NEWLINE INDENT { rline } DEDENT
+            | "sound" ASSET { sound-option } | "create" ASSET [ "under" PATH ] [ "for" num ]
+            | "play" PATH ANIMATION [ "off" ANIMATION ] | "set" PATH PROPERTY ( value [ "blend" num ] | "=" expr )
+            | "call" PATH METHOD { value } | "shake" num [ "for" num ] | "flash" COLOR [ "for" num ]
+predict    := "predict" ACTION "as" EVENT [ "if" expr ] NEWLINE INDENT { "cooldown" num | "held" | "change" FIELD op num | "stance" NAME [ "on" LAYER ] } DEDENT
+hud        := "hud" PATH NEWLINE INDENT { "show if" expr | "text" STRING [ "into" PROPERTY ] [ "if" expr ] | "bind" PROPERTY "=" expr [ "if" expr ] } DEDENT
+subject    := "me" | "holder" | "actor" | "target" | "local" | "world" | PATH
+place      := "point" | "end" | "beam from" PATH | "follow" | PATH, then [ "offset" X Y Z ]
 ```
 
 ## The nodes
@@ -388,7 +575,7 @@ them after M243). What a sheet names stays a node: `CollisionShape3D` and `Area3
 |---|---|
 | Two slows on one player: the stronger, the newer, or multiplied? | the newer wins per parameter (today's); a `multiply` to stack |
 | May a sheet change another player's fields? | not at first: health is a mod's rule (`emit`, then the mod's C++) |
-| `owner item` for a map's prop (a mine, a door)? | later |
+| `on item` for a map's prop (a mine, a door)? | later |
 | A shape that follows a bone (a sword's arc)? | later: a cast along a pose marker over the swing's ticks |
 
 ## How it came to be
@@ -404,3 +591,4 @@ them after M243). What a sheet names stays a node: `CollisionShape3D` and `Area3
 | M213 | made regular: where a line may stand, `target`, `along world (x, y, z)`, `turned`, `at`, shapes from the feet, `change` in a find, `use` a motion; a motion of one step on for its longest `move for` |
 | M214 | every amount an expression |
 | M215 | this reference, rewritten from what is built; the motion lines in the debug HUD |
+| M283 to M285 | one compiler in plain C++ (`src/sheet`); a sheet a `.cbsheet` resource; version 1, one spelling for every block (`react`, `hud`, scopes, `wait for`, `create`, short names), every shipped sheet converted; this page moved from `sheets.md` |

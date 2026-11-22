@@ -1,4 +1,4 @@
-rule CbFieldBinding line 2 head 0
+rule CbFieldBinding line 5 head 0
   conditions: texts
     - "!combat.dead"
   hides: bool false

@@ -1,11 +1,11 @@
-rule CbReaction line 7 head 5
+rule CbReaction line 9 head 7
   when: int 1
   conditions: texts
     - "pickup.target and pickup.hold == 0"
   subject: text "$local"
   scene: text "res://vfx/prompt.tscn"
   scene_parent: text "$local@pickup.target"
-rule CbReaction line 12 head 10
+rule CbReaction line 14 head 12
   when: int 1
   conditions: texts
     - "pickup.target and pickup.hold > 0"

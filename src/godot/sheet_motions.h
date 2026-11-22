@@ -1,6 +1,6 @@
 #pragma once
 
-// A rules sheet's motion blocks (docs/rules-language.md), baked to the lines of a motions file of
+// A rules sheet's motion blocks (docs/sheets.md), baked to the lines of a motions file of
 // version 3 for the simulation (sim/motions.h): what a mod's players can do besides walking and
 // jumping, with no code. A set's sheets bake into its file (CbMotionSet, cinderbox_motion.h); an
 // item's into motions/<kind>.cfg (CbItem). Until M268 the motion nodes (CbMotion, CbProbe,

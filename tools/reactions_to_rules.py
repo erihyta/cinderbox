@@ -1,5 +1,9 @@
 """Turns a scene's CbReaction and CbPrediction nodes into a rules sheet beside it (scene.cbsheet) and
-one CbRules node at its root, holding it. The scene is rewritten; look at both before you commit them.
+one CbRules node at its root, holding it. The sheet is written in version 0; then convert it:
+
+    cb_sheet convert <sheet.cbsheet>  (docs/sheets.md, Tools)
+
+The scene is rewritten; look at both before you commit them.
 
     python tools/reactions_to_rules.py <project dir> <scene path inside it>
 

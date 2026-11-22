@@ -1,4 +1,4 @@
-rule motion line 8 head 0
+rule motion line 10 head 0
   name: text "Use"
   trigger: text "press"
   action: text "MODNAME_use"
@@ -13,13 +13,13 @@ rule motion line 8 head 0
               kind: text "change"
               text: text "MODNAME.charges -= 1"
               guard: text ""
-              line: int 10
+              line: int 12
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "MODNAME.moved"
               guard: text ""
-              line: int 11
+              line: int 13
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -30,7 +30,7 @@ rule motion line 8 head 0
                   frame: int 1
                   replace: int 2
               guard: text ""
-              line: int 12
+              line: int 14
           - dict
               verb: text "move for"
               kind: text "part"
@@ -41,4 +41,4 @@ rule motion line 8 head 0
                   parameters: dict
                     friction: float 0
               guard: text ""
-              line: int 13
+              line: int 15

@@ -27,5 +27,13 @@ func _initialize() -> void:
 	_check("a word, a name, a number, a name nobody declares", names.word_kind("sound") == "word" and names.word_kind("brawl.cd_dash") == "name"
 		and names.word_kind("3.5") == "number" and names.word_kind("brawl.nope") == "unknown" and names.word_kind("!combat.dead") == "name", [
 			names.word_kind("sound"), names.word_kind("brawl.cd_dash"), names.word_kind("3.5"), names.word_kind("brawl.nope"), names.word_kind("!combat.dead")])
+	# Version 1 (M285, docs/sheets.md): its words, its mistakes at its own lines.
+	var v1 := "cbsheet 1\n\nreact on brawl.jab.hitt\n\tas actor\n\t\tsound x\n\nreact on brawl.jab.hit\n\tat point\n"
+	var v1_problems: Dictionary = names.sheet_problems(v1)
+	_check("version 1: a name nobody declares, at its line", v1_problems.has(3) and String(v1_problems[3]).contains("brawl.jab.hit?"), v1_problems)
+	_check("version 1: a scope with nothing under it, at its line", v1_problems.has(8) and String(v1_problems[8]).contains("nothing is under it"), v1_problems)
+	_check("version 1's words are words: react, hud, create, as, known, of", names.word_kind("react") == "word" and names.word_kind("hud") == "word"
+		and names.word_kind("create") == "word" and names.word_kind("as") == "word" and names.word_kind("known") == "word" and names.word_kind("of") == "word")
+	_check("a good version 1 sheet says nothing", names.sheet_problems("cbsheet 1\nreact on brawl.jab.hit\n\tas actor\n\t\tsound x\n").is_empty())
 	print("sheet editor: ", "ok" if _failures == 0 else "%d FAILED" % _failures)
 	quit(0 if _failures == 0 else 1)

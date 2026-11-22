@@ -1,5 +1,8 @@
+cbsheet 1
+
 # The kit's HUD: the combo. Each skill's line is the skill's own HUD (ui/<skill>_hud.tscn, shown
 # while it is carried).
 
-show Combo if brawl.combo > 0
-text Combo "COMBO {brawl.combo}"
+hud Combo
+	show if brawl.combo > 0
+	text "COMBO {brawl.combo}"

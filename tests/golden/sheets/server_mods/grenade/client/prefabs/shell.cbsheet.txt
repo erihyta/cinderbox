@@ -1,4 +1,4 @@
-rule motion line 5 head 0
+rule motion line 7 head 0
   name: text "Throwing"
   trigger: text "use"
   item: text "carried"
@@ -14,7 +14,7 @@ rule motion line 5 head 0
               kind: text "emit"
               text: text "grenade.thrown"
               guard: text ""
-              line: int 10
+              line: int 12
           - dict
               verb: text "launch"
               kind: text "part"
@@ -27,8 +27,8 @@ rule motion line 5 head 0
                   ahead: float 0.8
                   seconds: float 4
               guard: text ""
-              line: int 11
-        line: int 9
+              line: int 13
+        line: int 11
         within: float 0.3
         wait: text "grenade.release"
     - dict
@@ -38,7 +38,7 @@ rule motion line 5 head 0
               kind: text "emit"
               text: text "grenade.thrown"
               guard: text ""
-              line: int 13
+              line: int 12
           - dict
               verb: text "launch"
               kind: text "part"
@@ -51,6 +51,6 @@ rule motion line 5 head 0
                   ahead: float 0.8
                   seconds: float 4
               guard: text ""
-              line: int 14
-        line: int 12
+              line: int 13
+        line: int 11
         timeout: bool true

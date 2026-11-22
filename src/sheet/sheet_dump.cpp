@@ -2,6 +2,8 @@
 
 #include "sheet_text.h"
 
+#include <algorithm>
+
 namespace cb::sheet
 {
 
@@ -18,7 +20,17 @@ std::string Quoted( const std::string& text )
 	return out + "\"";
 }
 
-void Write( const Value& v, const std::string& indent, std::string& out )
+DictEntries InOrder( const Dict& dict, bool meaning )
+{
+	DictEntries entries = dict.Entries();
+	if ( meaning )
+	{
+		std::stable_sort( entries.begin(), entries.end(), []( const auto& a, const auto& b ) { return a.first < b.first; } );
+	}
+	return entries;
+}
+
+void Write( const Value& v, const std::string& indent, std::string& out, bool meaning )
 {
 	switch ( v.type() )
 	{
@@ -61,44 +73,60 @@ void Write( const Value& v, const std::string& indent, std::string& out )
 			for ( size_t i = 0; i < list.size(); ++i )
 			{
 				out += indent + "  - ";
-				Write( list[i], indent + "    ", out );
+				Write( list[i], indent + "    ", out, meaning );
 			}
 			break;
 		}
 		case Value::Type::Dict:
 		{
-			const Dict dict = v.AsDict();
 			out += "dict\n";
-			for ( const auto& [key, value] : dict.Entries() )
+			for ( const auto& [key, value] : InOrder( v.AsDict(), meaning ) )
 			{
+				if ( meaning && key == "line" )
+				{
+					continue;
+				}
 				out += indent + "  " + key + ": ";
-				Write( value, indent + "  ", out );
+				Write( value, indent + "  ", out, meaning );
 			}
 			break;
 		}
 	}
 }
 
-} // namespace
-
-std::string Dump( const std::vector<Rule>& rules, const Strings& errors )
+std::string DumpWith( const std::vector<Rule>& rules, const Strings& errors, bool meaning )
 {
 	std::string out;
 	for ( const std::string& error : errors )
 	{
-		out += "error " + Quoted( error ) + "\n";
+		// ("line N: why": without its N when only the meaning is asked.)
+		const size_t colon = error.find( ": " );
+		const bool numbered = meaning && error.rfind( "line ", 0 ) == 0 && colon != std::string::npos;
+		out += "error " + Quoted( numbered ? error.substr( colon + 2 ) : error ) + "\n";
 	}
 	for ( const Rule& rule : rules )
 	{
-		out += "rule " + rule.type + " line " + std::to_string( rule.line ) + " head " + std::to_string( rule.head ) +
+		out += "rule " + rule.type + ( meaning ? std::string() : " line " + std::to_string( rule.line ) + " head " + std::to_string( rule.head ) ) +
 			   ( rule.prediction ? " prediction" : "" ) + "\n";
-		for ( const auto& [key, value] : rule.properties.Entries() )
+		for ( const auto& [key, value] : InOrder( rule.properties, meaning ) )
 		{
 			out += "  " + key + ": ";
-			Write( value, "  ", out );
+			Write( value, "  ", out, meaning );
 		}
 	}
 	return out;
+}
+
+} // namespace
+
+std::string Dump( const std::vector<Rule>& rules, const Strings& errors )
+{
+	return DumpWith( rules, errors, false );
+}
+
+std::string DumpMeaning( const std::vector<Rule>& rules, const Strings& errors )
+{
+	return DumpWith( rules, errors, true );
 }
 
 } // namespace cb::sheet

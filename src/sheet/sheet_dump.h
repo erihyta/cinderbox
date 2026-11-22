@@ -14,4 +14,8 @@ namespace cb::sheet
 
 std::string Dump( const std::vector<Rule>& rules, const Strings& errors );
 
+// The same without line numbers (a rule's line and head, a statement's "line") and with every
+// dictionary's keys in order: what two spellings of a sheet are compared by (sheet_v1.h, Meaning).
+std::string DumpMeaning( const std::vector<Rule>& rules, const Strings& errors );
+
 } // namespace cb::sheet
