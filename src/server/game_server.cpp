@@ -52,10 +52,7 @@ bool GameServer::Start( const ServerOptions& options )
 		// (another type is a mistake), and the sheets' own.
 		if ( options.lookSheets )
 		{
-			for ( const auto& [path, text] : options.lookSheets( mod->Name() ) )
-			{
-				declarations.DeclareSheet( path, text );
-			}
+			declarations.DeclareSheets( options.lookSheets( mod->Name() ) );
 		}
 	}
 	for ( const std::string& error : declarations.Errors() )

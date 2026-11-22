@@ -20,6 +20,9 @@ event brawl.jab.hit
 event brawl.finisher.hit
 param inventory.start 1
 
+# The box a punch hits in, written once (M289: a word for some words).
+let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
+
 motion Jab on use if not linked and brawl.combo < 2
 	tags attack, punch
 	blocked by punch, guard
@@ -27,11 +30,11 @@ motion Jab on use if not linked and brawl.combo < 2
 	change brawl.combo += 1
 	change brawl.combo_left = 1.5
 	wait for brawl.fist.strike within 0.35
-	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
+	find hitbox
 		emit brawl.jab.hit
 		impulse 4 along facing
 	timeout
-	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
+	find hitbox
 		emit brawl.jab.hit
 		impulse 4 along facing
 	wait for brawl.fist.ready within 0.7
@@ -42,12 +45,12 @@ motion Finisher on use if brawl.combo >= 2
 	cooldown 0.3
 	change brawl.combo = 0
 	wait for brawl.fist.strike within 0.5
-	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
+	find hitbox
 		emit brawl.finisher.hit
 		impulse 70 along facing
 		impulse 5 along up
 	timeout
-	find box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
+	find hitbox
 		emit brawl.finisher.hit
 		impulse 70 along facing
 		impulse 5 along up

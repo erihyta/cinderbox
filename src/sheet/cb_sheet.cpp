@@ -14,6 +14,7 @@
 #include "sheet_v1.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -89,6 +90,18 @@ int main( int argc, char** argv )
 		{
 			++failed;
 			continue;
+		}
+		// "uses res://..." (M289): from the folder above it with a project.godot.
+		{
+			namespace fs = std::filesystem;
+			fs::path project = fs::absolute( fs::path( file ) ).parent_path();
+			while ( project.has_parent_path() && project != project.parent_path() && fs::exists( project / "project.godot" ) == false )
+			{
+				project = project.parent_path();
+			}
+			cb::sheet::SetSheetLoader( [project]( const std::string& path, std::string& out ) {
+				return path.rfind( "res://", 0 ) == 0 && Read( ( project / path.substr( 6 ) ).string(), out );
+			} );
 		}
 		if ( command == "check" )
 		{

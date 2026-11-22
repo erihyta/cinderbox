@@ -171,10 +171,7 @@ bool DumpNames( const char* path, const std::string& lookSource )
 			{
 				cb::Sheets sheets;
 				cb::ListSheetsFolder( ( std::filesystem::path( lookSource ) / mod->Name() / "client" ).string(), sheets );
-				for ( const auto& [sheetPath, sheetText] : sheets )
-				{
-					declarations.DeclareSheet( sheetPath, sheetText );
-				}
+				declarations.DeclareSheets( sheets );
 			}
 			text += std::string( "mod\t" ) + info.name + "\n";
 		}

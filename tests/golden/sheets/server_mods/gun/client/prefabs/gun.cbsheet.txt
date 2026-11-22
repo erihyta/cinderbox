@@ -1,0 +1,101 @@
+rule motion line 32 head 0
+  name: text "Fire"
+  trigger: text "use"
+  conditions: texts
+    - "item:gun.rounds > 0 and not item:gun.reloading"
+  cooldown: float 0.2
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "item:gun.rounds -= 1"
+              guard: text ""
+              line: int 34
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.use"
+              guard: text ""
+              line: int 35
+rule motion line 38 head 0
+  name: text "Dry"
+  trigger: text "use"
+  conditions: texts
+    - "item:gun.rounds <= 0 and not item:gun.reloading"
+  cooldown: float 0.2
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "item:gun.reloading = 1"
+              guard: text ""
+              line: int 40
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "item:gun.reload_left = 1.5"
+              guard: text ""
+              line: int 41
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.use_failed"
+              guard: text ""
+              line: int 42
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.reload"
+              guard: text ""
+              line: int 43
+rule motion line 46 head 0
+  name: text "Reload"
+  trigger: text "press"
+  action: text "reload"
+  conditions: texts
+    - "not item:gun.reloading and item:gun.rounds < item:gun.magazine"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "item:gun.reloading = 1"
+              guard: text ""
+              line: int 47
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "item:gun.reload_left = 1.5"
+              guard: text ""
+              line: int 48
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "item.reload"
+              guard: text ""
+              line: int 49
+rule motion line 52 head 0
+  name: text "Reloaded"
+  trigger: text "when"
+  expression: text "item:gun.reloading and item:gun.reload_left <= 0"
+  item: text "carried"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "item:gun.reloading = 0"
+              guard: text ""
+              line: int 54
+          - dict
+              verb: text "change"
+              kind: text "change"
+              text: text "item:gun.rounds = item:gun.magazine"
+              guard: text ""
+              line: int 55

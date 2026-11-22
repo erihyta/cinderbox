@@ -392,6 +392,8 @@ public:
 	// an item's own: those are baked with the item), events and actions, as the mod's. A sheet's
 	// mistake or a name declared with another type is an error, said with the sheet's path.
 	void DeclareSheet( const std::string& path, const std::string& text );
+	// Every sheet of the mod's look at once (path, text): what one "uses" (M289) is among them.
+	void DeclareSheets( const std::vector<std::pair<std::string, std::string>>& sheets );
 	void SetLookItems( std::function<std::vector<LookItem>( const std::string& mod )> read )
 	{
 		m_lookItems = std::move( read );

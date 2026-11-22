@@ -27,6 +27,7 @@
 
 #include "sheet_rules.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -101,5 +102,38 @@ struct Declaration
 	double value = 0.0;			// a param's; an item field's start
 };
 std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& errors );
+
+// --- One sheet for many items (M289) --------------------------------------------------------------
+//
+//   cbsheet 1
+//   uses res://prefabs/gun.cbsheet          its declarations, lets and blocks, as if written here
+//   param gun.reload_seconds 2 s            a declaration of the same name: this sheet's instead
+//   field gun.rounds int on item = 30
+//   replace motion Fire when using.gun.rifle and gun.rounds > 0     a block of the same head: this one
+//       ...
+//
+//   let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look     a word for some words, wherever
+//   find hitbox max 1                                                it stands (not in quotes)
+//
+// A sheet uses one other at most, which uses none. A block's head is its first line (a motion's:
+// "motion NAME"). A line of the used sheet is said as "in PATH line N" at the uses line.
+
+// How a sheet a "uses" line names is read, by its res:// path: each host's (the editor's files, a
+// workshop item's, the command line's folder). None: "uses" is a mistake.
+using SheetLoader = std::function<bool( const std::string& path, std::string& text )>;
+void SetSheetLoader( SheetLoader loader );
+const SheetLoader& TheSheetLoader();
+
+// The sheet with what it uses in it: the text, and for each of its lines (from 1) the line of the
+// sheet it came from (kFromUsed + the used sheet's line, for one of the used sheet's).
+inline constexpr int kFromUsed = 100000;
+struct Composed
+{
+	std::string text;
+	std::vector<int> lineOf;
+	std::string used; // its path ("": it uses none)
+	int usesLine = 0;
+};
+Composed ComposeSheet( const std::string& text, Strings& errors );
 
 } // namespace cb::sheet
