@@ -468,7 +468,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			inFind = false;
 			continue;
 		}
-		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" && key != "change" )
+		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" && key != "change" && key != "apply" )
 		{
 			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit, a change or a param (with its seconds)" );
 		}
@@ -490,6 +490,26 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				if ( w.size() < 3 || CompileAnimExpr( w[2], schema, m.edge, exprError, warnings ) == false )
 				{
 					return fail( "when edge: " + ( w.size() < 3 ? std::string( "a condition" ) : exprError ) );
+				}
+				continue;
+			}
+			if ( w.size() >= 3 && ( w[1] == "release" || w[1] == "tap" || w[1] == "hold" ) )
+			{
+				// when release|tap|hold ACTION [seconds] (M288)
+				m.when = w[1] == "release" ? Motion::When::Release : w[1] == "tap" ? Motion::When::Tap : Motion::When::Hold;
+				const ModAction* action = schema.FindAction( w[2] );
+				m.action = action != nullptr ? action->bit : -1;
+				if ( action == nullptr )
+				{
+					warnings += m.name + ": no mod declares the action \"" + w[2] + "\": it never happens; ";
+				}
+				else if ( m.when != Motion::When::Release && action->bit >= kTimedActions )
+				{
+					return fail( "a tap or a hold is of one of the first " + std::to_string( kTimedActions ) + " actions" );
+				}
+				if ( w.size() >= 4 && Number( w[3], 0.0f, kMaxMotionSeconds, m.holdSeconds ) == false )
+				{
+					return fail( "when " + w[1] + " ACTION SECONDS" );
 				}
 				continue;
 			}
@@ -959,6 +979,50 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "a step's moves read at most " + std::to_string( kMoveValues ) + " values from expressions" );
 			}
 		}
+		else if ( key == "tags" || key == "blocked" || key == "cancels" )
+		{
+			// tags NAME..., blocked NAME..., cancels NAME... (M288): resolved with every motion of the
+			// server (CompileMotions).
+			if ( whole() == false )
+			{
+				return false;
+			}
+			std::vector<std::string>& names = key == "tags" ? m.tagNames : key == "blocked" ? m.blockedNames : m.cancelNames;
+			names.insert( names.end(), w.begin() + 1, w.end() );
+		}
+		else if ( key == "cooldown_shared" )
+		{
+			if ( whole() == false )
+			{
+				return false;
+			}
+			if ( w.size() < 2 || w[1].empty() )
+			{
+				return fail( "cooldown_shared wants a name" );
+			}
+			m.sharedCooldown = w[1];
+		}
+		else if ( key == "apply" )
+		{
+			// apply STATUS SECONDS: a status on the owner; in a find, on each player found (M288).
+			MotionStep::Apply apply;
+			if ( w.size() < 3 || amount( m, w[2], 0.0f, kMaxMotionSeconds, apply.seconds.number, apply.seconds.expr ) == false )
+			{
+				return fail( "apply wants a status and its seconds" );
+			}
+			apply.status = schema.FindStatus( w[1] );
+			apply.guard = guard;
+			if ( apply.status < 0 )
+			{
+				warnings += m.name + ": no mod declares the status \"" + w[1] + "\": nothing is applied; ";
+			}
+			if ( inFind )
+			{
+				step.finds.back().applies.push_back( { apply.status, apply.seconds.number, apply.seconds.expr } );
+				continue;
+			}
+			step.applies.push_back( apply );
+		}
 		else if ( key == "item" )
 		{
 			// item KIND hand|carried: whose board "item:FIELD" is (M287).
@@ -1344,7 +1408,7 @@ uint64_t MotionsOnAt( const MotionState& state, uint32_t tick )
 
 std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::string& warnings )
 {
-	auto motions = std::make_shared<Motions>();
+	std::shared_ptr<Motions> motions = std::make_shared<Motions>();
 	for ( const BoardField& f : schema.fields )
 	{
 		if ( f.timer && f.type == BoardType::Float && f.scope != BoardScope::Private )
@@ -1373,6 +1437,62 @@ std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::str
 	if ( motions->list.empty() )
 	{
 		return nullptr;
+	}
+	// How skills meet (M288): tags as bits (32 at most), the names a motion is blocked by or cancels
+	// as tags, motions or statuses, shared cooldowns as groups.
+	std::vector<std::string> tagTable, groups;
+	for ( const Motion& m : motions->list )
+	{
+		for ( const std::string& tag : m.tagNames )
+		{
+			if ( std::find( tagTable.begin(), tagTable.end(), tag ) == tagTable.end() && tagTable.size() < 32 )
+			{
+				tagTable.push_back( tag );
+			}
+		}
+	}
+	auto tagBit = [&]( const std::string& name ) -> uint32_t {
+		auto it = std::find( tagTable.begin(), tagTable.end(), name );
+		return it == tagTable.end() ? 0u : uint32_t( 1 ) << uint32_t( it - tagTable.begin() );
+	};
+	for ( Motion& m : motions->list )
+	{
+		for ( const std::string& tag : m.tagNames )
+		{
+			m.tags |= tagBit( tag );
+		}
+		auto resolve = [&]( const std::vector<std::string>& names, uint32_t& tags, std::vector<uint16_t>& motionList, std::vector<uint16_t>* statusList ) {
+			for ( const std::string& name : names )
+			{
+				if ( const uint32_t bit = tagBit( name ); bit != 0 )
+				{
+					tags |= bit;
+					continue;
+				}
+				if ( const int index = FindMotionByName( schema, name ); index >= 0 && size_t( index ) < motions->list.size() )
+				{
+					motionList.push_back( uint16_t( index ) );
+					continue;
+				}
+				if ( const int status = schema.FindStatus( name ); status >= 0 && statusList != nullptr )
+				{
+					statusList->push_back( uint16_t( status ) );
+					continue;
+				}
+				warnings += m.name + ": \"" + name + "\" is no tag, motion or status; ";
+			}
+		};
+		resolve( m.blockedNames, m.blockedTags, m.blockedMotions, &m.blockedStatuses );
+		resolve( m.cancelNames, m.cancelTags, m.cancelMotions, nullptr );
+		if ( m.sharedCooldown.empty() == false )
+		{
+			auto it = std::find( groups.begin(), groups.end(), m.sharedCooldown );
+			m.sharedGroup = int16_t( it - groups.begin() );
+			if ( it == groups.end() )
+			{
+				groups.push_back( m.sharedCooldown );
+			}
+		}
 	}
 	return motions;
 }
@@ -1419,10 +1539,49 @@ float MotionValueOf( const Motion& m, const MotionValue& value, const AnimGraphI
 	return v > lo ? ( v < hi ? v : hi ) : lo;
 }
 
+// A status on a player until `endTick` (M288): the same one again, the longer stands; a new one
+// takes a free place, or the place of the one that ends first.
+void ApplyMotionStatus( MotionState& state, int status, uint32_t endTick, uint32_t tick )
+{
+	if ( status < 0 || endTick <= tick )
+	{
+		return;
+	}
+	int free = -1, soonest = 0;
+	for ( int k = 0; k < kMaxStatuses; ++k )
+	{
+		MotionStatus& s = state.statuses[k];
+		if ( s.endTick > tick && s.status == uint16_t( status ) )
+		{
+			s.endTick = std::max( s.endTick, endTick );
+			return;
+		}
+		free = free < 0 && s.endTick <= tick ? k : free;
+		soonest = state.statuses[k].endTick < state.statuses[soonest].endTick ? k : soonest;
+	}
+	MotionStatus& to = state.statuses[free >= 0 ? free : soonest];
+	to.status = uint16_t( status );
+	to.endTick = endTick;
+}
+
+bool HasMotionStatus( const MotionState& state, int status, uint32_t tick )
+{
+	for ( const MotionStatus& s : state.statuses )
+	{
+		if ( s.endTick > tick && int( s.status ) == status )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 const char* MotionRefusalText( MotionRefusal::Why why )
 {
 	switch ( why )
 	{
+		case MotionRefusal::Why::Blocked:
+			return "something blocks it (a motion that is on, a status)";
 		case MotionRefusal::Why::Frozen:
 			return "the player may not act";
 		case MotionRefusal::Why::On:
@@ -1546,6 +1705,8 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		values.itemBoard = mine != nullptr ? &mine->board.values : nullptr;
 		values.motionState = ReadMotionState;
 		values.motionUser = &reader;
+		values.statuses = state.statuses;
+		values.tickRate = in.tickRate;
 		values.builtins[AnimExpr::Time] =
 			slot.lastTick != 0 && in.tick < slot.untilTick && in.tick >= MotionStepStart( slot ) ? float( in.tick - MotionStepStart( slot ) ) * dt : 0.0f;
 		// A while motion that was on last tick goes on without asking its cooldown again.
@@ -1599,6 +1760,19 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		{
 			triggered = turned;
 		}
+		else if ( m.when == Motion::When::Release || m.when == Motion::When::Tap || m.when == Motion::When::Hold )
+		{
+			// (M288) An action coming up, a short press, a long one.
+			const ActionBits bit = m.action >= 0 && m.action < kMaxActions ? ActionBits( 1 ) << m.action : 0;
+			const bool down = ( in.input->actions & bit ) != 0;
+			const bool was = ( state.prevActions & bit ) != 0;
+			const uint32_t since = m.action >= 0 && m.action < kTimedActions && state.downTicks[m.action] != 0 ? state.downTicks[m.action] - 1 : in.tick;
+			const uint32_t held = in.tick - since;
+			const uint32_t limit = std::max<uint32_t>( 1, Ticks( m.holdSeconds, in.tickRate ) );
+			triggered = bit != 0 && ( m.when == Motion::When::Release ? ( was && down == false )
+									  : m.when == Motion::When::Tap ? ( was && down == false && held < limit )
+																	: ( down && held == limit ) );
+		}
 		bool starts = triggered && in.canAct;
 		MotionRefusal::Why why = triggered && in.canAct == false ? MotionRefusal::Why::Frozen : MotionRefusal::Why::None;
 		auto refuse = [&]( MotionRefusal::Why reason ) {
@@ -1621,6 +1795,27 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		if ( starts && m.condition.Empty() == false && EvaluateAnimExpr( m.condition, values, 0.0f ) == 0.0f )
 		{
 			refuse( MotionRefusal::Why::Condition );
+		}
+		// (M288) What is on, or a status, may block it: a motion of a tag it is blocked by, a motion it
+		// names, a status it names.
+		if ( starts && ( wasOn == false ) && ( m.blockedTags != 0 || m.blockedMotions.empty() == false || m.blockedStatuses.empty() == false ) )
+		{
+			bool blocked = false;
+			for ( size_t j = 0; j < motions.list.size() && blocked == false; ++j )
+			{
+				const MotionSlot& other = state.slots[j];
+				const bool otherOn = j != i && other.lastTick != 0 && other.sinceTick <= in.tick && in.tick < other.untilTick;
+				blocked = otherOn && ( ( motions.list[j].tags & m.blockedTags ) != 0 ||
+									   std::find( m.blockedMotions.begin(), m.blockedMotions.end(), uint16_t( j ) ) != m.blockedMotions.end() );
+			}
+			for ( uint16_t status : m.blockedStatuses )
+			{
+				blocked = blocked || HasMotionStatus( state, status, in.tick );
+			}
+			if ( blocked )
+			{
+				refuse( MotionRefusal::Why::Blocked );
+			}
 		}
 		// A probe has to find something to hold on to, or the motion does not happen.
 		uint32_t effectTick = in.tick;
@@ -1689,6 +1884,15 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 					events.push_back( record );
 				}
 			}
+			// Statuses on the owner, when it happens (M288).
+			for ( const MotionStep::Apply& apply : step.applies )
+			{
+				if ( ( perSecond == false || firstOfWhile ) && MotionGuardHolds( slot, apply.guard ) )
+				{
+					const float seconds = MotionValueOf( m, apply.seconds, values, 0.0f, kMaxMotionSeconds );
+					ApplyMotionStatus( state, apply.status, in.tick + std::max<uint32_t>( 1, Ticks( seconds, in.tickRate ) ), in.tick );
+				}
+			}
 			bool ends = false;
 			for ( int8_t guard : step.ends )
 			{
@@ -1707,6 +1911,29 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				slot.guards = GuardBits( first, values );
 			}
 			bool ends = onceStatements( first, isWhile, wasOn == false );
+
+			// (M288) Starting, it ends what it cancels, and its shared cooldown starts for the others.
+			if ( wasOn == false )
+			{
+				for ( size_t j = 0; j < motions.list.size(); ++j )
+				{
+					MotionSlot& other = state.slots[j];
+					if ( j == i )
+					{
+						continue;
+					}
+					const bool otherOn = other.lastTick != 0 && other.sinceTick <= in.tick && in.tick < other.untilTick;
+					if ( otherOn && ( ( motions.list[j].tags & m.cancelTags ) != 0 ||
+									  std::find( m.cancelMotions.begin(), m.cancelMotions.end(), uint16_t( j ) ) != m.cancelMotions.end() ) )
+					{
+						other.untilTick = in.tick;
+					}
+					if ( m.sharedGroup >= 0 && motions.list[j].sharedGroup == m.sharedGroup && otherOn == false )
+					{
+						other.lastTick = now;
+					}
+				}
+			}
 
 			slot.lastTick = now;
 			if ( isWhile )
@@ -1799,6 +2026,13 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		{
 			active.push_back( { uint16_t( i ), startsNow || entered } );
 		}
+	}
+	// (M288) When each of the first actions went down: for a tap's and a hold's time.
+	for ( int b = 0; b < kTimedActions; ++b )
+	{
+		const ActionBits bit = ActionBits( 1 ) << b;
+		const bool down = ( in.input->actions & bit ) != 0;
+		state.downTicks[b] = down ? ( state.downTicks[b] != 0 ? state.downTicks[b] : in.tick + 1 ) : 0u;
 	}
 	state.prevActions = in.input->actions;
 }

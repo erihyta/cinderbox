@@ -7,5 +7,6 @@ event brawl.guard.up
 param inventory.start 1
 
 use
+	tags guard
 	emit brawl.guard.up
 	move jump_speed 0 sprint_speed 1.5 walk_speed 1.5

@@ -124,6 +124,17 @@ struct LayerHandle
 	}
 };
 
+// A status (M288): a timed flag on a player, by its place in the schema.
+struct StatusHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
 struct StanceHandle
 {
 	int index = -1;
@@ -284,6 +295,10 @@ public:
 	// need the character to define the mask.
 	LayerHandle Layer( const std::string& name );
 	StanceHandle Stance( const std::string& name );
+	// A status a player may have for a while (M288: stunned, rooted): its motions read it ("stunned",
+	// "remaining.stunned") and are blocked by it ("blocked by stunned"); Context::ApplyStatus and a
+	// sheet's "apply" give it. Declared again: the same one.
+	StatusHandle Status( const std::string& name );
 	// Slots (sim/types.h): how many each player has. The engine carries out selecting, moving and
 	// dropping from the players' own input; the mod that asks for slots says the rules (what a
 	// life is given, what a death drops). The largest count asked for wins; at most kMaxSlots.
@@ -708,6 +723,9 @@ public:
 	void RespawnAt( uint32_t target, b3Vec3 position, float yaw );
 	// A frozen player ignores movement and jump (mods decide what else a freeze means for them).
 	void Freeze( uint32_t target, bool frozen );
+	// A status on a player for some seconds (M288), on every machine from the next tick: the same one
+	// again, the longer stands.
+	void ApplyStatus( uint32_t target, StatusHandle status, float seconds );
 	// How one player moves (move_params.h): its walk speed, jump, gravity and the rest. The value
 	// is clamped to the parameter's range and stays until ResetMove gives the server's back (a
 	// respawn keeps it: only the mod lets it go). Not predicted: like every command it reaches the

@@ -103,6 +103,10 @@ struct AnimExpr
 		MotionReady,
 		MotionCooldown,
 		MotionUses,
+		// "stunned" (a status's name, M288): the player has it now; "remaining.stunned": the seconds
+		// it has left (index: schema status). Only a motion reads them (0 elsewhere).
+		Status,
+		StatusRemaining,
 	};
 	enum Builtin : uint8_t
 	{
@@ -345,6 +349,9 @@ struct AnimGraphInputs
 	uint32_t usingCount = 0;
 	// The curves "curve(...)" reads (the motion's own; null: 0).
 	const std::vector<AnimCurve>* curves = nullptr;
+	// The player's statuses (VarKind::Status; null: none), and the ticks a second.
+	const MotionStatus* statuses = nullptr;
+	uint32_t tickRate = 60;
 	// The board of the item a motion is about (VarKind::ItemField; null: 0).
 	const BoardValues* itemBoard = nullptr;
 	// A motion's state (VarKind::MotionReady, ...): read through the motions (sim/motions.h); null: 0.

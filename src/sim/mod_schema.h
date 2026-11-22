@@ -264,6 +264,8 @@ struct ModSchema
 	// AnimState stores their indices.
 	std::vector<std::string> layers;
 	std::vector<std::string> stances;
+	// Statuses (M288: a sheet's "status stunned"): timed flags on a player, by name.
+	std::vector<std::string> statuses;
 	// Kinds of items mods spawn ("melee.bat"; a look per kind in the mod's client item), their
 	// bodies when they lie in the world (same index), and the sockets they are held in: the hands
 	// every character has, then any a mod names (a character provides it as a CbSocket node, or the
@@ -288,6 +290,7 @@ struct ModSchema
 	// -1 when not declared.
 	int FindLayer( const std::string& name ) const;
 	int FindStance( const std::string& name ) const;
+	int FindStatus( const std::string& name ) const;
 	int FindItemKind( const std::string& name ) const;
 	int FindSocket( const std::string& name ) const;
 	int FindCharacter( const std::string& name ) const;

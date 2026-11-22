@@ -285,7 +285,7 @@ func _run() -> void:
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n",
-		"line 3: \"force\" cannot stand in a find: there a line is change, emit, impulse or move for")
+		"line 3: \"force\" cannot stand in a find: there a line is change, emit, impulse, move for or apply")
 	_refused("a move inside a find with no seconds", "motion A on press a\n\tfind sphere 2\n\t\tmove walk_speed 0\n", "line 3: \"move\" cannot stand in a find")
 	_refused("away outside a find", "motion A on press a\n\timpulse 3 along away\n", "what a find found")
 	_refused("a timeout's lasting statement", "motion A on press a\n\tthen when grounded within 1\n\ttimeout\n\tmove friction 0\n",
@@ -374,7 +374,7 @@ func _run_regular() -> void:
 
 	# Where a line may stand: one table, one way of saying no.
 	_refused("a launch in a find", "motion A on press a\n\tfind sphere 2\n\t\tlaunch carried\n",
-		"line 3: \"launch\" cannot stand in a find: there a line is change, emit, impulse or move for")
+		"line 3: \"launch\" cannot stand in a find: there a line is change, emit, impulse, move for or apply")
 	_refused("a link in a find", "motion A on press a\n\tfind sphere 2\n\t\tlink length 2\n", "line 3: \"link\" cannot stand in a find")
 	_refused("a change in a cast", "motion A on press a\n\tcast ray range 3\n\t\tchange t.x = 1\n",
 		"line 3: \"change\" cannot stand in a cast: there a line is emit, impulse, move for, move, force or link")

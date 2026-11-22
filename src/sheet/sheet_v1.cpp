@@ -291,7 +291,7 @@ std::string ExprToV0( const std::string& text )
 			i += 4;
 			continue;
 		}
-		if ( ( w == "known" || w == "active" || w == "ready" || w == "cooldown" || w == "uses" ) && spaceAt( i + 1 ) && wordAt( i + 2 ) != nullptr &&
+		if ( ( w == "known" || w == "active" || w == "ready" || w == "cooldown" || w == "uses" || w == "remaining" ) && spaceAt( i + 1 ) && wordAt( i + 2 ) != nullptr &&
 			 NameStart( ( *wordAt( i + 2 ) )[0] ) )
 		{
 			// (ready, cooldown, uses: a motion's state, M287.)
@@ -931,7 +931,7 @@ std::string WithoutUnits( const std::string& line, int number, Strings& errors )
 
 bool IsDeclaration( const std::string& verb )
 {
-	return verb == "field" || verb == "event" || verb == "action" || verb == "param";
+	return verb == "field" || verb == "event" || verb == "action" || verb == "param" || verb == "status";
 }
 
 // --- Converting: version 0 to version 1 -----------------------------------------------------------
@@ -1608,6 +1608,15 @@ std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& err
 			if ( ok == false || ( w.size() != 2 && d.everyone == false ) )
 			{
 				fail( "event NAME [everyone]" );
+				continue;
+			}
+		}
+		else if ( verb == "status" )
+		{
+			d.kind = Declaration::Kind::Status;
+			if ( ok == false || w.size() != 2 )
+			{
+				fail( "status NAME" );
 				continue;
 			}
 		}

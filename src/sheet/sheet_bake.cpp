@@ -596,6 +596,14 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 		}
 		text += "when\tpress\t" + word( "action" ) + "\n";
 	}
+	else if ( trigger == "release" || trigger == "tap" || trigger == "hold" )
+	{
+		if ( word( "action" ).empty() )
+		{
+			return fail( "on " + trigger + " wants one action" );
+		}
+		text += "when\t" + trigger + "\t" + word( "action" ) + ( p.Has( "seconds" ) ? "\t" + Num( p.Get( "seconds", 0.0 ).AsFloat() ) : std::string() ) + "\n";
+	}
 	else if ( trigger == "event" )
 	{
 		if ( word( "event" ).empty() )
@@ -658,6 +666,28 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 	if ( cooldown > 0.0 )
 	{
 		text += "cooldown\t" + Num( cooldown ) + "\n";
+	}
+	// How skills meet (M288).
+	for ( const char* key : { "tags", "blocked", "cancels" } )
+	{
+		const Strings names = p.Get( key, Strings() ).AsStrings();
+		if ( names.empty() == false )
+		{
+			std::string line = key;
+			for ( const std::string& name : names )
+			{
+				if ( Plain( name ) == false )
+				{
+					return fail( std::string( key ) + " \"" + name + "\" cannot have a tab or a #" );
+				}
+				line += "\t" + name;
+			}
+			text += line + "\n";
+		}
+	}
+	if ( p.Has( "cooldown_shared" ) )
+	{
+		text += "cooldown_shared\t" + p.Get( "cooldown_shared", "" ).AsString() + "\n";
 	}
 	if ( p.Get( "uses", 0 ).AsInt() > 0 )
 	{
@@ -754,6 +784,16 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 			else if ( what == "end" )
 			{
 				text += "end\n";
+			}
+			else if ( what == "apply" )
+			{
+				const std::string status = Strip( statement.Get( "text", "" ).AsString() );
+				const std::string seconds = Strip( statement.Get( "value", "" ).AsString() );
+				if ( Plain( status ) == false || Plain( seconds ) == false )
+				{
+					return fail( line + "apply STATUS for S, with no tab or #" );
+				}
+				text += "apply\t" + status + "\t" + ( Contains( seconds, " " ) ? "(" + seconds + ")" : seconds ) + "\n";
 			}
 			else if ( what == "part" )
 			{
@@ -879,6 +919,13 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 							return fail( at + "emit names one event" );
 						}
 						text += "emit\t" + event + "\n";
+						continue;
+					}
+					if ( each.Get( "kind", "" ).AsString() == "apply" )
+					{
+						// A status on each player found (M288).
+						const std::string seconds = Strip( each.Get( "value", "" ).AsString() );
+						text += "apply\t" + Strip( each.Get( "text", "" ).AsString() ) + "\t" + ( Contains( seconds, " " ) ? "(" + seconds + ")" : seconds ) + "\n";
 						continue;
 					}
 					if ( each.Get( "kind", "" ).AsString() == "change" )

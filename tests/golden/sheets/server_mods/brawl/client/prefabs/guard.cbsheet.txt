@@ -1,6 +1,8 @@
 rule motion line 9 head 0
   name: text "Use"
   trigger: text "use"
+  tags: texts
+    - "guard"
   steps: list
     - dict
         statements: list
@@ -9,7 +11,7 @@ rule motion line 9 head 0
               kind: text "emit"
               text: text "brawl.guard.up"
               guard: text ""
-              line: int 10
+              line: int 11
           - dict
               verb: text "move"
               kind: text "part"
@@ -21,4 +23,4 @@ rule motion line 9 head 0
                     sprint_speed: float 1.5
                     walk_speed: float 1.5
               guard: text ""
-              line: int 11
+              line: int 12

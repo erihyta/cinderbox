@@ -204,6 +204,7 @@ bool DumpNames( const char* path, const std::string& lookSource )
 	list( "item", schema.itemKinds );
 	list( "intent", schema.intents );
 	list( "stance", schema.stances );
+	list( "status", schema.statuses );
 	list( "layer", schema.layers );
 	list( "socket", schema.sockets );
 	for ( const cb::AnimPackInfo& pack : schema.animPacks )

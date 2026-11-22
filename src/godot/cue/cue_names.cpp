@@ -94,7 +94,7 @@ const Book& TheBook()
 	{
 		fresh.byKind["event"].insert( cue );
 	}
-	for ( const char* kind : { "field", "event", "item" } )
+	for ( const char* kind : { "field", "event", "item", "status" } )
 	{
 		const std::set<std::string>& names = fresh.byKind[kind];
 		fresh.declared.insert( names.begin(), names.end() );
@@ -497,7 +497,10 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 		sheet::Strings ignored;
 		for ( const sheet::Declaration& d : sheet::ReadDeclarations( std::string( utf8.get_data(), size_t( utf8.length() ) ), ignored ) )
 		{
-			const char* kind = d.kind == sheet::Declaration::Kind::Event ? "event" : d.kind == sheet::Declaration::Kind::Action ? "action" : "field";
+			const char* kind = d.kind == sheet::Declaration::Kind::Event	? "event"
+							   : d.kind == sheet::Declaration::Kind::Action ? "action"
+							   : d.kind == sheet::Declaration::Kind::Status ? "status"
+																			: "field";
 			local.byKind[kind].insert( d.name );
 			if ( d.kind != sheet::Declaration::Kind::Action )
 			{

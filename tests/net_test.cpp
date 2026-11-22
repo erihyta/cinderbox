@@ -4515,8 +4515,12 @@ void TestSword()
 			counts[1] += int( e.type ) == parried ? 1 : 0;
 			hits += int( e.type ) == hit ? 1 : 0;
 		}
-		const BoardField* stun = schema.FindField( "sword.stunned" );
-		stunned = stunned || ( stun != nullptr && attacker != 0 && server.BoardValue( attacker, stun->slot ) != 0 );
+		// (Stunned: a status, M288.)
+		const int stun = schema.FindStatus( "stunned" );
+		if ( stun >= 0 && attacker != 0 && server.FindEntity( attacker ).is_valid() )
+		{
+			stunned = stunned || HasMotionStatus( server.GetMotionState( server.FindEntity( attacker ) ), stun, server.Tick() );
+		}
 		const Character* c = server.PlayerCharacter( a.client->Slot() );
 		facing = facing || ( c != nullptr && c->faceCamera != 0 );
 	} );

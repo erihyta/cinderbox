@@ -2,7 +2,13 @@ rule motion line 23 head 0
   name: text "Jab"
   trigger: text "use"
   conditions: texts
-    - "not linked and brawl.combo < 2 and not motion.brawl.fist.Finisher"
+    - "not linked and brawl.combo < 2"
+  tags: texts
+    - "attack"
+    - "punch"
+  blocked: texts
+    - "punch"
+    - "guard"
   cooldown: float 0.3
   steps: list
     - dict
@@ -12,13 +18,13 @@ rule motion line 23 head 0
               kind: text "change"
               text: text "brawl.combo += 1"
               guard: text ""
-              line: int 25
+              line: int 27
           - dict
               verb: text "change"
               kind: text "change"
               text: text "brawl.combo_left = 1.5"
               guard: text ""
-              line: int 26
+              line: int 28
     - dict
         statements: list
           - dict
@@ -33,12 +39,12 @@ rule motion line 23 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 29
+                    line: int 31
                     verb: text "emit"
                     kind: text "emit"
                     text: text "brawl.jab.hit"
                 - dict
-                    line: int 30
+                    line: int 32
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -48,8 +54,8 @@ rule motion line 23 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 28
-        line: int 27
+              line: int 30
+        line: int 29
         within: float 0.35
         wait: text "brawl.fist.strike"
     - dict
@@ -66,12 +72,12 @@ rule motion line 23 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 33
+                    line: int 35
                     verb: text "emit"
                     kind: text "emit"
                     text: text "brawl.jab.hit"
                 - dict
-                    line: int 34
+                    line: int 36
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -81,19 +87,25 @@ rule motion line 23 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 32
-        line: int 31
+              line: int 34
+        line: int 33
         timeout: bool true
     - dict
         statements: list
-        line: int 35
+        line: int 37
         within: float 0.7
         wait: text "brawl.fist.ready"
-rule motion line 37 head 0
+rule motion line 39 head 0
   name: text "Finisher"
   trigger: text "use"
   conditions: texts
-    - "brawl.combo >= 2 and not motion.brawl.fist.Jab"
+    - "brawl.combo >= 2"
+  tags: texts
+    - "attack"
+    - "punch"
+  blocked: texts
+    - "punch"
+    - "guard"
   cooldown: float 0.3
   steps: list
     - dict
@@ -103,7 +115,7 @@ rule motion line 37 head 0
               kind: text "change"
               text: text "brawl.combo = 0"
               guard: text ""
-              line: int 39
+              line: int 43
     - dict
         statements: list
           - dict
@@ -118,12 +130,12 @@ rule motion line 37 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 42
+                    line: int 46
                     verb: text "emit"
                     kind: text "emit"
                     text: text "brawl.finisher.hit"
                 - dict
-                    line: int 43
+                    line: int 47
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -133,7 +145,7 @@ rule motion line 37 head 0
                         frame: int 2
                         target: int 3
                 - dict
-                    line: int 44
+                    line: int 48
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -143,8 +155,8 @@ rule motion line 37 head 0
                         frame: int 3
                         target: int 3
               guard: text ""
-              line: int 41
-        line: int 40
+              line: int 45
+        line: int 44
         within: float 0.5
         wait: text "brawl.fist.strike"
     - dict
@@ -161,12 +173,12 @@ rule motion line 37 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 47
+                    line: int 51
                     verb: text "emit"
                     kind: text "emit"
                     text: text "brawl.finisher.hit"
                 - dict
-                    line: int 48
+                    line: int 52
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -176,7 +188,7 @@ rule motion line 37 head 0
                         frame: int 2
                         target: int 3
                 - dict
-                    line: int 49
+                    line: int 53
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -186,15 +198,15 @@ rule motion line 37 head 0
                         frame: int 3
                         target: int 3
               guard: text ""
-              line: int 46
-        line: int 45
+              line: int 50
+        line: int 49
         timeout: bool true
     - dict
         statements: list
-        line: int 50
+        line: int 54
         within: float 0.9
         wait: text "brawl.fist.ready"
-rule motion line 54 head 0
+rule motion line 58 head 0
   name: text "ComboOver"
   trigger: text "while"
   expression: text "brawl.combo_left <= 0 and brawl.combo > 0"
@@ -207,4 +219,4 @@ rule motion line 54 head 0
               kind: text "change"
               text: text "brawl.combo = 0"
               guard: text ""
-              line: int 56
+              line: int 60

@@ -344,8 +344,11 @@ enum class CommandType : uint8_t
 	// (0: 1). A character without a ragdoll, a driven prop, a dead or downed one: nothing. (More
 	// speed for the whole body: an Impulse on the character first, in the same frame.)
 	Toss = 23,
+	// target (a player), index = status (schema order), value = ticks it lasts (M288). The same
+	// status again: the longer stands.
+	ApplyStatus = 24,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Toss );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::ApplyStatus );
 
 enum ImpulseMode : uint8_t
 {

@@ -275,6 +275,9 @@ MotionState Simulation::GetMotionState( flecs::entity e ) const
 		std::memcpy( &state.prevActions, bytes, 8 );
 		state.slots.resize( m_config.motions );
 		std::memcpy( static_cast<void*>( state.slots.data() ), bytes + 8, size_t( m_config.motions ) * sizeof( MotionSlot ) );
+		const uint8_t* tail = bytes + 8 + size_t( m_config.motions ) * sizeof( MotionSlot );
+		std::memcpy( static_cast<void*>( state.statuses ), tail, sizeof( state.statuses ) );
+		std::memcpy( state.downTicks, tail + sizeof( state.statuses ), sizeof( state.downTicks ) );
 	}
 	return state;
 }
@@ -285,9 +288,12 @@ void Simulation::SetMotionState( flecs::entity e, const MotionState& state )
 	{
 		return;
 	}
-	m_sizedScratch.resize( 8 + size_t( m_config.motions ) * sizeof( MotionSlot ) );
+	m_sizedScratch.resize( 8 + size_t( m_config.motions ) * sizeof( MotionSlot ) + kMotionStateTail );
 	std::memcpy( m_sizedScratch.data(), &state.prevActions, 8 );
 	state.slots.copy_to( reinterpret_cast<MotionSlot*>( m_sizedScratch.data() + 8 ), m_config.motions );
+	uint8_t* tail = m_sizedScratch.data() + 8 + size_t( m_config.motions ) * sizeof( MotionSlot );
+	std::memcpy( tail, static_cast<const void*>( state.statuses ), sizeof( state.statuses ) );
+	std::memcpy( tail + sizeof( state.statuses ), state.downTicks, sizeof( state.downTicks ) );
 	ecs_set_id( m_world.c_ptr(), e.id(), m_motionId, m_sizedScratch.size(), m_sizedScratch.data() );
 }
 
@@ -357,7 +363,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<RagdollPose>();
 	RegisterSnapComponent<HeldItem>();
 	RegisterSnapComponent<MoveOverrides>();
-	m_motionId = RegisterSizedComponent( "MotionState", m_config.motions > 0 ? 8 + uint32_t( m_config.motions ) * uint32_t( sizeof( MotionSlot ) ) : 0 );
+	m_motionId = RegisterSizedComponent( "MotionState", m_config.motions > 0 ? 8 + uint32_t( m_config.motions ) * uint32_t( sizeof( MotionSlot ) ) + kMotionStateTail : 0 );
 	RegisterSnapComponent<MotionHold>();
 	RegisterSnapComponent<Slots>();
 	RegisterSnapComponent<Container>();
@@ -4229,6 +4235,20 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			return;
 		}
 
+		case CommandType::ApplyStatus:
+		{
+			// A status on a player (M288: a mod's, ctx.ApplyStatus), for `value` ticks.
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() == false || HasMotionState( e ) == false || command.value <= 0 )
+			{
+				return;
+			}
+			MotionState state = GetMotionState( e );
+			ApplyMotionStatus( state, int( command.index ), m_globals.tick + uint32_t( command.value ), m_globals.tick );
+			SetMotionState( e, state );
+			return;
+		}
+
 		case CommandType::Drive:
 		{
 			flecs::entity e = FindEntity( command.target );
@@ -6161,6 +6181,18 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			{
 				SetBoard( item, itemBoard );
 			}
+		}
+		// Statuses on a player it found (M288).
+		if ( find.applies.empty() == false && ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self ) &&
+			 HasMotionState( target.end.entity ) )
+		{
+			MotionState theirs = GetMotionState( target.end.entity );
+			for ( const MotionFind::Apply& apply : find.applies )
+			{
+				const float seconds = MotionAmount( m, apply.seconds, apply.expr, values, 0.0f, 600.0f );
+				ApplyMotionStatus( theirs, apply.status, m_globals.tick + std::max<uint32_t>( 1, uint32_t( seconds * float( m_config.tickRate ) + 0.5f ) ), m_globals.tick );
+			}
+			SetMotionState( target.end.entity, theirs );
 		}
 		for ( int event : find.emits )
 		{

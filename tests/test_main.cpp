@@ -4675,6 +4675,115 @@ void TestMotionTimers()
 	CHECK( std::count_if( seen.begin(), seen.end(), []( const ModEventRecord& e ) { return e.type == 1; } ) == 2 );
 }
 
+// M288: how skills meet. A guard blocks an attack (a tag); a parry cancels one; a status blocks
+// it; two shots share a cooldown; a tap, a hold and a release of one key are told apart.
+void TestMotionsMeet()
+{
+	ModSchema schema;
+	schema.statuses = { "stunned" };
+	schema.events = { "t.attack", "t.guard", "t.tap", "t.hold", "t.release", "t.one", "t.two", "t.parry", "t.long" };
+	const char* actions[] = { "atk", "grd", "key", "one", "two", "stun", "parry" };
+	for ( uint8_t b = 0; b < 7; ++b )
+	{
+		schema.actions.push_back( { actions[b], b, "Q" } );
+	}
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tAttack\nwhen\tpress\tatk\ntags\tattack\nblocked\tguard\tstunned\nduration\t0.5\nemit\tt.attack\n"
+							 "motion\tGuard\nwhen\tpress\tgrd\ntags\tguard\nduration\t1\nemit\tt.guard\n"
+							 "motion\tParry\nwhen\tpress\tparry\ncancels\tattack\nemit\tt.parry\n"
+							 "motion\tTap\nwhen\ttap\tkey\t0.25\nemit\tt.tap\n"
+							 "motion\tHold\nwhen\thold\tkey\t0.25\nemit\tt.hold\n"
+							 "motion\tRelease\nwhen\trelease\tkey\nemit\tt.release\n"
+							 "motion\tOne\nwhen\tpress\tone\ncooldown\t1\ncooldown_shared\tgun\nemit\tt.one\n"
+							 "motion\tTwo\nwhen\tpress\ttwo\ncooldown\t1\ncooldown_shared\tgun\nemit\tt.two\n"
+							 "motion\tStun\nwhen\tpress\tstun\napply\tstunned\t0.5\n"
+							 "motion\tLong\nwhen\tedge\tremaining.stunned > 0.4\nemit\tt.long\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	ModSchema decoded;
+	std::vector<uint8_t> bytes;
+	EncodeSchema( schema, bytes );
+	CHECK( DecodeSchema( bytes.data(), bytes.size(), decoded ) && decoded.statuses == schema.statuses );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 10 );
+	if ( motions == nullptr || motions->list.size() != 10 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list[0].tags != 0 && motions->list[0].blockedTags == motions->list[1].tags && motions->list[0].blockedStatuses.size() == 1 &&
+		   motions->list[2].cancelTags == motions->list[0].tags && motions->list[6].sharedGroup == motions->list[7].sharedGroup &&
+		   motions->list[6].sharedGroup >= 0 );
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n, ActionBits held = 0 ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			f.inputs[0].actions = held;
+			sim.Step( f );
+			f.events.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	auto count = [&]( int type ) { return int( std::count_if( seen.begin(), seen.end(), [&]( const ModEventRecord& e ) { return int( e.type ) == type; } ) ); };
+	auto key = []( int b ) { return ActionBits( 1 ) << b; };
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	// The guard is on: an attack is blocked; once it is over, it is not.
+	step( 1, key( 1 ) );
+	step( 10 );
+	step( 1, key( 0 ) );
+	const int whileGuarding = count( 0 );
+	step( 60 );
+	step( 1, key( 0 ) );
+	const int afterGuard = count( 0 );
+	// An attack on, a parry cancels it.
+	step( 40 );
+	step( 1, key( 0 ) );
+	const bool attackOn = ( sim.EntityMotionsOn( p0 ) & 1u ) != 0;
+	step( 1, key( 6 ) );
+	const bool attackAfterParry = ( sim.EntityMotionsOn( p0 ) & 1u ) != 0;
+	// A tap (5 ticks down), a hold (30 ticks down): the hold says so at 0.25 s, still down.
+	step( 40 );
+	step( 5, key( 2 ) );
+	step( 2 );
+	step( 30, key( 2 ) );
+	step( 2 );
+	// Shared cooldown: One, then Two at once (refused), then Two a second later.
+	step( 1, key( 3 ) );
+	step( 1 );
+	step( 1, key( 4 ) );
+	const int twoAtOnce = count( 6 );
+	step( 70 );
+	step( 1, key( 4 ) );
+	// A status: stunned for half a second blocks an attack; "remaining stunned" read.
+	step( 1, key( 5 ) );
+	step( 1 );
+	const bool stunned = HasMotionStatus( sim.GetMotionState( sim.FindEntity( p0 ) ), 0, sim.Tick() );
+	const int beforeStunned = count( 0 );
+	step( 1, key( 0 ) );
+	const int whileStunned = count( 0 );
+	step( 40 );
+	step( 1, key( 0 ) );
+	std::printf( "    attacks: guarding %d, after %d; parried: on %d, then %d; taps %d, holds %d, releases %d; shared: two at once %d, later %d; "
+				 "stunned %d (attacks %d -> %d -> %d); remaining read %d\n",
+				 whileGuarding, afterGuard, int( attackOn ), int( attackAfterParry ), count( 2 ), count( 3 ), count( 4 ), twoAtOnce, count( 6 ),
+				 int( stunned ), beforeStunned, whileStunned, count( 0 ), count( 8 ) );
+	CHECK( count( 1 ) == 1 && whileGuarding == 0 && afterGuard == 1 );
+	CHECK( attackOn && attackAfterParry == false && count( 7 ) == 1 );
+	CHECK( count( 2 ) == 1 && count( 3 ) == 1 && count( 4 ) == 2 );
+	CHECK( count( 5 ) == 1 && twoAtOnce == 0 && count( 6 ) == 1 );
+	CHECK( stunned && whileStunned == beforeStunned && count( 0 ) == beforeStunned + 1 && count( 8 ) == 1 );
+}
+
 void TestMotionSteps()
 {
 	ModSchema schema;
@@ -14283,6 +14392,7 @@ int main( int argc, char** argv )
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
 		{ "motion_timers", TestMotionTimers },
+		{ "motions_meet", TestMotionsMeet },
 		{ "motion_steps", TestMotionSteps },
 		{ "motion_order", TestMotionOrder },
 		{ "motion_regular", TestMotionRegular },

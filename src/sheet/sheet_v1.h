@@ -72,6 +72,7 @@ std::string Meaning( const std::string& text );
 //   action reload key R                     a key a player presses (R by default)
 //   param gun.damage 25                     a number of the item whose scene holds the sheet: the
 //   param gun.reload_seconds 1.5 s          server's item property, and this sheet's word for it
+//   status stunned                          a timed flag on a player (M288): applied, read, blocking
 //
 // The server declares a sheet's fields, events and actions for the mod whose item has it (after
 // the mod's C++: a name the C++ declares with another type is a mistake when the server starts);
@@ -86,6 +87,7 @@ struct Declaration
 		Event,
 		Action,
 		Param,
+		Status, // (M288) a timed flag on a player: stunned
 	};
 	Kind kind = Kind::Field;
 	int line = 0;

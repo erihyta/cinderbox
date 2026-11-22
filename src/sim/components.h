@@ -325,11 +325,28 @@ struct MotionSlot
 	uint8_t unused[3] = {}; // (no padding the compiler fills: the slots are copied as bytes)
 };
 
+// A status a player has (M288: stunned, rooted): which (schema index), until when (the tick it ends;
+// it holds while the tick is below). endTick 0: none.
+struct MotionStatus
+{
+	uint16_t status = 0;
+	uint16_t reserved = 0;
+	uint32_t endTick = 0;
+};
+inline constexpr int kMaxStatuses = 8;
+// The actions whose time down a motion can ask (on tap, on hold): the first 16 action bits.
+inline constexpr int kTimedActions = 16;
+
 struct MotionState
 {
 	ActionBits prevActions = 0; // the mod actions held last tick: a press is one that was not
 	SmallList<MotionSlot, 16> slots;
+	// (M288) Its statuses (up to 8: the one that ends first goes for a new one), and the tick each of
+	// the first 16 actions went down, plus one (0: up).
+	MotionStatus statuses[kMaxStatuses] = {};
+	uint32_t downTicks[kTimedActions] = {};
 };
+inline constexpr uint32_t kMotionStateTail = uint32_t( sizeof( MotionStatus ) ) * kMaxStatuses + 4u * kTimedActions;
 
 // What a motion's probe holds on to (sim/motions.h): a line the motion threw at what the player
 // looked at. Its effects act on it ("hit"), and a link is a rope to it (a grappling hook). Players
