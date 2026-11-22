@@ -624,6 +624,9 @@ public:
 	// player (`ignoreNetId`: its own body, as a shot or a swing does) meets the other characters as
 	// that player saw them, on a hybrid server (lag compensation, M250); the world as it is.
 	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const;
+	// Whether the level (anything static: a wall, a wall that breaks, the ground) is in the way from
+	// one point to another: a blast's cover (M292).
+	bool LevelBetween( b3Vec3 from, b3Vec3 to ) const;
 
 	// What kind of entity a NetId is.
 	bool IsPlayer( uint32_t netId ) const

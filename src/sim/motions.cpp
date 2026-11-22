@@ -452,11 +452,11 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			// (M290) first: players before bodies; grab: what it finds is held.
 			for ( size_t k = 5; k < w.size(); ++k )
 			{
-				if ( w[k] != "first" && w[k] != "grab" )
+				if ( w[k] != "first" && w[k] != "grab" && w[k] != "sight" )
 				{
-					return fail( "a find's flags are first (players before bodies) and grab (held while its step lasts)" );
+					return fail( "a find's flags are first (players before bodies), grab (held while its step lasts) and sight (what the level does not hide)" );
 				}
-				( w[k] == "first" ? find.playersFirst : find.grab ) = true;
+				( w[k] == "first" ? find.playersFirst : w[k] == "grab" ? find.grab : find.inSight ) = true;
 			}
 			if ( find.grab && ( find.most > kGrabMost || &step != &parent ) )
 			{
@@ -520,7 +520,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			continue;
 		}
 		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" && key != "change" && key != "apply" &&
-			 key != "only" && key != "point" && key != "toward" && key != "marks" && ( key != "force" || step.finds.back().grab == false ) )
+			 key != "only" && key != "point" && key != "toward" && key != "marks" && key != "cap" && ( key != "force" || step.finds.back().grab == false ) )
 		{
 			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit, a change or a param (with its seconds); "
 						 "in a grab a force too" );
@@ -579,6 +579,18 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				return fail( "point is of a find, or of the break on the line before" );
 			}
+			continue;
+		}
+		if ( key == "cap" )
+		{
+			// cap S (M292): the impulse on the line before changes a velocity by S m/s at most.
+			std::vector<MotionEffect>& list = inFind ? step.finds.back().effects : step.effects;
+			float most = 0.0f;
+			if ( list.empty() || list.back().kind != MotionEffect::Kind::Impulse || w.size() < 2 || Number( w[1], 0.0f, kMaxMotionImpulse, most ) == false )
+			{
+				return fail( "cap wants a speed (m/s, to 200), after an impulse" );
+			}
+			list.back().speed = most;
 			continue;
 		}
 		if ( key == "toward" || key == "marks" )

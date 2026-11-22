@@ -156,6 +156,8 @@ struct MotionEffect
 	Push push = Push::Acceleration;
 	// Force. Acceleration, Force: the speed along the frame past which it pushes no more (0: none).
 	// Velocity: the speed it brings the target to.
+	// Impulse (M292, a sheet's "top"): the change of velocity it gives at most, m/s (0: none): a
+	// momentum's on something light.
 	float speed = 0.0f;
 	float ramp = 0.0f;	// Force: seconds from nothing to full strength
 	// Force: the other end (the player, or what the probe found) is pushed back. Link: the rope pulls
@@ -266,6 +268,9 @@ struct MotionFind
 	MotionPoint at;
 	bool playersFirst = false;
 	bool grab = false;
+	// (M292) Only what the level does not hide from its place: a line from a little above the place
+	// to each thing (its middle) that nothing static stops (a blast behind a wall does nothing).
+	bool inSight = false;
 	// Its lines' conditions (an if under it), each decided for each thing found: a bit each.
 	std::vector<AnimExpr> onlys;
 	// What happens to each: impulses (on what it found, unless they say), emits (with what it found,

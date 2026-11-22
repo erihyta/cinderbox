@@ -567,6 +567,11 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 				TakeAmount( w, i, forceStops, top );
 				amountInto( top, "speed", 5 );
 			}
+			else if ( verb != "force" && word == "top" && i + 1 < w.size() && Number( w[i + 1], value ) && value > 0.0 )
+			{
+				props["cap"] = value; // (M292: an impulse's change of velocity at most, m/s)
+				i += 2;
+			}
 			else if ( verb == "force" && word == "ramp" && i + 1 < w.size() && Number( w[i + 1], value ) )
 			{
 				props["ramp_in"] = value; // (a time of the motion's: a number)
@@ -1474,7 +1479,7 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				// find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first]; SHAPE:
 				// a node's path (an Area3D, a CollisionShape3D), sphere R, box (X,Y,Z), capsule R H. POINT: (X,Y,Z), a
 				// marker, look D, hit (M290). grab: the same, what it finds held while its step lasts.
-				const char* usage = verb == "find" ? "find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first], SHAPE a node's path, "
+				const char* usage = verb == "find" ? "find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first] [in sight], SHAPE a node's path, "
 													 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit"
 												   : "grab SHAPE [players] [bodies] [max N] [turned facing|look|none] [at POINT] [players first], SHAPE a node's path, "
 													 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit";
@@ -1515,7 +1520,12 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				for ( ; i < w.size() && ok; )
 				{
 					const std::string word = w[i].text;
-					if ( word == "players" && i + 1 < w.size() && w[i + 1].text == "first" )
+					if ( word == "in" && i + 1 < w.size() && w[i + 1].text == "sight" )
+					{
+						statement["sight"] = true; // (M292: what the level does not hide from its place)
+						i += 2;
+					}
+					else if ( word == "players" && i + 1 < w.size() && w[i + 1].text == "first" )
 					{
 						statement["first"] = true; // (M290: players before bodies, whatever is nearer)
 						i += 2;

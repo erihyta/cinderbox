@@ -628,6 +628,11 @@ int Context::SlotOf( uint32_t netId ) const
 	return -1;
 }
 
+bool Context::LevelBetween( b3Vec3 from, b3Vec3 to ) const
+{
+	return m_sim.LevelBetween( from, to );
+}
+
 bool Context::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const
 {
 	if ( m_hits != nullptr )

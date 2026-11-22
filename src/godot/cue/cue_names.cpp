@@ -639,7 +639,9 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 								"field", "event", "action", "param", "status", "timer", "shared", "private", "ready", "uses",
 								"remaining", "tags", "blocked", "by", "cancels", "release", "tap", "hold", "apply", "let",
 								// (M290's)
-								"grab", "toward", "throw", "marks", "first" };
+								"grab", "toward", "throw", "marks", "first",
+								// (M292's)
+								"sight" };
 
 } // namespace
 
