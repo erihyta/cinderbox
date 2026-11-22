@@ -929,6 +929,50 @@ std::string WithoutUnits( const std::string& line, int number, Strings& errors )
 	return out + code.substr( from ) + line.substr( hash );
 }
 
+// "let NAME = WORDS" (M289): NAME stands for the words wherever it is a word of a line (not in
+// quotes, not in a comment). The let lines themselves become blank.
+void ApplyLets( std::vector<std::string>& lines, Strings& errors )
+{
+	std::map<std::string, std::string> lets;
+	for ( size_t k = 0; k < lines.size(); ++k )
+	{
+		if ( Column( lines[k] ) != 0 || Blank( lines[k] ) )
+		{
+			continue;
+		}
+		const std::string code = CodeOf( lines[k] );
+		const std::vector<Word> w = WordsOf( code );
+		if ( w[0].text != "let" )
+		{
+			continue;
+		}
+		if ( w.size() < 4 || w[2].text != "=" || NameStart( w[1].text[0] ) == false )
+		{
+			errors.push_back( "line " + std::to_string( k + 1 ) + ": let NAME = WORDS" );
+		}
+		else
+		{
+			lets[w[1].text] = From( code, w, 3 );
+		}
+		lines[k].clear();
+	}
+	if ( lets.empty() )
+	{
+		return;
+	}
+	for ( std::string& line : lines )
+	{
+		const size_t hash = CommentAt( line );
+		std::string out;
+		for ( const Piece& p : PiecesOf( line.substr( 0, hash ), false ) )
+		{
+			auto it = p.word ? lets.find( p.text ) : lets.end();
+			out += it != lets.end() ? it->second : p.text;
+		}
+		line = out + line.substr( hash );
+	}
+}
+
 bool IsDeclaration( const std::string& verb )
 {
 	return verb == "field" || verb == "event" || verb == "action" || verb == "param" || verb == "status";
@@ -1366,6 +1410,7 @@ int SheetVersion( const std::string& text )
 Lowered LowerVersion1( const std::string& text, Strings& errors )
 {
 	std::vector<std::string> lines = LinesOf( text );
+	ApplyLets( lines, errors );
 	for ( size_t k = 0; k < lines.size(); ++k )
 	{
 		lines[k] = WithoutUnits( lines[k], int( k + 1 ), errors );
@@ -1475,6 +1520,194 @@ Lowered LowerVersion1( const std::string& text, Strings& errors )
 	return lowered;
 }
 
+namespace
+{
+
+std::vector<Declaration> ReadDeclarationsOf( const std::string& text, Strings& errors );
+
+SheetLoader& LoaderSlot()
+{
+	static SheetLoader loader;
+	return loader;
+}
+
+// A sheet's top-level parts: each a line at the line's start and the lines under it (blank lines and
+// comments among them), with its key: a declaration's kind and name, a block's head.
+struct Part
+{
+	std::string key;
+	bool replaces = false; // "replace BLOCK"
+	size_t first = 0, end = 0;
+};
+
+std::vector<Part> PartsOf( const std::vector<std::string>& lines )
+{
+	std::vector<Part> out;
+	for ( size_t k = 0; k < lines.size(); ++k )
+	{
+		if ( Blank( lines[k] ) || Column( lines[k] ) != 0 )
+		{
+			if ( out.empty() == false )
+			{
+				out.back().end = k + 1;
+			}
+			continue;
+		}
+		std::string code = CodeOf( lines[k] );
+		Part u;
+		u.first = k;
+		u.end = k + 1;
+		if ( code.rfind( "replace ", 0 ) == 0 )
+		{
+			u.replaces = true;
+			code = Strip( code.substr( 8 ) );
+		}
+		const std::vector<Word> w = WordsOf( code );
+		const std::string verb = w[0].text;
+		if ( ( IsDeclaration( verb ) || verb == "let" || verb == "motion" ) && w.size() >= 2 )
+		{
+			u.key = verb + " " + w[1].text;
+		}
+		else
+		{
+			// (A block's whole first line, its spaces made one.)
+			for ( const Word& one : w )
+			{
+				u.key += ( u.key.empty() ? "" : " " ) + one.text;
+			}
+		}
+		out.push_back( u );
+	}
+	return out;
+}
+
+} // namespace
+
+void SetSheetLoader( SheetLoader loader )
+{
+	LoaderSlot() = std::move( loader );
+}
+
+const SheetLoader& TheSheetLoader()
+{
+	return LoaderSlot();
+}
+
+Composed ComposeSheet( const std::string& text, Strings& errors )
+{
+	Composed out;
+	const std::vector<std::string> lines = LinesOf( text );
+	auto plain = [&]() {
+		out.text = text;
+		out.lineOf.clear();
+		for ( size_t k = 0; k < lines.size(); ++k )
+		{
+			out.lineOf.push_back( int( k + 1 ) );
+		}
+		return out;
+	};
+	// Its uses line: the first block after the version, "uses PATH".
+	std::vector<Part> own = PartsOf( lines );
+	const Part* uses = nullptr;
+	for ( const Part& u : own )
+	{
+		uses = u.key.rfind( "uses ", 0 ) == 0 ? &u : uses;
+	}
+	if ( uses == nullptr )
+	{
+		bool replaces = false;
+		for ( const Part& u : own )
+		{
+			if ( u.replaces )
+			{
+				errors.push_back( "line " + Number( int( u.first + 1 ) ) + ": replace is for a sheet that uses another" );
+				replaces = true;
+			}
+		}
+		(void)replaces;
+		return plain();
+	}
+	out.used = Strip( uses->key.substr( 5 ) );
+	out.usesLine = int( uses->first + 1 );
+	std::string usedText;
+	if ( TheSheetLoader() == nullptr || TheSheetLoader()( out.used, usedText ) == false )
+	{
+		errors.push_back( "line " + Number( out.usesLine ) + ": uses " + out.used + ": no such sheet (a res:// path)" );
+		return plain();
+	}
+	if ( SheetVersion( usedText ) != 1 )
+	{
+		errors.push_back( "line " + Number( out.usesLine ) + ": uses " + out.used + ": a version 1 sheet (cbsheet 1)" );
+		return plain();
+	}
+	const std::vector<std::string> theirs = LinesOf( usedText );
+	const std::vector<Part> base = PartsOf( theirs );
+	// This sheet's, by key: what takes the place of the used sheet's.
+	std::map<std::string, const Part*> mine;
+	for ( const Part& u : own )
+	{
+		if ( &u != uses && u.key.rfind( "cbsheet", 0 ) != 0 )
+		{
+			mine[u.key] = &u;
+		}
+	}
+	std::set<std::string> taken;
+	auto add = [&]( const std::vector<std::string>& from, size_t first, size_t end, int offset, bool dropReplace ) {
+		for ( size_t k = first; k < end; ++k )
+		{
+			std::string line = from[k];
+			if ( dropReplace && k == first && line.rfind( "replace ", 0 ) == 0 )
+			{
+				line = line.substr( 8 );
+			}
+			out.text += line + "\n";
+			out.lineOf.push_back( offset + int( k + 1 ) );
+		}
+	};
+	out.text = "cbsheet 1\n";
+	out.lineOf.push_back( 1 );
+	for ( const Part& u : base )
+	{
+		if ( u.key.rfind( "cbsheet", 0 ) == 0 )
+		{
+			continue;
+		}
+		if ( u.key.rfind( "uses ", 0 ) == 0 )
+		{
+			errors.push_back( "line " + Number( out.usesLine ) + ": uses " + out.used + ", which uses another: a sheet uses one at most, which uses none" );
+			continue;
+		}
+		auto it = mine.find( u.key );
+		if ( it == mine.end() )
+		{
+			add( theirs, u.first, u.end, kFromUsed, false );
+			continue;
+		}
+		const bool block = IsDeclaration( WordsOf( u.key )[0].text ) == false && u.key.rfind( "let ", 0 ) != 0;
+		if ( block && it->second->replaces == false )
+		{
+			errors.push_back( "line " + Number( int( it->second->first + 1 ) ) + ": " + out.used + " has this block (line " + Number( int( u.first + 1 ) ) +
+							  "): write replace before it" );
+		}
+		add( lines, it->second->first, it->second->end, 0, true );
+		taken.insert( u.key );
+	}
+	for ( const Part& u : own )
+	{
+		if ( &u == uses || u.key.rfind( "cbsheet", 0 ) == 0 || taken.count( u.key ) != 0 )
+		{
+			continue;
+		}
+		if ( u.replaces )
+		{
+			errors.push_back( "line " + Number( int( u.first + 1 ) ) + ": replace: " + out.used + " has no " + u.key );
+			continue;
+		}
+		add( lines, u.first, u.end, 0, false );
+	}
+	return out;
+}
+
 std::vector<Rule> ParseRules( const std::string& text, Strings& errors )
 {
 	const int version = SheetVersion( text );
@@ -1487,42 +1720,96 @@ std::vector<Rule> ParseRules( const std::string& text, Strings& errors )
 		errors.push_back( "line 1: this game reads sheets of version 1 (cbsheet 1) and before" );
 		return {};
 	}
-	ReadDeclarations( text, errors );
-	const Lowered lowered = LowerVersion1( text, errors );
-	Strings found;
-	std::vector<Rule> rules = ParseVersion0( lowered.text, found );
-	auto map = [&]( int n ) { return n >= 1 && size_t( n ) <= lowered.lineOf.size() ? lowered.lineOf[size_t( n - 1 )] : n; };
-	for ( const std::string& error : found )
-	{
-		// ("line N: why", N the lowered text's)
+	// What it uses in it (M289); lines of the used sheet kFromUsed + theirs.
+	const Composed composed = ComposeSheet( text, errors );
+	Strings inComposed, inLowered;
+	ReadDeclarationsOf( composed.text, inComposed );
+	const Lowered lowered = LowerVersion1( composed.text, inComposed );
+	std::vector<Rule> rules = ParseVersion0( lowered.text, inLowered );
+	auto fromComposed = [&]( int n ) { return n >= 1 && size_t( n ) <= composed.lineOf.size() ? composed.lineOf[size_t( n - 1 )] : n; };
+	auto fromLowered = [&]( int n ) { return n >= 1 && size_t( n ) <= lowered.lineOf.size() ? fromComposed( lowered.lineOf[size_t( n - 1 )] ) : n; };
+	auto say = [&]( const std::string& error, const std::function<int( int )>& line ) {
+		// ("line N: why": N this sheet's, or the uses line's with the used sheet's line)
 		const size_t colon = error.find( ": " );
-		if ( error.rfind( "line ", 0 ) == 0 && colon != std::string::npos && IsValidInt( error.substr( 5, colon - 5 ) ) )
-		{
-			errors.push_back( "line " + Number( map( int( ToInt( error.substr( 5, colon - 5 ) ) ) ) ) + error.substr( colon ) );
-		}
-		else
+		if ( error.rfind( "line ", 0 ) != 0 || colon == std::string::npos || IsValidInt( error.substr( 5, colon - 5 ) ) == false )
 		{
 			errors.push_back( error );
+			return;
 		}
+		const int c = line( int( ToInt( error.substr( 5, colon - 5 ) ) ) );
+		errors.push_back( c >= kFromUsed ? "line " + Number( composed.usesLine ) + ": in " + composed.used + " line " + Number( c - kFromUsed ) + error.substr( colon )
+										 : "line " + Number( c ) + error.substr( colon ) );
+	};
+	for ( const std::string& error : inComposed )
+	{
+		say( error, fromComposed );
+	}
+	for ( const std::string& error : inLowered )
+	{
+		say( error, fromLowered );
+	}
+	std::vector<int> lineOf;
+	for ( size_t n = 1; n <= lowered.lineOf.size(); ++n )
+	{
+		lineOf.push_back( fromLowered( int( n ) ) );
 	}
 	std::set<const void*> seen;
 	for ( Rule& rule : rules )
 	{
-		rule.line = map( rule.line );
-		rule.head = rule.head == 0 ? 0 : map( rule.head );
+		rule.line = fromLowered( rule.line );
+		rule.head = rule.head == 0 ? 0 : fromLowered( rule.head );
 		Value properties( rule.properties );
-		RemapLines( properties, lowered.lineOf, seen );
+		RemapLines( properties, lineOf, seen );
 	}
 	return rules;
 }
 
+namespace
+{
+
+std::vector<Declaration> ReadDeclarationsOf( const std::string& text, Strings& errors );
+
+} // namespace
+
 std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& errors )
 {
-	std::vector<Declaration> out;
 	if ( SheetVersion( text ) != 1 )
 	{
-		return out;
+		return {};
 	}
+	// With what it uses (M289): its lines said as this sheet's.
+	Strings composing;
+	const Composed composed = ComposeSheet( text, composing );
+	Strings found;
+	std::vector<Declaration> out = ReadDeclarationsOf( composed.text, found );
+	auto own = [&]( int n ) {
+		const int c = n >= 1 && size_t( n ) <= composed.lineOf.size() ? composed.lineOf[size_t( n - 1 )] : n;
+		return c >= kFromUsed ? composed.usesLine : c;
+	};
+	for ( Declaration& d : out )
+	{
+		d.line = own( d.line );
+	}
+	errors.insert( errors.end(), composing.begin(), composing.end() );
+	for ( const std::string& error : found )
+	{
+		const size_t colon = error.find( ": " );
+		const bool numbered = error.rfind( "line ", 0 ) == 0 && colon != std::string::npos && IsValidInt( error.substr( 5, colon - 5 ) );
+		const int n = numbered ? int( ToInt( error.substr( 5, colon - 5 ) ) ) : 0;
+		const int c = n >= 1 && size_t( n ) <= composed.lineOf.size() ? composed.lineOf[size_t( n - 1 )] : n;
+		errors.push_back( numbered == false ? error
+										   : c >= kFromUsed ? "line " + Number( composed.usesLine ) + ": in " + composed.used + " line " + Number( c - kFromUsed ) + error.substr( colon )
+															: "line " + Number( c ) + error.substr( colon ) );
+	}
+	return out;
+}
+
+namespace
+{
+
+std::vector<Declaration> ReadDeclarationsOf( const std::string& text, Strings& errors )
+{
+	std::vector<Declaration> out;
 	const std::vector<std::string> lines = LinesOf( text );
 	std::map<std::string, size_t> seen; // name -> its declaration
 	for ( size_t k = 0; k < lines.size(); ++k )
@@ -1658,6 +1945,8 @@ std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& err
 	}
 	return out;
 }
+
+} // namespace
 
 std::string Meaning( const std::string& text )
 {

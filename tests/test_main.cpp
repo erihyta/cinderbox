@@ -1814,6 +1814,21 @@ void TestSheetsGolden()
 		std::ifstream in( root / relative, std::ios::binary );
 		std::stringstream text;
 		text << in.rdbuf();
+		// ("uses res://...": the project's, the folder above with a project.godot.)
+		{
+			fs::path project = ( root / relative ).parent_path();
+			while ( project.has_parent_path() && project != project.parent_path() && fs::exists( project / "project.godot" ) == false )
+			{
+				project = project.parent_path();
+			}
+			sheet::SetSheetLoader( [project]( const std::string& path, std::string& out ) {
+				std::ifstream used( project / path.substr( path.rfind( "res://", 0 ) == 0 ? 6 : 0 ), std::ios::binary );
+				std::stringstream all;
+				all << used.rdbuf();
+				out = all.str();
+				return used.good() || out.empty() == false;
+			} );
+		}
 		sheet::Strings errors;
 		const std::vector<sheet::Rule> rules = sheet::ParseRules( text.str(), errors );
 		const std::string dump = sheet::Dump( rules, errors );
@@ -1899,7 +1914,22 @@ void TestSheetsVersion1()
 			std::printf( "    %s: not in the one style %s\n", fs::relative( it->path(), root ).generic_string().c_str(), why.c_str() );
 		}
 		sheet::Strings errors;
-		const sheet::Lowered lowered = sheet::LowerVersion1( text, errors );
+		// (With what it uses in it, M289: from its project's folder.)
+		{
+			fs::path project = it->path().parent_path();
+			while ( project.has_parent_path() && project != project.parent_path() && fs::exists( project / "project.godot" ) == false )
+			{
+				project = project.parent_path();
+			}
+			sheet::SetSheetLoader( [project]( const std::string& path, std::string& out ) {
+				std::ifstream used( project / path.substr( path.rfind( "res://", 0 ) == 0 ? 6 : 0 ), std::ios::binary );
+				std::stringstream all;
+				all << used.rdbuf();
+				out = all.str();
+				return out.empty() == false;
+			} );
+		}
+		const sheet::Lowered lowered = sheet::LowerVersion1( sheet::ComposeSheet( text, errors ).text, errors );
 		std::string again;
 		if ( errors.empty() && sheet::ConvertToVersion1( lowered.text, again, why ) && sheet::Meaning( again ) == sheet::Meaning( text ) )
 		{
@@ -1977,6 +2007,36 @@ void TestSheetsVersion1()
 	CHECK( timed.size() == 1 && timed[0].properties.Get( "cooldown", 0.0 ).AsFloat() == 0.4 &&
 		   timed[0].properties.Get( "conditions", sheet::Strings() ).AsStrings() == sheet::Strings{ "2 > 1" } );
 	CHECK( unitErrors.size() == 1 && says( unitErrors, "5", "lasts takes a time" ) );
+
+	// One sheet, many items (M289): uses, a param of its own, replace, let.
+	const std::string base = "cbsheet 1\nparam a.n 2\nmotion M on press go if a.x > a.n\n\temit e\nmotion K on press go\n\temit k\nmotion Bad on press go\n\tfly\n";
+	sheet::SetSheetLoader( [base]( const std::string& path, std::string& out ) {
+		out = base;
+		return path == "res://base.cbsheet";
+	} );
+	sheet::Strings usedErrors;
+	const std::vector<sheet::Rule> composed = sheet::ParseRules(
+		"cbsheet 1\nuses res://base.cbsheet\nparam a.n 5\nreplace motion K on press go\n\temit k2\nlet b = 3\nmotion L on press go if a.x > b\n\temit l\n", usedErrors );
+	auto conditionOf = [&]( const std::string& name ) {
+		for ( const sheet::Rule& r : composed )
+		{
+			if ( r.properties.Get( "name", "" ).AsString() == name )
+			{
+				const sheet::Strings c = r.properties.Get( "conditions", sheet::Strings() ).AsStrings();
+				return c.empty() ? std::string() : c.front();
+			}
+		}
+		return std::string( "(none)" );
+	};
+	CHECK( conditionOf( "M" ) == "a.x > 5" && conditionOf( "L" ) == "a.x > 3" && conditionOf( "K" ).empty() );
+	CHECK( usedErrors.size() == 1 && says( usedErrors, "2", "in res://base.cbsheet line 8" ) ); // (its mistake, at the uses line)
+	sheet::Strings unreplaced;
+	sheet::ParseRules( "cbsheet 1\nuses res://base.cbsheet\nmotion K on press go\n\temit k3\n", unreplaced );
+	CHECK( says( unreplaced, "3", "write replace" ) );
+	sheet::Strings missing;
+	sheet::ParseRules( "cbsheet 1\nuses res://nowhere.cbsheet\n", missing );
+	CHECK( says( missing, "2", "no such sheet" ) );
+	sheet::SetSheetLoader( nullptr );
 }
 
 // The arena's walls (M280): the baked map (godot/maps/arena.cbmap) as the server loads it.

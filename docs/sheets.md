@@ -99,6 +99,36 @@ param gun.reload_seconds 1.5 s
   are for (`cooldown 0.4 m` is a mistake: cooldown takes a time) and dropped; a number without one
   means what it always did.
 
+### One sheet, many items
+
+Every gun's trigger, rounds and reload are one sheet, `prefabs/gun.cbsheet` (M289); each gun's sheet
+uses it and says what is its own:
+
+```
+cbsheet 1
+uses res://prefabs/gun.cbsheet            # its declarations, lets and blocks, as if written here
+
+field gun.rounds int on item = 30         # a declaration of the same name: this one instead
+param gun.damage 14
+
+replace motion Fire when using.gun.rifle and gun.rounds > 0 and not gun.reloading
+	cooldown 0.1                          # a block of the same head (a motion's: its name): this one
+	...
+```
+
+- **`uses PATH`** (a `res://` path): the used sheet's lines are this one's, in its order; this sheet's
+  declarations of the same names (`param`, `field`, `event`, `action`, `status`, `let`) take their
+  places, its `replace` blocks the blocks of the same head (a motion by its name, any other block by
+  its first line), and its other blocks come after. A block of the same head without `replace` is a
+  mistake. A sheet uses one at most, which uses none.
+- **A mistake in the used sheet** is said at the uses line: `line 2: in res://prefabs/gun.cbsheet
+  line 31: ...`.
+- **Found by its path** wherever a sheet is read: the project's file in the editor and the game (a
+  pack carries both: `*.cbsheet`), the mod's item on the server, the project's folder for `cb_sheet`.
+- **`let NAME = WORDS`**: NAME stands for the words wherever it is a word of a line (not in quotes or
+  a comment). The fist's box is written once: `let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned
+  look max 1`, then `find hitbox`. Words that are an expression: put them in brackets yourself.
+
 ### Statuses
 
 A **status** is a timed flag on a player (M288): `status stunned` declares it (in any sheet, or a

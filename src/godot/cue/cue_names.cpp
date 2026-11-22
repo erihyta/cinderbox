@@ -626,7 +626,10 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 								"velocity", "acceleration", "world", "look", "facing", "up", "to", "hit", "curve", "distance", "reach",
 								// (version 1's: docs/sheets.md)
 								"cbsheet", "hud", "create", "server", "only", "known", "of", "is", "local", "active", "holder",
-								"actor", "me", "carrier" };
+								"actor", "me", "carrier",
+								// (M286 to M289's)
+								"field", "event", "action", "param", "status", "timer", "shared", "private", "ready", "uses",
+								"remaining", "tags", "blocked", "by", "cancels", "release", "tap", "hold", "apply", "let" };
 
 } // namespace
 

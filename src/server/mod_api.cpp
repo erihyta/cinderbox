@@ -46,6 +46,28 @@ void Declarations::BeginMod( const std::string& name )
 	m_schema.mods.push_back( name );
 }
 
+void Declarations::DeclareSheets( const std::vector<std::pair<std::string, std::string>>& sheets )
+{
+	// ("uses res://prefabs/gun.cbsheet": among them, by its path in the item.)
+	sheet::SetSheetLoader( [&sheets]( const std::string& path, std::string& text ) {
+		const std::string relative = path.rfind( "res://", 0 ) == 0 ? path.substr( 6 ) : path;
+		for ( const auto& [one, its] : sheets )
+		{
+			if ( one == relative )
+			{
+				text = its;
+				return true;
+			}
+		}
+		return false;
+	} );
+	for ( const auto& [path, text] : sheets )
+	{
+		DeclareSheet( path, text );
+	}
+	sheet::SetSheetLoader( nullptr );
+}
+
 void Declarations::DeclareSheet( const std::string& path, const std::string& text )
 {
 	sheet::Strings errors;

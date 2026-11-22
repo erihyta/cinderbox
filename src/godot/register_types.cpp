@@ -18,10 +18,12 @@
 #include "cinderbox_rules_editor.h"
 #include "cinderbox_skeleton.h"
 #include "cinderbox_sheet.h"
+#include "sheet_v1.h"
 #include "move_params.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/classes/editor_plugin_registration.hpp>
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
@@ -63,6 +65,19 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 			names.push_back( godot::String( cb::MoveParamInfoOf( p ).name ) );
 		}
 		cb::cue::SetMoveParameterNames( names );
+	}
+	// A sheet's "uses res://..." (M289): the project's (or a pack's) file.
+	{
+		cb::sheet::SetSheetLoader( []( const std::string& path, std::string& text ) {
+			const godot::String file = godot::String::utf8( path.c_str() );
+			if ( file.begins_with( "res://" ) == false || godot::FileAccess::file_exists( file ) == false )
+			{
+				return false;
+			}
+			const godot::CharString utf8 = godot::FileAccess::get_file_as_string( file ).utf8();
+			text.assign( utf8.get_data(), size_t( utf8.length() ) );
+			return true;
+		} );
 	}
 	GDREGISTER_CLASS( cb::gd::CinderboxSkeleton );
 	GDREGISTER_CLASS( cb::gd::CbPoseModifier );
