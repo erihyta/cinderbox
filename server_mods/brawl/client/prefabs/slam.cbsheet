@@ -5,7 +5,7 @@ cbsheet 1
 # and up, by every simulation: the brawl mod only hurts them (brawl.slam.hit).
 
 # Its names (the brawl mod's C++ finds them) and its numbers.
-field brawl.cd_slam float
+field brawl.cd_slam timer
 event brawl.slam.started
 event brawl.slam.landed
 event brawl.slam.hit

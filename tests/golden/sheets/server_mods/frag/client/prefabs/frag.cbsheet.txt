@@ -30,30 +30,8 @@ rule motion line 23 head 0
               line: int 29
         line: int 27
         within: float 0.3
+        or: bool true
         wait: text "frag.release"
-    - dict
-        statements: list
-          - dict
-              verb: text "emit"
-              kind: text "emit"
-              text: text "frag.thrown"
-              guard: text ""
-              line: int 28
-          - dict
-              verb: text "launch"
-              kind: text "part"
-              part: dict
-                class: text "CbLaunch"
-                properties: dict
-                  what: int 1
-                  speed: float 15
-                  lift: float 3
-                  ahead: float 0.8
-                  seconds: float 2.5
-              guard: text ""
-              line: int 29
-        line: int 27
-        timeout: bool true
 rule motion line 31 head 0
   name: text "Blast"
   trigger: text "event"

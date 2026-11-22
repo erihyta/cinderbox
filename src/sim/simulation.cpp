@@ -2523,6 +2523,20 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			{
 				const AnimState before = GetAnimState( e );
 				Blackboard board = GetBoard( e );
+				// Its timers count down first (M287: a field "timer", a second a second, to 0).
+				bool timersRan = false;
+				for ( uint16_t timer : m_motions->entityTimers )
+				{
+					if ( size_t( timer ) < board.values.size() )
+					{
+						const float left = BoardToFloat( board.values[timer] );
+						if ( left > 0.0f )
+						{
+							board.values[timer] = BoardFromFloat( std::max( 0.0f, left - m_config.TimeStep() ) );
+							timersRan = true;
+						}
+					}
+				}
 				// Conditions read the board as the tick found it: a motion that turns a field on does
 				// not start the motion that waits for it until the next tick.
 				const Blackboard boardBefore = board;
@@ -2607,7 +2621,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				{
 					m_motionNotes[size_t( slot )] = { m_refusalScratch.back().motion, m_refusalScratch.back().why, m_globals.tick };
 				}
-				if ( boardChanged )
+				if ( boardChanged || timersRan )
 				{
 					SetBoard( e, board );
 				}
@@ -3402,6 +3416,17 @@ void Simulation::Step( const InputFrame& given )
 		ApplyPhysicsEvents( frame, 0, uint16_t( std::min<size_t>( k + 1, 0xFFFF ) ) );
 	}
 	spent( m_profile.commandsNs );
+	// The game's timers (M287), a second a second, before the characters' motions read them.
+	if ( m_motions )
+	{
+		for ( uint16_t timer : m_motions->globalTimers )
+		{
+			if ( size_t( timer ) < m_globalBoard.size() && BoardToFloat( m_globalBoard[timer] ) > 0.0f )
+			{
+				m_globalBoard[timer] = BoardFromFloat( std::max( 0.0f, BoardToFloat( m_globalBoard[timer] ) - m_config.TimeStep() ) );
+			}
+		}
+	}
 	// (Following a server's characters, they are its: StepCharacters moves the own one.)
 	if ( m_followsServer == false )
 	{

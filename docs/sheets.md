@@ -86,7 +86,7 @@ param gun.reload_seconds 1.5 s
 
 | Line | Is |
 |---|---|
-| `field NAME int\|float\|bool [on player\|world\|item] [shared\|private] [= VALUE]` | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
+| `field NAME int\|float\|bool\|timer [on player\|world\|item] [shared\|private] [= VALUE]` | (`timer`, M287: a float that counts down to 0 by itself, a second a second, in every simulation: a player's or the world's; `change brawl.cd_dash = 3` and it is a cooldown the HUD shows.) | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
 | `event NAME [everyone]` | an event, the same way |
 | `action NAME [key KEY]` | an action, its key as Godot names keys (`R`, `F`, `1`, `MouseLeft`) |
 | `param NAME NUMBER [UNIT]` | a number of the item whose scene holds the sheet: baked into `items/<kind>.cfg` as its property, which server mods read (`ctx.ItemProperty`; was the `CbItem`'s `properties`). **In the sheet it is its number**: `gun.ammo < gun.magazine` reads `gun.ammo < 12` |
@@ -192,8 +192,9 @@ As far in as the motion's first line, not under an `if`, before its first `wait`
   `brawl.fist.strike` (the hit) and then `brawl.fist.ready` (the next punch may start).
 - **Giving up.** `wait for EXPRESSION within S` gives up after S seconds: its `timeout` lines run,
   and the motion ends (without a `timeout`, it just ends).
-- **Or after a while.** `wait for EXPRESSION or S`: the lines after it run once it holds, or after S
-  seconds without it (a marker an animation may not have). For now it is its motion's last wait
+- **Or after a while.** `wait for EXPRESSION or S`: the step after it starts once it holds, or after S
+  seconds without it (a marker an animation may not have), and the motion goes on (M287); anywhere
+  in a motion
   (it is a `within` whose `timeout` repeats the lines: the frag's and the grenade's throws).
 - **It ends** when its `lasts` run out, its `until` holds, an `end` is reached, a wait gives up, or,
   with neither `lasts` nor `until`, when its last step's longest `move for` is over (one tick at
@@ -234,7 +235,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 | Line | Does |
 |---|---|
 | `change FIELD = VALUE` / `+= VALUE` / `-= VALUE` | a field of the owner (in a find: once for each thing found) |
-| `emit EVENT` | a mod event, at the owner: for looks, state machines and a mod's C++. In a find, A is the player and B what it found, at it |
+| `emit EVENT [value VALUE]` | a mod event, at the owner: for looks, state machines and a mod's C++ (`event.value` in a look; M287: the value, a number or an expression, read when it happens; not yet in a find). In a find, A is the player and B what it found, at it |
 | `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace nothing\|vertical\|horizontal\|all]` | a change of velocity (m/s whatever it weighs, to 200), or of momentum (`kind momentum`: N·s, to 100000, shared out by what the target weighs). `replace`: that part of the velocity is cleared first |
 | `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | an item into the world: a new one of a kind, or the one carried (in a hand first, else the lowest slot's), with the player's own velocity; `seconds` until it is removed (0: it stays); `from` a marker's place instead of `ahead` of where the look starts |
 | `break radius R [speed S] [seconds S]` | breakable walls whose nearest piece is within R of the owner lose their pieces that near, flung at S (10), staying S seconds (0: for good) |
@@ -255,7 +256,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 | Line | Does |
 |---|---|
 | `wait for EXPRESSION [within S]` | the next step, once this holds (giving up after S seconds) |
-| `wait for EXPRESSION or S` | the next lines, once this holds or after S seconds (its motion's last wait) |
+| `wait for EXPRESSION or S` | the next step, once this holds or after S seconds without it: it goes on either way |
 | `wait S` | the next step, S seconds after this one started |
 | `timeout` | what a `within` that gave up runs, before the motion ends |
 | `every S` | the lines after it in its step happen when the step starts and every S seconds while it is the step (64 times at most) |

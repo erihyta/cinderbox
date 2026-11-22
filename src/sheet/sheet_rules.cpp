@@ -1231,9 +1231,9 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				next["line"] = number;
 				if ( verb == "timeout" )
 				{
-					if ( w.size() != 1 || step.Get( "within", 0.0 ).AsFloat() <= 0.0 || step.Get( "timeout", false ).AsBool() )
+					if ( w.size() != 1 || step.Get( "within", 0.0 ).AsFloat() <= 0.0 || step.Get( "timeout", false ).AsBool() || step.Get( "or", false ).AsBool() )
 					{
-						fail( number, "a timeout comes right after a then when ... within S" );
+						fail( number, "a timeout comes right after a then when ... within S (a wait ... or S goes on: it has none)" );
 						continue;
 					}
 					next["timeout"] = true;
@@ -1249,9 +1249,9 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				}
 				else
 				{
-					// then when EXPRESSION [within S]
+					// then when EXPRESSION [within S | or S]
 					size_t end = w.size();
-					if ( w.size() >= 4 && w[w.size() - 2].text == "within" )
+					if ( w.size() >= 5 && ( w[w.size() - 2].text == "within" || w[w.size() - 2].text == "or" ) && IsValidFloat( w[w.size() - 1].text ) )
 					{
 						if ( Number( w[w.size() - 1], value ) == false || value <= 0.0 )
 						{
@@ -1259,6 +1259,10 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 							continue;
 						}
 						next["within"] = value;
+						if ( w[w.size() - 2].text == "or" )
+						{
+							next["or"] = true; // (it goes on after S without it)
+						}
 						end = w.size() - 2;
 					}
 					if ( w.size() < 3 || w[1].text != "when" || end < 3 )
@@ -1578,13 +1582,18 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 			}
 			else if ( verb == "emit" )
 			{
-				if ( w.size() != 2 )
+				// emit EVENT [value EXPRESSION] (M287: the event's value, read when it happens)
+				if ( w.size() != 2 && ( w.size() < 4 || w[2].text != "value" ) )
 				{
-					fail( number, "emit <event>" );
+					fail( number, "emit <event> [value <number or expression>]" );
 					continue;
 				}
 				statement["kind"] = "emit";
 				statement["text"] = w[1].text;
+				if ( w.size() >= 4 )
+				{
+					statement["value"] = RestFrom( line, w[3] );
+				}
 			}
 			else if ( verb == "end" )
 			{

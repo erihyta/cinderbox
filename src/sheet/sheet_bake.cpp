@@ -704,6 +704,10 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 			}
 			text += "step\t" + Num( step.Get( "after", 0.0 ).AsFloat() ) + "\t" + Num( step.Get( "within", 0.0 ).AsFloat() ) +
 					( wait.empty() ? std::string() : "\t" + wait ) + "\n";
+			if ( step.Get( "or", false ).AsBool() )
+			{
+				text += "goon\n";
+			}
 		}
 		std::string guard;
 		const List statements = step.Get( "statements", List() ).AsList();
@@ -739,7 +743,13 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 				{
 					return fail( line + "emit names one event" );
 				}
-				text += "emit\t" + event + "\n";
+				const std::string value = Strip( statement.Get( "value", "" ).AsString() );
+				if ( Plain( value ) == false )
+				{
+					return fail( line + "an emit's value cannot have a tab or a #" );
+				}
+				// (An expression of several words is one word in brackets.)
+				text += "emit\t" + event + ( value.empty() ? std::string() : "\t" + ( Contains( value, " " ) ? "(" + value + ")" : value ) ) + "\n";
 			}
 			else if ( what == "end" )
 			{

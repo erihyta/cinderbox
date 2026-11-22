@@ -11,7 +11,7 @@
 //
 // What a skill does to bodies (the lunge, the knockback, the launch, the dive) is its scene's: every
 // simulation runs it from the player's input, so it is predicted. The cooldowns and the combo are
-// fields the scenes' motions write and count down. This file is what nodes cannot say:
+// timers the skills' sheets set (they count down by themselves, M287). This file is what nodes cannot say:
 //   - damage: a hit is the probe's event (brawl.jab.hit ..., with who was hit), and this mod turns
 //     it into combat.damage, a quarter of it on someone guarding
 //   - the slam's shockwave is its sheet's too (a motion block waits for the ground, then finds who
@@ -90,7 +90,6 @@ public:
 		declare.Event( "brawl.fist.ready" );
 		m_damage = declare.Event( "combat.damage" );
 		m_team = declare.Field( "team.id", BoardType::Int, BoardScope::Entity, true ); // (the teams mod's)
-		declare.Motions( "brawl.moves" );
 		m_hand = declare.Socket( "RightHand" );
 		// The five skills: all of them are their scenes'.
 		declare.ItemsOfLook();

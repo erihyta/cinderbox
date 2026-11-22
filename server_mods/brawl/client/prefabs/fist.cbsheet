@@ -13,7 +13,7 @@ cbsheet 1
 
 # Its names (the brawl mod's C++ finds them) and its numbers.
 field brawl.combo int
-field brawl.combo_left float
+field brawl.combo_left timer
 event brawl.fist.strike
 event brawl.fist.ready
 event brawl.jab.hit
@@ -48,3 +48,9 @@ motion Finisher on use if brawl.combo >= 2 and not active brawl.fist.Jab
 		impulse 70 along facing
 		impulse 5 along up
 	wait for brawl.fist.ready within 0.9
+
+# The combo's window: brawl.combo_left counts down by itself (a timer); when it is out, the combo is
+# over (while the fists are carried at all).
+motion ComboOver while brawl.combo_left <= 0 and brawl.combo > 0
+	for carrier
+	change brawl.combo = 0
