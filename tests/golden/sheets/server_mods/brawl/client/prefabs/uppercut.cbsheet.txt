@@ -7,6 +7,7 @@ rule motion line 11 head 0
     - "attack"
   blocked: texts
     - "guard"
+    - "pulled"
   until: texts
     - "brawl.uppercut.used or pressed.jump"
   lasts: float 0.05
@@ -37,11 +38,13 @@ rule motion line 11 head 0
                 - dict
                     line: int 19
                     verb: text "emit"
+                    only: text ""
                     kind: text "emit"
                     text: text "brawl.uppercut.hit"
                 - dict
                     line: int 20
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"
@@ -53,6 +56,7 @@ rule motion line 11 head 0
                 - dict
                     line: int 21
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"

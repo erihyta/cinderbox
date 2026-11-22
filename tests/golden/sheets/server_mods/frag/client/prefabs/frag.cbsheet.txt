@@ -57,6 +57,7 @@ rule motion line 31 head 0
           - dict
               verb: text "find"
               kind: text "find"
+              grab: bool false
               shape: dict
                 kind: text "node"
                 path: text "Blast"
@@ -65,6 +66,7 @@ rule motion line 31 head 0
                 - dict
                     line: int 36
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"
@@ -77,6 +79,7 @@ rule motion line 31 head 0
                 - dict
                     line: int 37
                     verb: text "impulse"
+                    only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbImpulse"

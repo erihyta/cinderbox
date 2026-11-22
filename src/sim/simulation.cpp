@@ -377,6 +377,8 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Pusher>();
 	RegisterSnapComponent<Downed>();
 	RegisterSnapComponent<Tossed>();
+	RegisterSnapComponent<MotionGrab>(); // (M290)
+	RegisterSnapComponent<ThrownMarks>();
 	// (Not in snapshots, used by the hybrid's states: registered here, once, not when first used.)
 	m_world.component<StandIn>();
 	m_world.component<StateBody>();
@@ -2722,6 +2724,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	}
 	// What their motions did to others: after the targets' own, in the order they were done.
 	ApplyPlayerPushes();
+	// Bodies thrown with a mark, striking someone (M290).
+	StrikeThrown();
 	spentOn( m_profile.motionsNs );
 
 	// Then every player moves, and its animation runs: each on the world as the tick found it (the
@@ -5458,6 +5462,23 @@ void Simulation::SayHold( flecs::entity e, const Motion& m, uint32_t anchor, b3V
 		record.point = point;
 		RecordModEvent( record );
 	}
+	// Its applies (M290: "apply pulled for 0.6 on target" under a cast), on the player it holds.
+	flecs::entity held = anchor != 0 ? FindEntity( anchor ) : flecs::entity();
+	if ( m.holdApplies.empty() == false && held.is_valid() && held != e && held.has<Character>() && HasMotionState( held ) )
+	{
+		MotionState theirs = GetMotionState( held );
+		AnimGraphInputs values;
+		values.globalBoard = &m_globalBoard;
+		values.tick = m_globals.tick;
+		values.curves = &m.curves;
+		for ( const Motion::HoldApply& apply : m.holdApplies )
+		{
+			const float seconds = MotionAmount( m, apply.seconds, apply.expr, values, 0.0f, 600.0f );
+			ApplyMotionStatus( theirs, apply.status, m_globals.tick + std::max<uint32_t>( 1, uint32_t( seconds * float( m_config.tickRate ) + 0.5f ) ),
+							   m_globals.tick );
+		}
+		SetMotionState( held, theirs );
+	}
 }
 
 uint8_t Simulation::HoldKind( const RayHit& hit ) const
@@ -5718,11 +5739,19 @@ void Simulation::GiveMove( flecs::entity who, uint8_t param, float value, float 
 	who.set<MoveEffects>( given );
 }
 
-void Simulation::RunBreaks( const Motion& m, const MotionStep& step, const MotionSlot& slot, b3Vec3 at, const AnimGraphInputs& values )
+void Simulation::RunBreaks( const Motion& m, const MotionStep& step, const MotionSlot& slot, b3Vec3 owner, const AnimGraphInputs& values,
+							flecs::entity e, const PlayerInput* in )
 {
 	for ( const MotionStep::Break& b : step.breaks )
 	{
 		if ( MotionGuardHolds( slot, b.guard ) == false )
+		{
+			continue;
+		}
+		// Around the owner, or a point (M290: "break ... at look 6").
+		b3Vec3 at = owner;
+		if ( b.at.kind != MotionPoint::Kind::Owner && ( e.is_valid() == false || in == nullptr ||
+														 MotionPointAt( e, e.get<Transform>(), *in, m, b.at, values, at ) == false ) )
 		{
 			continue;
 		}
@@ -5985,27 +6014,91 @@ flecs::entity Simulation::MotionItemOf( uint32_t holder, const Motion& m )
 	return best;
 }
 
-void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
-						  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& motionValues, uint32_t sayer )
+// What a find found: how far from its place, who, and what it is to an effect.
+struct Simulation::Found
 {
-	const uint32_t selfId = e.get<NetId>().value;
-	sayer = sayer != 0 ? sayer : selfId;
+	float distance = 0.0f;
+	uint32_t netId = 0;
+	MotionEnd end;
+};
+
+// What a find's lines read about one thing it found, kept while they run.
+struct Simulation::TargetValues
+{
+	Blackboard board;
+	MotionState state;
+};
+
+bool Simulation::MotionPointAt( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, const MotionPoint& point,
+								const AnimGraphInputs& values, b3Vec3& out ) const
+{
+	switch ( point.kind )
+	{
+		case MotionPoint::Kind::Owner:
+			out = t.position;
+			return true;
+		case MotionPoint::Kind::Look:
+		{
+			// Along the look from the chest, as far as it says, stopped a little short of the level
+			// (anything static): a point the player steers, never inside a wall.
+			const b3Vec3 from = ViewPivot( e, t.position );
+			const b3Vec3 look = MotionDirection( MotionFrame::Look, {}, Character{}, in );
+			const float distance = MotionAmount( m, point.distance, point.distanceExpr, values, 0.0f, 200.0f );
+			PhysicsArena::Scope scope( *m_arena );
+			b3QueryFilter filter = { ~uint64_t( 0 ), CatStatic, 0, nullptr };
+			float closest = 1.0f;
+			auto nearest = []( b3ShapeId, b3Pos, b3Vec3, float fraction, uint64_t, int, int, void* context ) -> float {
+				float& best = *static_cast<float*>( context );
+				best = std::min( best, fraction );
+				return fraction;
+			};
+			if ( distance > 0.0f )
+			{
+				b3World_CastRay( m_physicsWorld, from, b3MulSV( distance, look ), filter, nearest, &closest );
+			}
+			const float free = closest < 1.0f ? std::max( 0.0f, closest * distance - 0.25f ) : distance;
+			out = b3MulAdd( from, free, look );
+			return true;
+		}
+		case MotionPoint::Kind::Hit:
+		{
+			const MotionHold* hold = e.try_get<MotionHold>();
+			return hold != nullptr && hold->on != 0 && hold->missed == 0 && m_globals.tick >= hold->holdTick && HoldPoint( *hold, out );
+		}
+	}
+	return false;
+}
+
+bool Simulation::PlaceOfFind( flecs::entity e, const Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
+							  const AnimGraphInputs& values, FindPlace& out ) const
+{
 	// The shape, turned as the player faces (or looks), at its feet. Turned as it looks, it pitches
 	// about its chest (M279: kFindLookPivot up), as the upper body bends there, not about its feet: a
-	// swing at someone on a ramp above goes up where the arms reach, not over the head.
-	b3Quat turn = b3Quat_identity;
-	b3Vec3 pivot = { 0.0f, 0.0f, 0.0f };
+	// swing at someone on a ramp above goes up where the arms reach, not over the head. At a point
+	// (M290), around the point, pitching about it.
+	out = FindPlace{};
+	if ( MotionPointAt( e, t, in, m, find.at, values, out.place ) == false )
+	{
+		return false;
+	}
+	const bool pointed = find.at.kind != MotionPoint::Kind::Owner;
 	if ( find.frame == MotionFrame::Facing )
 	{
-		turn = detmath::YawRotation( c.facingYaw );
+		out.turn = detmath::YawRotation( c.facingYaw );
 	}
 	else if ( find.frame == MotionFrame::Look )
 	{
 		float pitch = float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f );
-		turn = b3MulQuat( detmath::YawRotation( detmath::YawToRadians( in.cameraYaw ) ),
-						  b3MakeQuatFromAxisAngle( b3Vec3{ 1.0f, 0.0f, 0.0f }, -pitch ) );
-		pivot = { 0.0f, kFindLookPivot, 0.0f };
+		out.turn = b3MulQuat( detmath::YawRotation( detmath::YawToRadians( in.cameraYaw ) ), b3MakeQuatFromAxisAngle( b3Vec3{ 1.0f, 0.0f, 0.0f }, -pitch ) );
+		out.pivot = pointed ? b3Vec3{ 0.0f, 0.0f, 0.0f } : b3Vec3{ 0.0f, kFindLookPivot, 0.0f };
 	}
+	return true;
+}
+
+void Simulation::FindAll( flecs::entity e, const Transform& t, const MotionFind& find, const FindPlace& where, std::vector<Found>& out )
+{
+	const uint32_t selfId = e.get<NetId>().value;
+	const b3Vec3 place = where.place;
 	std::vector<uint32_t>& found = m_findScratch;
 	found.clear();
 	{
@@ -6017,17 +6110,17 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			int count = int( std::min<size_t>( piece.points.size(), 128 ) );
 			for ( int i = 0; i < count; ++i )
 			{
-				points[i] = b3Add( pivot, b3RotateVector( turn, b3Sub( piece.points[size_t( i )], pivot ) ) );
+				points[i] = b3Add( where.pivot, b3RotateVector( where.turn, b3Sub( piece.points[size_t( i )], where.pivot ) ) );
 			}
 			const b3ShapeProxy proxy = { points, count, piece.radius };
 			b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
-			struct Found
+			struct Gather
 			{
 				const Simulation* sim;
 				std::vector<uint32_t>* out;
 			} ctx{ this, &found };
 			auto each = []( b3ShapeId shape, void* context ) -> bool {
-				auto* f = static_cast<Found*>( context );
+				auto* f = static_cast<Gather*>( context );
 				uint32_t netId = f->sim->NetIdOfShape( shape );
 				// (One seen elsewhere is met there: below.)
 				if ( netId != 0 && f->sim->SeenElsewhere( netId ) == false )
@@ -6039,7 +6132,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			// (Both worlds, M247: the physics world's bodies and the characters'.)
 			for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
 			{
-				b3World_OverlapShape( world, t.position, &proxy, filter, each, &ctx );
+				b3World_OverlapShape( world, place, &proxy, filter, each, &ctx );
 			}
 			// Lag compensation: the others' capsules as the player saw them (as the world's query
 			// meets a capsule body there).
@@ -6053,7 +6146,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 				reach += piece.radius;
 				for ( const PastCapsule& past : m_seen->capsules )
 				{
-					const b3Vec3 offset = b3Sub( past.position, t.position );
+					const b3Vec3 offset = b3Sub( past.position, place );
 					if ( b3Length( offset ) > reach + past.halfHeight + past.radius || SeenCapsule( past.netId ) == nullptr )
 					{
 						continue;
@@ -6067,16 +6160,11 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			}
 		}
 	}
-	// What it may find, nearest first (then by id: the same order on every machine), at most so many.
+	// What it may find, players first if it says, then the nearest (then by id: the same order on
+	// every machine), at most so many.
 	std::sort( found.begin(), found.end() );
 	found.erase( std::unique( found.begin(), found.end() ), found.end() );
-	struct Target
-	{
-		float distance;
-		uint32_t netId;
-		MotionEnd end;
-	};
-	std::vector<Target> targets;
+	out.clear();
 	for ( uint32_t netId : found )
 	{
 		if ( netId == selfId && find.self == false )
@@ -6096,44 +6184,331 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 		{
 			continue;
 		}
-		targets.push_back( { b3Distance( end.point, t.position ), netId, end } );
+		Found f;
+		f.distance = b3Distance( end.point, place );
+		f.netId = netId;
+		f.end = end;
+		out.push_back( f );
 	}
-	std::sort( targets.begin(), targets.end(),
-			   []( const Target& a, const Target& b ) { return a.distance != b.distance ? a.distance < b.distance : a.netId < b.netId; } );
-	if ( targets.size() > size_t( find.most ) )
-	{
-		targets.resize( size_t( find.most ) );
-	}
-
-	for ( const Target& target : targets )
-	{
-		// What its strengths read about it: how far it is, and how far out along the ground.
-		AnimGraphInputs values = motionValues;
-		values.builtins[AnimExpr::Distance] = target.distance;
-		b3Vec3 out = b3Sub( target.end.point, t.position );
-		float along = std::sqrt( out.x * out.x + out.z * out.z );
-		float reach = find.extent > 0.0f ? along / find.extent : 0.0f;
-		values.builtins[AnimExpr::Reach] = reach < 1.0f ? reach : 1.0f;
-		for ( const MotionEffect& effect : find.effects )
+	const bool first = find.playersFirst;
+	std::sort( out.begin(), out.end(), [first]( const Found& a, const Found& b ) {
+		const bool pa = a.end.kind != MotionEnd::Kind::Body, pb = b.end.kind != MotionEnd::Kind::Body;
+		if ( first && pa != pb )
 		{
-			const MotionEnd& on = effect.target.kind == MotionTarget::Kind::Self ? self
-								  : effect.target.kind == MotionTarget::Kind::Hit ? hit
-																				  : target.end;
-			if ( on.kind == MotionEnd::Kind::None || on.kind == MotionEnd::Kind::World )
+			return pa;
+		}
+		return a.distance != b.distance ? a.distance < b.distance : a.netId < b.netId;
+	} );
+	if ( out.size() > size_t( find.most ) )
+	{
+		out.resize( size_t( find.most ) );
+	}
+}
+
+uint16_t Simulation::ReadTarget( const Motion& m, const MotionFind& find, const Found& target, b3Vec3 place, AnimGraphInputs& values,
+								 TargetValues& kept ) const
+{
+	(void)m;
+	// How far it is, how far out along the ground, whether it is a player; its fields and statuses
+	// ("combat.health of target", M290).
+	values.builtins[AnimExpr::Distance] = target.distance;
+	b3Vec3 out = b3Sub( target.end.point, place );
+	float along = std::sqrt( out.x * out.x + out.z * out.z );
+	float reach = find.extent > 0.0f ? along / find.extent : 0.0f;
+	values.builtins[AnimExpr::Reach] = reach < 1.0f ? reach : 1.0f;
+	const bool player = target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self;
+	values.builtins[AnimExpr::Player] = player ? 1.0f : 0.0f;
+	values.targetBoard = nullptr;
+	values.targetStatuses = nullptr;
+	if ( target.end.entity.is_valid() && HasBoard( target.end.entity ) )
+	{
+		kept.board = GetBoard( target.end.entity );
+		values.targetBoard = &kept.board.values;
+	}
+	if ( player && target.end.entity.is_valid() && HasMotionState( target.end.entity ) )
+	{
+		kept.state = GetMotionState( target.end.entity );
+		values.targetStatuses = kept.state.statuses;
+	}
+	uint16_t bits = 0;
+	for ( size_t k = 0; k < find.onlys.size() && k < 16; ++k )
+	{
+		bits |= EvaluateAnimExpr( find.onlys[k], values, 0.0f ) != 0.0f ? uint16_t( 1u << k ) : uint16_t( 0 );
+	}
+	return bits;
+}
+
+namespace
+{
+bool OnlyHolds( uint16_t bits, int8_t only )
+{
+	return only < 0 || ( bits & ( 1u << only ) ) != 0;
+}
+} // namespace
+
+bool Simulation::TowardOf( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, const MotionEffect& effect,
+						   const AnimGraphInputs& values, const MotionEnd& self, const MotionEnd& target, b3Vec3& direction, float& distance ) const
+{
+	b3Vec3 to = self.point; // toward owner: its chest
+	if ( effect.toward.kind != MotionPoint::Kind::Owner && MotionPointAt( e, t, in, m, effect.toward, values, to ) == false )
+	{
+		return false;
+	}
+	direction = b3GetLengthAndNormalize( &distance, b3Sub( to, target.point ) );
+	return distance >= 0.001f;
+}
+
+void Simulation::ActOnFound( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
+							 const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& motionValues, uint32_t sayer, const Found& target,
+							 b3Vec3 place )
+{
+	const uint32_t selfId = e.get<NetId>().value;
+	AnimGraphInputs values = motionValues;
+	TargetValues kept;
+	const uint16_t bits = ReadTarget( m, find, target, place, values, kept );
+	for ( const MotionEffect& effect : find.effects )
+	{
+		if ( effect.kind != MotionEffect::Kind::Impulse || OnlyHolds( bits, effect.only ) == false )
+		{
+			continue; // (a grab's forces: every tick, RunGrab)
+		}
+		const MotionEnd& on = effect.target.kind == MotionTarget::Kind::Self ? self
+							  : effect.target.kind == MotionTarget::Kind::Hit ? hit
+																			  : target.end;
+		if ( on.kind == MotionEnd::Kind::None || on.kind == MotionEnd::Kind::World )
+		{
+			continue;
+		}
+		b3Vec3 direction = {};
+		float length = 0.0f;
+		if ( effect.frame == MotionFrame::Away )
+		{
+			// Along the ground, from the player out to it; right on top of it, where it faces.
+			b3Vec3 out = b3Sub( target.end.point, t.position );
+			direction = b3GetLengthAndNormalize( &length, b3Vec3{ out.x, 0.0f, out.z } );
+			direction = length < 0.001f ? detmath::YawForward( c.facingYaw ) : direction;
+		}
+		else if ( effect.frame == MotionFrame::To )
+		{
+			direction = b3GetLengthAndNormalize( &length, b3Sub( target.end.point, self.point ) );
+			if ( length < 0.001f )
 			{
 				continue;
 			}
-			b3Vec3 direction = {};
-			float length = 0.0f;
-			if ( effect.frame == MotionFrame::Away )
+		}
+		else if ( effect.frame == MotionFrame::Toward )
+		{
+			if ( TowardOf( e, t, in, m, effect, values, self, on, direction, length ) == false )
 			{
-				// Along the ground, from the player out to it; right on top of it, where it faces.
-				b3Vec3 out = b3Sub( target.end.point, t.position );
-				direction = b3GetLengthAndNormalize( &length, b3Vec3{ out.x, 0.0f, out.z } );
-				direction = length < 0.001f ? detmath::YawForward( c.facingYaw ) : direction;
+				continue;
 			}
-			else if ( effect.frame == MotionFrame::To )
+		}
+		else
+		{
+			direction = MotionDirection( effect.frame, effect.direction, c, in );
+		}
+		direction = MotionTurn( effect, direction );
+		ImpulseEnd( effect, MotionStrength( m, effect, values, effect.momentum ? kMotionMomentumLimit : kMotionImpulseLimit ), on, c, direction );
+		if ( effect.markEvent >= 0 && on.kind == MotionEnd::Kind::Body && sayer == selfId )
+		{
+			MarkThrown( e, on.entity.get<NetId>().value, effect );
+		}
+	}
+	// A player it found moves as it is given, for its seconds.
+	if ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self )
+	{
+		for ( const MotionFind::Move& move : find.moves )
+		{
+			if ( OnlyHolds( bits, move.only ) )
 			{
+				GiveMove( target.end.entity, move.param,
+						  MotionAmount( m, move.value, move.expr, values, MoveParamInfoOf( move.param ).min, MoveParamInfoOf( move.param ).max ), move.seconds );
+			}
+		}
+	}
+	// The owner's fields, once for each thing found; and its item's (M287).
+	bool anyChange = false;
+	for ( const MotionFind::Change& change : find.changes )
+	{
+		anyChange = anyChange || OnlyHolds( bits, change.only );
+	}
+	if ( anyChange )
+	{
+		Blackboard board = GetBoard( e );
+		flecs::entity item = MotionItemOf( selfId, m );
+		Blackboard itemBoard = item.is_valid() ? GetBoard( item ) : Blackboard{};
+		itemBoard.values.resize( m_config.fields );
+		bool itemChanged = false;
+		for ( MotionFind::Change change : find.changes )
+		{
+			if ( OnlyHolds( bits, change.only ) == false )
+			{
+				continue;
+			}
+			change.value = MotionAmount( m, change.value, change.expr, values, -1.0e9f, 1.0e9f );
+			if ( change.item == false )
+			{
+				ApplyFindChange( change, board );
+			}
+			else if ( item.is_valid() )
+			{
+				ApplyFindChange( change, itemBoard );
+				itemChanged = true;
+			}
+		}
+		SetBoard( e, board );
+		if ( itemChanged )
+		{
+			SetBoard( item, itemBoard );
+		}
+	}
+	// Statuses on a player it found (M288).
+	if ( find.applies.empty() == false && ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self ) &&
+		 HasMotionState( target.end.entity ) )
+	{
+		MotionState theirs = GetMotionState( target.end.entity );
+		for ( const MotionFind::Apply& apply : find.applies )
+		{
+			if ( OnlyHolds( bits, apply.only ) )
+			{
+				const float seconds = MotionAmount( m, apply.seconds, apply.expr, values, 0.0f, 600.0f );
+				ApplyMotionStatus( theirs, apply.status, m_globals.tick + std::max<uint32_t>( 1, uint32_t( seconds * float( m_config.tickRate ) + 0.5f ) ),
+								   m_globals.tick );
+			}
+		}
+		SetMotionState( target.end.entity, theirs );
+	}
+	for ( const MotionFind::Emit& emit : find.emits )
+	{
+		if ( emit.event < 0 || OnlyHolds( bits, emit.only ) == false )
+		{
+			continue;
+		}
+		ModEventRecord record;
+		record.type = uint16_t( emit.event );
+		record.netIdA = sayer;
+		record.netIdB = target.netId;
+		record.tick = m_globals.tick;
+		record.point = target.end.point;
+		record.late = 1; // (the motions have run: they hear it next tick)
+		RecordModEvent( record );
+	}
+}
+
+void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
+						  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& motionValues, uint32_t sayer )
+{
+	sayer = sayer != 0 ? sayer : e.get<NetId>().value;
+	FindPlace where;
+	if ( PlaceOfFind( e, c, t, in, m, find, motionValues, where ) == false )
+	{
+		return; // (at where a cast holds: it holds nothing)
+	}
+	std::vector<Found> targets;
+	FindAll( e, t, find, where, targets );
+	for ( const Found& target : targets )
+	{
+		ActOnFound( e, c, t, in, m, find, self, hit, motionValues, sayer, target, where.place );
+	}
+}
+
+void Simulation::RunGrab( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, uint16_t motion,
+						  const MotionSlot& slot, size_t index, const MotionFind& find, const MotionEnd& self, const MotionEnd& hit,
+						  const AnimGraphInputs& motionValues, bool starts )
+{
+	FindPlace where;
+	if ( PlaceOfFind( e, c, t, in, m, find, motionValues, where ) == false )
+	{
+		return;
+	}
+	const uint32_t selfId = e.get<NetId>().value;
+	const uint32_t since = MotionStepStart( slot );
+	const MotionGrab* had = e.try_get<MotionGrab>();
+	MotionGrab grab = had != nullptr ? *had : MotionGrab{};
+	if ( starts || had == nullptr || grab.motion != motion || grab.step != slot.step || grab.find != index || grab.sinceTick != since )
+	{
+		grab = MotionGrab{};
+		grab.motion = motion;
+		grab.step = slot.step;
+		grab.find = uint8_t( index );
+		grab.sinceTick = since;
+	}
+	// What this player threw is out of its hands.
+	const ThrownMarks* thrown = e.try_get<ThrownMarks>();
+	auto threw = [&]( uint32_t netId ) {
+		for ( int k = 0; thrown != nullptr && k < kThrownMarks; ++k )
+		{
+			if ( thrown->list[k].body == netId && thrown->list[k].untilTick > m_globals.tick )
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	// Its shape's middle where it is now: what it holds lets go past twice its size from there.
+	const b3Vec3 middle = b3Add( where.place, b3Add( where.pivot, b3RotateVector( where.turn, b3Sub( find.middle, where.pivot ) ) ) );
+	const float letGo = 2.0f * std::max( find.size, 0.5f );
+	uint8_t kept = 0;
+	for ( uint8_t k = 0; k < grab.count; ++k )
+	{
+		const MotionEnd end = EndOf( e, t, FindEntity( grab.held[k] ) );
+		if ( end.kind == MotionEnd::Kind::None || end.kind == MotionEnd::Kind::World || b3Distance( end.point, middle ) > letGo || threw( grab.held[k] ) )
+		{
+			continue;
+		}
+		grab.held[kept++] = grab.held[k];
+	}
+	grab.count = kept;
+	// Takes in what is in its shape, while it holds fewer than it may: when the step starts, its once
+	// lines on each.
+	if ( grab.count < find.most )
+	{
+		std::vector<Found> targets;
+		FindAll( e, t, find, where, targets );
+		for ( const Found& target : targets )
+		{
+			if ( grab.count >= find.most || target.end.kind == MotionEnd::Kind::Self || threw( target.netId ) ||
+				 std::find( grab.held, grab.held + grab.count, target.netId ) != grab.held + grab.count )
+			{
+				continue;
+			}
+			grab.held[grab.count++] = target.netId;
+			if ( starts )
+			{
+				ActOnFound( e, c, t, in, m, find, self, hit, motionValues, selfId, target, where.place );
+			}
+		}
+	}
+	// Its forces on everything it holds.
+	const float ramp = 1.0f;
+	for ( uint8_t k = 0; k < grab.count; ++k )
+	{
+		Found target;
+		target.netId = grab.held[k];
+		target.end = EndOf( e, t, FindEntity( grab.held[k] ) );
+		target.distance = b3Distance( target.end.point, where.place );
+		AnimGraphInputs values = motionValues;
+		TargetValues read;
+		const uint16_t bits = ReadTarget( m, find, target, where.place, values, read );
+		for ( const MotionEffect& effect : find.effects )
+		{
+			if ( effect.kind != MotionEffect::Kind::Force || OnlyHolds( bits, effect.only ) == false )
+			{
+				continue;
+			}
+			const MotionEnd& on = effect.target.kind == MotionTarget::Kind::Self ? self : target.end;
+			b3Vec3 direction = {};
+			float toward = -1.0f;
+			if ( effect.frame == MotionFrame::Toward )
+			{
+				if ( TowardOf( e, t, in, m, effect, values, self, on, direction, toward ) == false )
+				{
+					continue;
+				}
+			}
+			else if ( effect.frame == MotionFrame::Away || effect.frame == MotionFrame::To )
+			{
+				float length = 0.0f;
 				direction = b3GetLengthAndNormalize( &length, b3Sub( target.end.point, self.point ) );
 				if ( length < 0.001f )
 				{
@@ -6145,69 +6520,225 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 				direction = MotionDirection( effect.frame, effect.direction, c, in );
 			}
 			direction = MotionTurn( effect, direction );
-			ImpulseEnd( effect, MotionStrength( m, effect, values, effect.momentum ? kMotionMomentumLimit : kMotionImpulseLimit ), on, c, direction );
+			ApplyForce( m, effect, values, on, on.kind == MotionEnd::Kind::Self ? target.end : self, c, direction,
+						ramp * MotionRamp( effect, m_globals.tick - std::min( m_globals.tick, since ), m_config.tickRate ), toward );
 		}
-		// A player it found moves as it is given, for its seconds.
-		if ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self )
+	}
+	e.set<MotionGrab>( grab );
+}
+
+void Simulation::ApplyForce( const Motion& m, const MotionEffect& effect, const AnimGraphInputs& values, const MotionEnd& target,
+							 const MotionEnd& other, Character& c, b3Vec3 direction, float ramp, float toward )
+{
+	if ( target.kind == MotionEnd::Kind::None || target.kind == MotionEnd::Kind::World || target.mass <= 0.0f )
+	{
+		return;
+	}
+	const float dt = m_config.TimeStep();
+	const float strength = MotionStrength( m, effect, values, MotionForceLimit( effect ) );
+	const float along = b3Dot( EndVelocity( target, c ), direction );
+	// Its speed (the top, or the speed it brings the target to), read when it acts.
+	const float top = MotionAmount( m, effect.speed, effect.speedExpr, values, -kMotionImpulseLimit, kMotionImpulseLimit );
+	if ( effect.push == MotionEffect::Push::Velocity && toward >= 0.0f )
+	{
+		// Toward a point (M290): the whole velocity is brought to the speed toward it, no faster than
+		// it can still stop there (at its rate), so what it pulls arrives and stays instead of
+		// swinging past and round.
+		const float rate = std::fabs( strength ) * ramp * dt;
+		const float speed = std::min( std::fabs( top ), std::sqrt( 2.0f * std::fabs( strength ) * toward ) );
+		b3Vec3 change = b3Sub( b3MulSV( speed, direction ), EndVelocity( target, c ) );
+		const float size = b3Length( change );
+		change = size > rate && size > 0.0f ? b3MulSV( rate / size, change ) : change;
+		if ( size > 0.0f )
 		{
-			for ( const MotionFind::Move& move : find.moves )
+			PushEnd( target, c, change );
+		}
+		return;
+	}
+	float change = 0.0f;
+	switch ( effect.push )
+	{
+		case MotionEffect::Push::Acceleration:
+			change = strength * ramp * dt;
+			break;
+		case MotionEffect::Push::Force:
+			change = strength * ramp / target.mass * dt;
+			break;
+		case MotionEffect::Push::Velocity:
+		{
+			// Toward the speed, no faster than its rate lets it.
+			float rate = std::fabs( strength ) * ramp * dt;
+			change = std::clamp( top - along, -rate, rate );
+			// With a reaction on something that can move, the speed is the two's toward each other,
+			// and each takes its share of the change by the other's weight: the light one does the
+			// moving, and the two never close faster than the speed. (Its own speed alone, mirrored,
+			// would hand a light body a heavy one's whole momentum again and again.)
+			if ( effect.react && other.mass > 0.0f && other.kind != MotionEnd::Kind::None && other.kind != MotionEnd::Kind::World )
 			{
-				GiveMove( target.end.entity, move.param, MotionAmount( m, move.value, move.expr, values, MoveParamInfoOf( move.param ).min, MoveParamInfoOf( move.param ).max ), move.seconds );
+				float closing = along - b3Dot( EndVelocity( other, c ), direction );
+				change = std::clamp( top - closing, -rate, rate ) * other.mass / ( target.mass + other.mass );
 			}
+			break;
 		}
-		// The owner's fields, once for each thing found; and its item's (M287).
-		if ( find.changes.empty() == false )
+	}
+	if ( effect.push != MotionEffect::Push::Velocity && top > 0.0f )
+	{
+		// A top speed along the push: past it, it pushes no more.
+		float room = change >= 0.0f ? top - along : top + along;
+		change = room <= 0.0f ? 0.0f : ( change >= 0.0f ? std::min( change, room ) : std::max( change, -room ) );
+	}
+	if ( change == 0.0f )
+	{
+		return;
+	}
+	PushEnd( target, c, b3MulSV( change, direction ) );
+	if ( effect.react )
+	{
+		// The other end takes the same momentum the other way: the player, when the force is on
+		// something else; what the probe found, when it is on the player.
+		if ( other.mass > 0.0f && other.kind != MotionEnd::Kind::None && other.kind != MotionEnd::Kind::World )
 		{
-			Blackboard board = GetBoard( e );
-			flecs::entity item = MotionItemOf( selfId, m );
-			Blackboard itemBoard = item.is_valid() ? GetBoard( item ) : Blackboard{};
-			itemBoard.values.resize( m_config.fields );
-			bool itemChanged = false;
-			for ( MotionFind::Change change : find.changes )
+			PushEnd( other, c, b3MulSV( -change * target.mass / other.mass, direction ) );
+		}
+	}
+}
+
+void Simulation::MarkThrown( flecs::entity e, uint32_t body, const MotionEffect& effect )
+{
+	ThrownMarks marks = e.has<ThrownMarks>() ? e.get<ThrownMarks>() : ThrownMarks{};
+	// The same body's mark again, else a place that is over, else the one that ends first.
+	int place = -1;
+	for ( int k = 0; k < kThrownMarks && place < 0; ++k )
+	{
+		place = marks.list[k].body == body ? k : place;
+	}
+	for ( int k = 0; k < kThrownMarks && place < 0; ++k )
+	{
+		place = marks.list[k].body == 0 || marks.list[k].untilTick <= m_globals.tick ? k : place;
+	}
+	if ( place < 0 )
+	{
+		place = 0;
+		for ( int k = 1; k < kThrownMarks; ++k )
+		{
+			place = marks.list[k].untilTick < marks.list[place].untilTick ? k : place;
+		}
+	}
+	ThrownMark& mark = marks.list[place];
+	mark.body = body;
+	mark.event = uint16_t( effect.markEvent );
+	mark.untilTick = m_globals.tick + 1 + std::max<uint32_t>( 1, uint32_t( effect.markSeconds * float( m_config.tickRate ) + 0.5f ) );
+	e.set<ThrownMarks>( marks );
+}
+
+void Simulation::StrikeThrown()
+{
+	if ( m_world.count<ThrownMarks>() == 0 )
+	{
+		return;
+	}
+	const float dt = m_config.TimeStep();
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity thrower( m_world, r.entity );
+		const ThrownMarks* had = thrower.try_get<ThrownMarks>();
+		if ( had == nullptr )
+		{
+			continue;
+		}
+		ThrownMarks marks = *had;
+		bool changed = false;
+		for ( ThrownMark& mark : marks.list )
+		{
+			if ( mark.body == 0 )
 			{
-				change.value = MotionAmount( m, change.value, change.expr, values, -1.0e9f, 1.0e9f );
-				if ( change.item == false )
+				continue;
+			}
+			flecs::entity body = mark.untilTick > m_globals.tick ? FindEntity( mark.body ) : flecs::entity();
+			const PhysicsBody* pb = body.is_valid() ? body.try_get<PhysicsBody>() : nullptr;
+			if ( pb == nullptr || PhysicsSide( body ) == false )
+			{
+				mark = ThrownMark{}; // over, or gone (picked up, removed)
+				changed = true;
+				continue;
+			}
+			const b3BodyId id = BodyOf( *pb );
+			const b3Vec3 velocity = b3Body_GetLinearVelocity( id );
+			const float speed = b3Length( velocity );
+			if ( speed < kImpactThreshold )
+			{
+				continue;
+			}
+			// Its box now and a tick ago: who that sweeps, in the characters' world.
+			const b3AABB box = b3Body_ComputeAABB( id );
+			const b3Vec3 centre = b3MulSV( 0.5f, b3Add( box.lowerBound, box.upperBound ) );
+			const b3Vec3 half = b3MulSV( 0.5f, b3Sub( box.upperBound, box.lowerBound ) );
+			const b3Vec3 back = b3MulSV( -dt, velocity );
+			b3Vec3 points[16];
+			for ( int k = 0; k < 8; ++k )
+			{
+				const b3Vec3 corner = { ( k & 1 ) ? half.x : -half.x, ( k & 2 ) ? half.y : -half.y, ( k & 4 ) ? half.z : -half.z };
+				points[k] = corner;
+				points[k + 8] = b3Add( corner, back );
+			}
+			const b3ShapeProxy proxy = { points, 16, 0.0f };
+			std::vector<uint32_t>& met = m_findScratch;
+			met.clear();
+			{
+				PhysicsArena::Scope scope( *m_arena );
+				BuildShapeLookup();
+				struct Gather
 				{
-					ApplyFindChange( change, board );
-				}
-				else if ( item.is_valid() )
+					const Simulation* sim;
+					std::vector<uint32_t>* out;
+				} ctx{ this, &met };
+				b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
+				b3World_OverlapShape(
+					m_characterWorld, centre, &proxy, filter,
+					[]( b3ShapeId shape, void* context ) -> bool {
+						auto* g = static_cast<Gather*>( context );
+						const uint32_t netId = g->sim->NetIdOfShape( shape );
+						if ( netId != 0 )
+						{
+							g->out->push_back( netId );
+						}
+						return true;
+					},
+					&ctx );
+			}
+			// The first it meets (by id: the same on every machine), a live player not the thrower.
+			std::sort( met.begin(), met.end() );
+			uint32_t struck = 0;
+			for ( uint32_t netId : met )
+			{
+				const flecs::entity who = FindEntity( netId );
+				const Character* other = who.is_valid() ? who.try_get<Character>() : nullptr;
+				if ( netId != r.netId && other != nullptr && other->dead == 0 )
 				{
-					ApplyFindChange( change, itemBoard );
-					itemChanged = true;
+					struck = netId;
+					break;
 				}
 			}
-			SetBoard( e, board );
-			if ( itemChanged )
-			{
-				SetBoard( item, itemBoard );
-			}
-		}
-		// Statuses on a player it found (M288).
-		if ( find.applies.empty() == false && ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self ) &&
-			 HasMotionState( target.end.entity ) )
-		{
-			MotionState theirs = GetMotionState( target.end.entity );
-			for ( const MotionFind::Apply& apply : find.applies )
-			{
-				const float seconds = MotionAmount( m, apply.seconds, apply.expr, values, 0.0f, 600.0f );
-				ApplyMotionStatus( theirs, apply.status, m_globals.tick + std::max<uint32_t>( 1, uint32_t( seconds * float( m_config.tickRate ) + 0.5f ) ), m_globals.tick );
-			}
-			SetMotionState( target.end.entity, theirs );
-		}
-		for ( int event : find.emits )
-		{
-			if ( event < 0 )
+			if ( struck == 0 )
 			{
 				continue;
 			}
 			ModEventRecord record;
-			record.type = uint16_t( event );
-			record.netIdA = sayer;
-			record.netIdB = target.netId;
+			record.type = mark.event;
+			record.netIdA = r.netId;
+			record.netIdB = struck;
 			record.tick = m_globals.tick;
-			record.point = target.end.point;
-			record.late = 1; // (the motions have run: they hear it next tick)
+			record.value = int32_t( std::lround( speed ) );
+			record.point = centre;
+			record.vector = velocity;
+			record.late = 1;
 			RecordModEvent( record );
+			mark = ThrownMark{}; // (a body strikes once)
+			changed = true;
+		}
+		if ( changed )
+		{
+			thrower.set<ThrownMarks>( marks );
 		}
 	}
 }
@@ -6511,6 +7042,20 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 									 const Blackboard& board, const std::vector<MotionActive>& active, const AnimGraphInputs& playerValues )
 {
 	const float dt = m_config.TimeStep();
+	if ( const MotionGrab* grab = e.try_get<MotionGrab>(); grab != nullptr && grab->count != 0 )
+	{
+		bool still = false;
+		for ( const MotionActive& on : active )
+		{
+			still = still || ( on.index == grab->motion && state.slots[on.index].step == grab->step );
+		}
+		if ( still == false )
+		{
+			MotionGrab off = *grab;
+			off.count = 0;
+			e.set<MotionGrab>( off );
+		}
+	}
 	for ( const MotionActive& on : active )
 	{
 		const Motion& m = m_motions->list[on.index];
@@ -6531,6 +7076,23 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 		const MotionEnd self = ResolveEnd( e, t, MotionTarget{}, nullptr, board );
 		const MotionTarget hitTarget{ MotionTarget::Kind::Hit, 0, true };
 		const MotionEnd hit = m.probe ? ResolveEnd( e, t, hitTarget, &hold, board ) : MotionEnd{};
+		Blackboard hitBoard;
+		MotionState hitState;
+		if ( hit.entity.is_valid() && ( hit.kind == MotionEnd::Kind::Player || hit.kind == MotionEnd::Kind::Body ) )
+		{
+			// (M290: "combat.health of target" in its lines.)
+			values.builtins[AnimExpr::Player] = hit.kind == MotionEnd::Kind::Player ? 1.0f : 0.0f;
+			if ( HasBoard( hit.entity ) )
+			{
+				hitBoard = GetBoard( hit.entity );
+				values.targetBoard = &hitBoard.values;
+			}
+			if ( hit.kind == MotionEnd::Kind::Player && HasMotionState( hit.entity ) )
+			{
+				hitState = GetMotionState( hit.entity );
+				values.targetStatuses = hitState.statuses;
+			}
+		}
 
 		if ( size_t( slot.step ) >= m.steps.size() )
 		{
@@ -6557,12 +7119,20 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 			// The direction is the player's own, whoever the effect acts on; "to" is toward the target,
 			// or for an effect on the player itself, toward what its probe found.
 			b3Vec3 direction = {};
+			float toward = -1.0f; // (M290: how far its point is, for a force toward one)
 			if ( effect.frame == MotionFrame::To )
 			{
-				const MotionEnd& toward = target.kind == MotionEnd::Kind::Self ? hit : target;
+				const MotionEnd& to = target.kind == MotionEnd::Kind::Self ? hit : target;
 				float distance = 0.0f;
-				direction = b3GetLengthAndNormalize( &distance, b3Sub( toward.point, self.point ) );
-				if ( toward.kind == MotionEnd::Kind::None || distance < 0.001f )
+				direction = b3GetLengthAndNormalize( &distance, b3Sub( to.point, self.point ) );
+				if ( to.kind == MotionEnd::Kind::None || distance < 0.001f )
+				{
+					continue;
+				}
+			}
+			else if ( effect.frame == MotionFrame::Toward )
+			{
+				if ( TowardOf( e, t, in, m, effect, values, self, target, direction, toward ) == false )
 				{
 					continue;
 				}
@@ -6633,67 +7203,17 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 					continue;
 				}
 				ImpulseEnd( effect, MotionStrength( m, effect, values, effect.momentum ? kMotionMomentumLimit : kMotionImpulseLimit ), target, c, direction );
+				if ( effect.markEvent >= 0 && target.kind == MotionEnd::Kind::Body )
+				{
+					MarkThrown( e, target.entity.get<NetId>().value, effect );
+				}
 			}
 			else if ( effect.kind == MotionEffect::Kind::Force )
 			{
-				if ( target.kind == MotionEnd::Kind::World || target.mass <= 0.0f )
-				{
-					continue;
-				}
-				const float ramp = MotionRamp( effect, m_globals.tick - MotionStepStart( slot ), m_config.tickRate );
-				const float strength = MotionStrength( m, effect, values, MotionForceLimit( effect ) );
-				const float along = b3Dot( EndVelocity( target, c ), direction );
-				// Its speed (the top, or the speed it brings the target to), read when it acts.
-				const float top = MotionAmount( m, effect.speed, effect.speedExpr, values, -kMotionImpulseLimit, kMotionImpulseLimit );
-				float change = 0.0f;
-				switch ( effect.push )
-				{
-					case MotionEffect::Push::Acceleration:
-						change = strength * ramp * dt;
-						break;
-					case MotionEffect::Push::Force:
-						change = strength * ramp / target.mass * dt;
-						break;
-					case MotionEffect::Push::Velocity:
-					{
-						// Toward the speed, no faster than its rate lets it.
-						float rate = std::fabs( strength ) * ramp * dt;
-						change = std::clamp( top - along, -rate, rate );
-						// With a reaction on something that can move, the speed is the two's toward
-						// each other, and each takes its share of the change by the other's weight:
-						// the light one does the moving, and the two never close faster than the
-						// speed. (Its own speed alone, mirrored, would hand a light body a heavy
-						// one's whole momentum again and again.)
-						const MotionEnd& other = target.kind == MotionEnd::Kind::Self ? hit : self;
-						if ( effect.react && other.mass > 0.0f && other.kind != MotionEnd::Kind::None && other.kind != MotionEnd::Kind::World )
-						{
-							float closing = along - b3Dot( EndVelocity( other, c ), direction );
-							change = std::clamp( top - closing, -rate, rate ) * other.mass / ( target.mass + other.mass );
-						}
-						break;
-					}
-				}
-				if ( effect.push != MotionEffect::Push::Velocity && top > 0.0f )
-				{
-					// A top speed along the push: past it, it pushes no more.
-					float room = change >= 0.0f ? top - along : top + along;
-					change = room <= 0.0f ? 0.0f : ( change >= 0.0f ? std::min( change, room ) : std::max( change, -room ) );
-				}
-				if ( change == 0.0f )
-				{
-					continue;
-				}
-				PushEnd( target, c, b3MulSV( change, direction ) );
-				if ( effect.react )
-				{
-					// The other end takes the same momentum the other way: the player, when the force
-					// is on something else; what the probe found, when it is on the player.
-					const MotionEnd& other = target.kind == MotionEnd::Kind::Self ? hit : self;
-					if ( other.mass > 0.0f && other.kind != MotionEnd::Kind::None && other.kind != MotionEnd::Kind::World )
-					{
-						PushEnd( other, c, b3MulSV( -change * target.mass / other.mass, direction ) );
-					}
-				}
+				// The other end (a reaction's): the player, when the force is on something else; what
+				// the probe found, when it is on the player.
+				ApplyForce( m, effect, values, target, target.kind == MotionEnd::Kind::Self ? hit : self, c, direction,
+							MotionRamp( effect, m_globals.tick - MotionStepStart( slot ), m_config.tickRate ), toward );
 			}
 			else if ( effect.kind == MotionEffect::Kind::Link )
 			{
@@ -6739,10 +7259,10 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 		runEffects( m.steps[slot.step].effects, on.started );
 		// Its step's walls and finds, when the step starts; its repeat's, each time it happens.
 		auto runOnce = [&]( const MotionStep& step ) {
-			RunBreaks( m, step, slot, t.position, values );
+			RunBreaks( m, step, slot, t.position, values, e, &in );
 			for ( const MotionFind& find : step.finds )
 			{
-				if ( MotionGuardHolds( slot, find.guard ) )
+				if ( find.grab == false && MotionGuardHolds( slot, find.guard ) )
 				{
 					RunFind( e, c, t, in, m, find, self, hit, values, 0 );
 				}
@@ -6757,6 +7277,14 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 		{
 			runEffects( current.repeats.front().effects, true );
 			runOnce( current.repeats.front() );
+		}
+		// Its step's grabs (M290): every tick it is the step.
+		for ( size_t f = 0; f < current.finds.size(); ++f )
+		{
+			if ( current.finds[f].grab && MotionGuardHolds( slot, current.finds[f].guard ) )
+			{
+				RunGrab( e, c, t, in, m, on.index, slot, f, current.finds[f], self, hit, values, on.started );
+			}
 		}
 		if ( holdChanged )
 		{

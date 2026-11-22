@@ -102,6 +102,24 @@ enum class MotionFrame : uint8_t
 	To = 5,	   // from the player toward the target (what the probe found; the entity a field names)
 	Away = 6,  // inside a find: from where the player is out to what it found, along the ground
 	Marker = 7, // `direction` as drawn in the scene (a marker's forward), turned with the look
+	// (M290) From the target to a point (MotionEffect::toward): the owner (a pull), a point along the
+	// look, where the cast holds.
+	Toward = 8,
+};
+
+// A place in the world a line happens at (M290: a sheet's "at POINT", "toward POINT"), worked out
+// when it acts.
+struct MotionPoint
+{
+	enum class Kind : uint8_t
+	{
+		Owner = 0, // the owner's feet (a find's shape around them, as drawn); toward: its chest
+		Look = 1,  // `distance` metres along the look from the chest, stopped short of the level
+		Hit = 2,   // where the motion's cast holds (none: the line does nothing)
+	};
+	Kind kind = Kind::Owner;
+	float distance = 0.0f;
+	int16_t distanceExpr = -1; // (Motion::exprs; -1: `distance`)
 };
 
 struct MotionEffect
@@ -184,6 +202,16 @@ struct MotionEffect
 	// Impulse: `strength` is momentum (N s), shared out by what the target weighs, not a change of
 	// velocity whatever it weighs.
 	bool momentum = false;
+	// MotionFrame::Toward: the point (M290).
+	MotionPoint toward;
+	// Impulse (a sheet's "throw ... marks EVENT for S", M290): a body thrown is marked as the owner's
+	// for `markSeconds`: a player it strikes in that time has `markEvent` said (A the thrower, B the
+	// one struck, its value the speed). -1: no mark.
+	int16_t markEvent = -1;
+	float markSeconds = 0.0f;
+	// In a find's or a grab's lines: its condition (MotionFind::onlys), decided for each thing found;
+	// -1: none (M290: an if under a find).
+	int8_t only = -1;
 };
 
 // A direction turned as an effect says (MotionEffect::turned).
@@ -208,6 +236,10 @@ inline constexpr int kMotionSteps = 64;
 // far up from its origin, the chest, as a sheet draws a body (the fist's box is 1 m up).
 inline constexpr float kFindLookPivot = 1.0f;
 
+// How many bodies a grab holds at once (M290), and a thrower's marks out at once.
+inline constexpr int kGrabMost = 8;
+inline constexpr int kThrownMarks = 8;
+
 // A find (a sheet's "find SHAPE"): everything the shape overlaps when its step starts, each in turn,
 // nearest first. Its shape is in the player's frame (its feet, forward +Z), turned as `frame` says.
 struct MotionFind
@@ -225,16 +257,33 @@ struct MotionFind
 	bool self = false;								   // the player itself may be found
 	uint8_t most = 16;								   // at most this many, the nearest
 	int8_t guard = -1;
+	// (M290) Where its shape is: around the owner's feet (as drawn), or moved to a point (its shape's
+	// own offset kept: about the point instead). Players before bodies, the nearest of each first
+	// (none found: the bodies). A grab: what it finds is held while its step lasts (at most
+	// kGrabMost): its lasting lines (forces) act on each every tick, its once lines when the step
+	// starts; a held body lets go once it is further from the shape's middle than the shape's own
+	// size, and the shape takes others in while it holds fewer than it may.
+	MotionPoint at;
+	bool playersFirst = false;
+	bool grab = false;
+	// Its lines' conditions (an if under it), each decided for each thing found: a bit each.
+	std::vector<AnimExpr> onlys;
 	// What happens to each: impulses (on what it found, unless they say), emits (with what it found,
 	// at it), and movement parameters given to a player it found for their seconds.
 	std::vector<MotionEffect> effects;
-	std::vector<int> emits;
+	struct Emit
+	{
+		int event = -1;
+		int8_t only = -1;
+	};
+	std::vector<Emit> emits;
 	struct Move
 	{
 		uint8_t param = 0;
 		float value = 0.0f;
 		float seconds = 0.0f;
 		int16_t expr = -1; // its value as an expression, read for each thing found (-1: `value`)
+		int8_t only = -1;
 	};
 	std::vector<Move> moves;
 	// Changes of the owner's fields, once for each thing found (a count of what was hit).
@@ -246,6 +295,7 @@ struct MotionFind
 		float value = 0.0f;
 		int16_t expr = -1; // its value as an expression, read for each thing found (-1: `value`)
 		bool item = false; // a field of the motion's item (M287: the bat's heat when it hits)
+		int8_t only = -1;
 	};
 	std::vector<Change> changes;
 	// Statuses on each player it found (M288): status, seconds (a number or an expression).
@@ -254,11 +304,16 @@ struct MotionFind
 		int status = -1;
 		float seconds = 0.0f;
 		int16_t expr = -1;
+		int8_t only = -1;
 	};
 	std::vector<Apply> applies;
 	// How far out along the ground its shape reaches from the player (its points and radius): what
 	// "reach" is a share of.
 	float extent = 0.0f;
+	// Its shape's middle (the mean of its points, in the player's frame) and how far its farthest
+	// edge is from it: a grab lets go past twice that (M290).
+	b3Vec3 middle = {};
+	float size = 0.0f;
 };
 inline constexpr int kFindMost = 16;
 
@@ -342,6 +397,7 @@ struct MotionStep
 	{
 		MotionValue radius, speed, seconds;
 		int8_t guard = -1;
+		MotionPoint at; // (M290) where: the owner, or a point
 	};
 	std::vector<Break> breaks;
 	std::vector<int8_t> removes; // an item's "remove self" each, under a guard
@@ -394,6 +450,14 @@ struct Motion
 	float probeTravel = 0.0f; // m/s it flies at, traced tick by tick (a projectile); 0: it holds at once
 	bool probeFacing = false; // thrown level along the body's facing (cast ... along facing), not the camera's look
 	int holdEvent = -1;		  // schema event said where and when the probe takes hold; -1: none
+	// Statuses on the player the probe takes hold of, when it does (M290: an apply under a cast).
+	struct HoldApply
+	{
+		int status = -1;
+		float seconds = 0.0f;
+		int16_t expr = -1;
+	};
+	std::vector<HoldApply> holdApplies;
 	// What it may hold on to (kProbeHolds bits). Something else in its way stops it: it holds nothing.
 	uint8_t probeHolds = kProbeHoldsAll;
 	// Its shape (a sheet's cast of a shape): points around the line's tip in the frame of the line

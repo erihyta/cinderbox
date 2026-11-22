@@ -150,6 +150,7 @@ The same [expression language](looks.md#expressions) everywhere: a condition, a 
 | `local` | the viewer's own player is the subject (looks only) |
 | `active Slam`, `active brawl.fist.Jab` | a motion is on now (its own sheet's by name, another item's by its kind) |
 | `stunned`, `remaining stunned` | in a motion (M288): the player has the status now; the seconds it has left |
+| `player`, `combat.health of target`, `stunned of target` | in a find's (or a grab's, a cast's) lines (M290): what it found is a player; its field; its status |
 | `ready Fire`, `cooldown Fire`, `uses Fire` | in a motion (M287): the motion could start now (not on, off cooldown, a use left); the seconds of cooldown it has left; its uses left (0 without a limit). A HUD does not read them yet: a timer field is what it shows |
 | everything else | numbers, fields, `+ - * /`, comparisons, `( )`, `grounded`, `speed`, `held.jump`, `pressed.dash`, `using.gun.rifle`, `carried.KIND`, `hand.FIELD`, `event.value`, `time`, `distance`, `reach` |
 
@@ -256,23 +257,26 @@ As far in as the motion's first line, not under an `if`, before its first `wait`
 One table: the parser says every refusal from it (`"force" cannot stand in a find: there a line is
 change, emit, impulse, move for or apply`).
 
-| Line | In a step | After `every` | In a `timeout` | In a `find` | In a `cast` | In an item's motion |
-|---|---|---|---|---|---|---|
-| `change` | yes | yes | yes | yes: the owner's field, once for each thing found | | yes |
-| `apply` | yes | yes | yes | yes: on each player found | | |
-| `emit` | yes | yes | yes | yes: with what it found | one, when it takes hold | yes |
-| `impulse` | yes | yes | yes | yes: on what it found | yes: on what it holds | yes |
-| `launch` | yes | yes | yes | | | |
-| `break` | yes | yes | yes | | | yes |
-| `find` | yes | yes | yes | | | yes |
-| `if` / `else` | yes | yes | yes | | | yes |
-| `move for S` | yes | | | yes: given to a player found | yes | |
-| `move` | yes | | | | yes: while it holds | |
-| `force`, `link` | yes | | | | yes | |
-| `follow`, `end` | yes | | | | | |
-| `remove self` | | | | | | yes (only there) |
-| `cast` | the first step, not under an `if`, once a motion | | | | | |
-| `every` | as far in as the motion's first line, once a step | | | | | |
+| Line | In a step | After `every` | In a `timeout` | In a `find` | In a `grab` (M290) | In a `cast` | In an item's motion |
+|---|---|---|---|---|---|---|---|
+| `change` | yes | yes | yes | yes: the owner's field, once for each thing found | yes: once for each, when the step starts | | yes |
+| `apply` | yes | yes | yes | yes: on each player found | yes | yes: on the player it holds | |
+| `emit` | yes | yes | yes | yes: with what it found | yes | one, when it takes hold | yes |
+| `impulse` | yes | yes | yes | yes: on what it found | yes: when the step starts | yes: on what it holds | yes |
+| `throw` | | | | yes | yes | yes | |
+| `launch` | yes | yes | yes | | | | |
+| `break` | yes | yes | yes | | | | yes |
+| `find` | yes | yes | yes | | | | yes |
+| `grab` | yes | | | | | | |
+| `if` / `else` | yes | yes | yes | yes: for each thing found | yes | | yes |
+| `move for S` | yes | | | yes: given to a player found | yes | yes | |
+| `move` | yes | | | | | yes: while it holds | |
+| `force` | yes | | | | yes: every tick, on all it holds | yes | |
+| `link` | yes | | | | | yes | |
+| `follow`, `end` | yes | | | | | | |
+| `remove self` | | | | | | | yes (only there) |
+| `cast` | the first step, not under an `if`, once a motion | | | | | | |
+| `every` | as far in as the motion's first line, once a step | | | | | | |
 
 Why the gaps: a find's and a cast's lines happen *to* something; `every` and a `timeout` repeat or
 end, so nothing in them lasts; a cast belongs to the motion, not to a step.
@@ -287,9 +291,10 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 | `emit EVENT [value VALUE]` | a mod event, at the owner: for looks, state machines and a mod's C++ (`event.value` in a look; M287: the value, a number or an expression, read when it happens; not yet in a find). In a find, A is the player and B what it found, at it |
 | `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace nothing\|vertical\|horizontal\|all]` | a change of velocity (m/s whatever it weighs, to 200), or of momentum (`kind momentum`: N·s, to 100000, shared out by what the target weighs). `replace`: that part of the velocity is cleared first |
 | `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | an item into the world: a new one of a kind, or the one carried (in a hand first, else the lowest slot's), with the player's own velocity; `seconds` until it is removed (0: it stays); `from` a marker's place instead of `ahead` of where the look starts |
-| `break radius R [speed S] [seconds S]` | breakable walls whose nearest piece is within R of the owner lose their pieces that near, flung at S (10), staying S seconds (0: for good) |
+| `break radius R [speed S] [seconds S] [at POINT]` | breakable walls whose nearest piece is within R of the owner (or of the point, M290: `look D`, `hit`) lose their pieces that near, flung at S (10), staying S seconds (0: for good) |
 | `remove self` | the owner item leaves the world |
-| `apply STATUS for S` | a status on the owner for S seconds (in a find: on each player it found). The same status again: the longer stands; a player has 8 at most (a new one takes the place of the one that ends first) (M288) |
+| `apply STATUS for S [on target]` | a status on the owner for S seconds (in a find: on each player it found; in a cast: on the player it holds, when it takes hold, M290). The same status again: the longer stands; a player has 8 at most (a new one takes the place of the one that ends first) (M288) |
+| `throw VALUE [along DIRECTION] marks EVENT for S` | in a find, a grab or a cast (M290): an impulse that marks the body it throws as the owner's for S seconds: the first other player it strikes in that time has EVENT said (A the thrower, B the one struck, its value the speed in m/s, at the body). Once a body strikes, its mark is spent; a player has 8 marks out at most |
 | `end` | the motion ends here |
 
 ### Lasting
@@ -316,7 +321,9 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 
 | Line | Does |
 |---|---|
-| `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at (x, y, z)]` | everything the shape overlaps when its step starts; the lines further in run once for each, nearest first, at most N (16). Players and bodies (props, items lying about) unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), as it looks (with the pitch, about the chest: 1 m up, M279), or not at all |
+| `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at POINT] [players first]` | everything the shape overlaps when its step starts; the lines further in run once for each, nearest first, at most N (16). Players and bodies (props, items lying about) unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), as it looks (with the pitch, about the chest: 1 m up, M279), or not at all. `players first` (M290): every player before any body, whatever is nearer (the bat: one find, a player never missed for a ball lying nearer) |
+| `grab SHAPE [players] [bodies] [max N] [turned ...] [at POINT] [players first]` | (M290) a find whose catch is **held** while its step lasts (8 at most): its once lines (impulses, throws, emits, changes, applies, `move for`) on each when the step starts, its forces on everything it holds **every tick**. It takes in what comes into its shape while it holds fewer than it may; what is further from the shape's middle than twice its size is let go, and so is what the player threw (a mark). In a step, not after an `every` |
+| `if EXPRESSION` / `else` under a find or a grab | (M290) decided **for each thing found**, not when the step starts: `if player`, `if combat.health of target < 30` |
 | `cast SHAPE range R [speed V] [holds level bodies players] [along look\|facing]` | a line thrown along the look (`along facing`: level along the body's facing, whatever the camera does: a punch's) when the motion starts: at once (speed 0: it holds what is there, or the motion does not happen) or flying at V m/s, holding what it meets first. The lines further in act **while it holds**; with a cast, what the first step does to bodies goes under it |
 
 | A `SHAPE` | |
@@ -324,6 +331,9 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 | a node's path (a find) | an `Area3D` (its `CollisionShape3D` children) or one `CollisionShape3D` beside the sheet: a sphere, capsule, box, cylinder or convex shape, drawn as if the player stood at the scene's origin (its feet) facing −Z |
 | `sphere R`, `box (X,Y,Z)`, `capsule R H` (a find) | written in the line, around the player's feet |
 | `at (x, y, z)` (a find) | moves either: metres right, up and ahead |
+| `at NODE` (a find, M290) | a `Marker3D` beside the sheet: its place, as `at (x, y, z)` |
+| `at look D` (a find, a grab, a break; M290) | around a point D metres along the look from the chest, stopped a little short of the level (anything static): a point the player steers. D a number, a param or an expression |
+| `at hit` (M290) | around where the motion's cast holds (holding nothing: the line does nothing) |
 | `ray` (a cast) | a line |
 | `sphere R` (a cast) | a ball swept along the line |
 | a node's path (a cast) | one convex `CollisionShape3D`, drawn around its own origin as the line's tip, forward −Z |
@@ -344,6 +354,7 @@ An `Area3D` under an item is not part of the item's body.
 | `world (x, y, z)` | as given, in the world (`world direction (x, y, z)`, the older spelling) |
 | `to` | toward the target (what the cast holds, or a field's entity) |
 | `away` | in a find: from the player out to what it found, along the ground |
+| `toward owner`, `toward look D`, `toward hit` (M290, in place of `along`) | from the target to the owner's chest (a pull), to a point along the look, to where the cast holds. A force of `kind velocity` toward a point brings the target's whole velocity to its speed toward it, no faster than it can still stop there: what it pulls arrives and stays |
 | `NODE` | a `Marker3D`'s (any `Node3D`'s) forward (−Z) as drawn, turned as the look is |
 | then `turn (yaw, pitch)` | turned by degrees, right and up |
 
@@ -648,8 +659,8 @@ them after M243). What a sheet names stays a node: `CollisionShape3D` and `Area3
 
 | What | |
 |---|---|
-| `$target:FIELD` | the target's own fields, read in a find's or a cast's lines |
-| `at POINT` | a find or an emit around a point other than the owner (`anchor`, where the cast hit, a marker) |
+| `at POINT` for an emit, an effect's place | today a find, a grab and a break (M290) |
+| `at target` | a find inside a find's lines |
 | `PATH at T` | a direction along a `Path3D` |
 | A cast in a later step | today a cast is thrown when the motion starts |
 | The player's body | `wall` (a condition and a direction), `teleport`, passing through, not hittable, the capsule's size, keep speed and steer, hidden from others ([ROADMAP.md](../ROADMAP.md#parked)) |

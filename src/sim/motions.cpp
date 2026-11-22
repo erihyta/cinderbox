@@ -227,6 +227,7 @@ b3Vec3 MotionDirection( MotionFrame frame, b3Vec3 world, const Character& c, con
 		}
 		case MotionFrame::To:
 		case MotionFrame::Away:
+		case MotionFrame::Toward:
 			break;
 	}
 	return { 0.0f, 1.0f, 0.0f };
@@ -287,6 +288,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	std::vector<int8_t> guards;
 	std::vector<std::vector<std::string>> guardTexts;
 	bool inFind = false; // between a "find" and its "endfind": what happens to each thing found
+	// In a find: the condition its lines are under (an if in it, decided for each thing found: M290),
+	// and its conditions as written.
+	int8_t findOnly = -1;
+	std::vector<std::string> onlyTexts;
 	int number = 0;
 	auto fail = [&]( const std::string& what ) {
 		SetAnimCurveNames( nullptr );
@@ -326,6 +331,25 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		number = value.number;
 		expr = value.expr;
 		return true;
+	};
+	// A point (M290): "look D" (D a number or an expression), "hit", "owner", from word `at`.
+	auto pointOf = [&]( Motion& m, const std::vector<std::string>& w, size_t at, MotionPoint& out ) {
+		if ( w.size() > at && w[at] == "hit" )
+		{
+			out.kind = MotionPoint::Kind::Hit;
+			return true;
+		}
+		if ( w.size() > at && w[at] == "owner" )
+		{
+			out.kind = MotionPoint::Kind::Owner;
+			return true;
+		}
+		if ( w.size() > at + 1 && w[at] == "look" )
+		{
+			out.kind = MotionPoint::Kind::Look;
+			return amount( m, w[at + 1], 0.0f, 200.0f, out.distance, out.distanceExpr );
+		}
+		return false;
 	};
 	// A strength: a number, or an expression (kept in the motion's exprs) read when it acts.
 	auto strength = [&]( Motion& m, const std::string& word, float limit, MotionEffect& e, std::string& why ) {
@@ -425,8 +449,23 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			find.most = uint8_t( most );
 			find.frame = w[4] == "facing" ? MotionFrame::Facing : w[4] == "look" ? MotionFrame::Look : MotionFrame::World;
 			find.guard = guard;
+			// (M290) first: players before bodies; grab: what it finds is held.
+			for ( size_t k = 5; k < w.size(); ++k )
+			{
+				if ( w[k] != "first" && w[k] != "grab" )
+				{
+					return fail( "a find's flags are first (players before bodies) and grab (held while its step lasts)" );
+				}
+				( w[k] == "first" ? find.playersFirst : find.grab ) = true;
+			}
+			if ( find.grab && ( find.most > kGrabMost || &step != &parent ) )
+			{
+				return fail( "a grab holds " + std::to_string( kGrabMost ) + " at most, and is a step's (not after an every)" );
+			}
 			step.finds.push_back( find );
 			inFind = true;
+			findOnly = -1;
+			onlyTexts.clear();
 			continue;
 		}
 		if ( key == "shape" )
@@ -458,19 +497,122 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( inFind ? "a find has a shape" : "endfind with no find" );
 			}
 			MotionFind& done = step.finds.back();
+			b3Vec3 sum = {};
+			float points = 0.0f;
 			for ( const MotionFind::Piece& piece : done.pieces )
 			{
 				for ( const b3Vec3& p : piece.points )
 				{
 					done.extent = std::max( done.extent, std::sqrt( p.x * p.x + p.z * p.z ) + piece.radius );
+					sum = b3Add( sum, p );
+					points += 1.0f;
+				}
+			}
+			done.middle = points > 0.0f ? b3MulSV( 1.0f / points, sum ) : b3Vec3{};
+			for ( const MotionFind::Piece& piece : done.pieces )
+			{
+				for ( const b3Vec3& p : piece.points )
+				{
+					done.size = std::max( done.size, b3Length( b3Sub( p, done.middle ) ) + piece.radius );
 				}
 			}
 			inFind = false;
 			continue;
 		}
-		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" && key != "change" && key != "apply" )
+		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" && key != "change" && key != "apply" &&
+			 key != "only" && key != "point" && key != "toward" && key != "marks" && ( key != "force" || step.finds.back().grab == false ) )
 		{
-			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit, a change or a param (with its seconds)" );
+			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit, a change or a param (with its seconds); "
+						 "in a grab a force too" );
+		}
+		if ( key == "only" )
+		{
+			// only [condition] (inside a find, M290): what follows counts for a thing found only if it
+			// holds for it; none: for all of them.
+			if ( inFind == false )
+			{
+				return fail( "only is a find's (an if under it)" );
+			}
+			if ( w.size() < 2 || w[1].empty() )
+			{
+				findOnly = -1;
+				continue;
+			}
+			auto known = std::find( onlyTexts.begin(), onlyTexts.end(), w[1] );
+			if ( known != onlyTexts.end() )
+			{
+				findOnly = int8_t( known - onlyTexts.begin() );
+				continue;
+			}
+			if ( int( onlyTexts.size() ) >= kMotionGuards )
+			{
+				return fail( "a find has at most " + std::to_string( kMotionGuards ) + " conditions (if, else)" );
+			}
+			AnimExpr expr;
+			std::string exprError;
+			if ( CompileAnimExpr( w[1], schema, expr, exprError, warnings ) == false )
+			{
+				return fail( "only: " + exprError );
+			}
+			findOnly = int8_t( onlyTexts.size() );
+			onlyTexts.push_back( w[1] );
+			step.finds.back().onlys.push_back( expr );
+			continue;
+		}
+		if ( key == "point" )
+		{
+			// point look D | hit | owner (M290): where the find (or the break on the line before) is.
+			MotionPoint at;
+			if ( pointOf( m, w, 1, at ) == false )
+			{
+				return fail( "point wants look D (metres along the look, a number or an expression), hit (where the cast holds) or owner" );
+			}
+			if ( inFind )
+			{
+				step.finds.back().at = at;
+			}
+			else if ( step.breaks.empty() == false )
+			{
+				step.breaks.back().at = at;
+			}
+			else
+			{
+				return fail( "point is of a find, or of the break on the line before" );
+			}
+			continue;
+		}
+		if ( key == "toward" || key == "marks" )
+		{
+			// toward owner | look D | hit: the effect on the line before pushes from its target toward
+			// the point; marks EVENT SECONDS: the impulse on the line before marks what it throws (M290).
+			std::vector<MotionEffect>& list = inFind ? step.finds.back().effects : step.effects;
+			if ( list.empty() )
+			{
+				return fail( key + " is of the effect on the line before: none" );
+			}
+			MotionEffect& e = list.back();
+			if ( key == "toward" )
+			{
+				if ( pointOf( m, w, 1, e.toward ) == false || e.kind == MotionEffect::Kind::Launch || e.kind == MotionEffect::Kind::Follow )
+				{
+					return fail( "toward wants owner, look D or hit, after an impulse or a force" );
+				}
+				e.frame = MotionFrame::Toward;
+				continue;
+			}
+			float seconds = 0.0f;
+			if ( e.kind != MotionEffect::Kind::Impulse || w.size() < 3 || Number( w[2], 0.0f, kMaxMotionSeconds, seconds ) == false )
+			{
+				return fail( "marks wants an event and its seconds, after an impulse" );
+			}
+			const int event = schema.FindEvent( w[1] );
+			if ( event < 0 )
+			{
+				warnings += m.name + ": no mod declares the event \"" + w[1] + "\": a throw marks nothing; ";
+			}
+			e.markEvent = int16_t( event );
+			e.markSeconds = seconds;
+			continue;
 		}
 		if ( key == "when" )
 		{
@@ -644,6 +786,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 							 ( why.empty() ? std::string() : ": " + why ) );
 			}
 			b.guard = guard;
+			if ( w.size() > 4 && pointOf( m, w, 4, b.at ) == false )
+			{
+				return fail( "a break's point is look D, hit or owner" );
+			}
 			step.breaks.push_back( b );
 		}
 		else if ( key == "remove" )
@@ -868,6 +1014,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( inFind )
 			{
 				e.guard = -1; // (the find's guard holds for all of it)
+				e.only = findOnly;
 				step.finds.back().effects.push_back( e );
 				continue;
 			}
@@ -898,6 +1045,14 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( ( e.frame == MotionFrame::World || e.frame == MotionFrame::Marker ) && ParseWorld( w, 8, e.direction ) == false )
 			{
 				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
+			}
+			if ( inFind )
+			{
+				// (A grab's: on each thing it holds, every tick, M290.)
+				e.guard = -1;
+				e.only = findOnly;
+				step.finds.back().effects.push_back( e );
+				continue;
 			}
 			step.effects.push_back( e );
 		}
@@ -969,7 +1124,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				{
 					return fail( "a param inside a find is given to what it found for some seconds: give them" );
 				}
-				step.finds.back().moves.push_back( { p.param, p.value, p.seconds, p.expr } );
+				step.finds.back().moves.push_back( { p.param, p.value, p.seconds, p.expr, findOnly } );
 				continue;
 			}
 			step.params.push_back( p );
@@ -1018,7 +1173,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			if ( inFind )
 			{
-				step.finds.back().applies.push_back( { apply.status, apply.seconds.number, apply.seconds.expr } );
+				step.finds.back().applies.push_back( { apply.status, apply.seconds.number, apply.seconds.expr, findOnly } );
 				continue;
 			}
 			step.applies.push_back( apply );
@@ -1059,7 +1214,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( inFind )
 			{
 				// The owner's field, once for each thing found (the find's guard holds for all of it).
-				step.finds.back().changes.push_back( { change.slot, change.type, uint8_t( change.op ), change.value, change.expr, change.item } );
+				step.finds.back().changes.push_back( { change.slot, change.type, uint8_t( change.op ), change.value, change.expr, change.item, findOnly } );
 				continue;
 			}
 			step.changes.push_back( change );
@@ -1079,6 +1234,25 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				warnings += m.name + ": no mod declares the event \"" + w[1] + "\": nothing is emitted when its line takes hold; ";
 			}
+		}
+		else if ( key == "hold_apply" )
+		{
+			// hold_apply STATUS SECONDS (M290): on the player the probe takes hold of, when it does.
+			if ( whole() == false )
+			{
+				return false;
+			}
+			Motion::HoldApply apply;
+			if ( w.size() < 3 || amount( m, w[2], 0.0f, kMaxMotionSeconds, apply.seconds, apply.expr ) == false )
+			{
+				return fail( "hold_apply wants a status and its seconds" );
+			}
+			apply.status = schema.FindStatus( w[1] );
+			if ( apply.status < 0 )
+			{
+				warnings += m.name + ": no mod declares the status \"" + w[1] + "\": nothing is applied; ";
+			}
+			m.holdApplies.push_back( apply );
 		}
 		else if ( key == "emit" )
 		{
@@ -1107,7 +1281,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			if ( inFind )
 			{
-				step.finds.back().emits.push_back( emit.event );
+				step.finds.back().emits.push_back( { emit.event, findOnly } );
 				continue;
 			}
 			step.emits.push_back( emit );

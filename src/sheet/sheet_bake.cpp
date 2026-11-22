@@ -327,6 +327,27 @@ std::string BakeSheetPart( const Dict& part, const std::string& kind, const Scen
 		}
 		lines += "turn\t" + Num( turn.x ) + "\t" + Num( turn.y ) + "\n";
 	}
+	// (M290) toward a point; a throw's mark.
+	const std::string toward = Strip( props.Get( "toward", "" ).AsString() );
+	if ( toward.empty() == false )
+	{
+		if ( Plain( toward ) == false )
+		{
+			why = "toward owner, hit or look D";
+			return std::string();
+		}
+		lines += "toward\t" + Replace( toward, " ", "\t" ) + "\n";
+	}
+	const std::string marks = Strip( props.Get( "marks", "" ).AsString() );
+	if ( marks.empty() == false )
+	{
+		if ( Plain( marks ) == false || Contains( marks, " " ) )
+		{
+			why = "marks names one event";
+			return std::string();
+		}
+		lines += "marks\t" + marks + "\t" + Num( props.Get( "marks_seconds", 0.0 ).AsFloat() ) + "\n";
+	}
 	const std::string start = props.Get( "from", "" ).AsString();
 	if ( start.empty() == false )
 	{
@@ -817,7 +838,8 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 				{
 					return fail( line + "break: no tab or # in its numbers" );
 				}
-				text += "break\t" + radius + "\t" + speed + "\t" + seconds + "\n";
+				const std::string point = value( "point", "" ); // (M290: look D, hit)
+				text += "break\t" + radius + "\t" + speed + "\t" + seconds + ( point.empty() ? std::string() : "\t" + Replace( point, " ", "\t" ) ) + "\n";
 			}
 			else if ( what == "remove" )
 			{
@@ -887,6 +909,13 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 						text += "hold_emit\t" + event + "\n";
 						continue;
 					}
+					if ( each.Get( "kind", "" ).AsString() == "apply" )
+					{
+						// A status on the player it holds, when it takes hold (M290).
+						const std::string seconds = Strip( each.Get( "value", "" ).AsString() );
+						text += "hold_apply\t" + Strip( each.Get( "text", "" ).AsString() ) + "\t" + ( Contains( seconds, " " ) ? "(" + seconds + ")" : seconds ) + "\n";
+						continue;
+					}
 					const std::string lines = BakeSheetPart( each.Get( "part", Dict() ).AsDict(), kind, scene, why );
 					if ( lines.empty() )
 					{
@@ -900,17 +929,48 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 				// find <who> <self> <at most> <frame>, its shape's pieces, what happens to each, endfind
 				std::string why;
 				std::string shape;
-				if ( FindShapeLines( statement.Get( "shape", Dict() ).AsDict(), scene, false, shape, why ) == false )
+				Dict drawn = statement.Get( "shape", Dict() ).AsDict().Duplicate();
+				const std::string atNode = drawn.Get( "at_node", "" ).AsString();
+				if ( atNode.empty() == false )
+				{
+					// At a marker (M290): its place in the scene, as "at (x, y, z)" is.
+					Float3 zAxis, origin;
+					if ( scene.Place( atNode, "at", zAxis, origin, why ) == false )
+					{
+						return fail( line + why );
+					}
+					drawn["at"] = Float3{ origin.x, origin.y, 0.0f - origin.z };
+				}
+				if ( FindShapeLines( drawn, scene, false, shape, why ) == false )
 				{
 					return fail( line + why );
 				}
+				const std::string point = Strip( statement.Get( "point", "" ).AsString() );
+				if ( Plain( point ) == false )
+				{
+					return fail( line + "at look D or hit" );
+				}
 				text += "find\t" + statement.Get( "who", "all" ).AsString() + "\t" + ( statement.Get( "self", false ).AsBool() ? "1" : "0" ) + "\t" +
-						std::to_string( int( statement.Get( "most", 16 ).AsInt() ) ) + "\t" + statement.Get( "frame", "facing" ).AsString() + "\n" + shape;
+						std::to_string( int( statement.Get( "most", 16 ).AsInt() ) ) + "\t" + statement.Get( "frame", "facing" ).AsString() +
+						( statement.Get( "first", false ).AsBool() ? "\tfirst" : "" ) + ( statement.Get( "grab", false ).AsBool() ? "\tgrab" : "" ) + "\n" +
+						( point.empty() ? std::string() : "point\t" + Replace( point, " ", "\t" ) + "\n" ) + shape;
 				const List inside = statement.Get( "statements", List() ).AsList();
+				std::string only;
 				for ( size_t k = 0; k < inside.size(); ++k )
 				{
 					const Dict each = inside[k].AsDict();
 					const std::string at = "line " + std::to_string( each.Get( "line", 0 ).AsInt() ) + ": ";
+					// (M290) The condition it is under, decided for each thing found.
+					const std::string under = Strip( each.Get( "only", "" ).AsString() );
+					if ( under != only )
+					{
+						if ( Plain( under ) == false )
+						{
+							return fail( at + "\"" + under + "\" cannot have a tab or a #" );
+						}
+						text += under.empty() ? std::string( "only\n" ) : "only\t" + under + "\n";
+						only = under;
+					}
 					if ( each.Get( "kind", "" ).AsString() == "emit" )
 					{
 						const std::string event = Strip( each.Get( "text", "" ).AsString() );

@@ -29,6 +29,7 @@
 #include "rollback.h"
 #include "hybrid_session.h"
 #include "scenario.h"
+#include "sheet_bake.h"
 #include "sheet_dump.h"
 #include "sheet_rules.h"
 #include "sheet_v1.h"
@@ -6820,6 +6821,315 @@ void TestMotionFinds()
 	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t17\tfacing\nshape\t1\t0\t0\t0\nendfind\n" ) );
 	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\nendfind\n" ) );
 	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\nendfind\n" ) == false );
+}
+
+// A scene with nothing in it: what a sheet bakes when its lines name no node.
+class EmptyScene final : public sheet::Scene
+{
+public:
+	bool IsItem() const override
+	{
+		return false;
+	}
+	int ItemUse() const override
+	{
+		return 0;
+	}
+	sheet::Strings UseConditions() const override
+	{
+		return {};
+	}
+	sheet::Strings UseChanges() const override
+	{
+		return {};
+	}
+	double UseCooldown() const override
+	{
+		return 0.0;
+	}
+	std::string UseEmits() const override
+	{
+		return std::string();
+	}
+	bool Place( const std::string& path, const char*, sheet::Float3&, sheet::Float3&, std::string& why ) const override
+	{
+		why = "no node " + path;
+		return false;
+	}
+	bool PathSamples( const std::string& path, std::vector<sheet::Float3>&, std::string& why ) const override
+	{
+		why = "no node " + path;
+		return false;
+	}
+	bool Shapes( const std::string& path, bool, sheet::Float3, std::vector<sheet::ShapePiece>&, std::string& why ) const override
+	{
+		why = "no node " + path;
+		return false;
+	}
+};
+
+// A sheet's motion blocks as a motions file (its errors in `errors`).
+std::string SheetMotionsText( const std::string& sheetText, std::string& errors )
+{
+	sheet::Strings problems;
+	std::string text = "cinderbox_motions\t3\n";
+	for ( const sheet::Rule& rule : sheet::ParseRules( sheetText, problems ) )
+	{
+		if ( rule.type != "motion" )
+		{
+			continue;
+		}
+		std::string error;
+		const std::string baked = sheet::BakeSheetMotion( rule.properties, "", EmptyScene(), error );
+		text += baked;
+		problems.push_back( error );
+	}
+	for ( const std::string& p : problems )
+	{
+		errors += p.empty() ? std::string() : p + "; ";
+	}
+	return text;
+}
+
+// M290 where and on what: the owner's telekinesis (docs/step6-plan.md section 7) and the bat's one
+// find. A pull: a cast that holds a player, says it, makes it "pulled" and draws it to the owner. A
+// hold: a ball 6 m along the look (stopped by the level) that grabs the crates in it and brings them
+// to its middle while the key is held. A throw: what is there thrown along the look, marked: the
+// player it strikes is said (A the thrower, B the one struck). The bat: players first, then bodies, in
+// one find, each its own push (an if under the find, for each thing found). Copied mid-hold, a
+// simulation goes on the same.
+void TestMotionTelekinesis()
+{
+	ModSchema schema;
+	schema.events = { "tk.pulled", "tk.struck", "bat.hit" };
+	schema.statuses = { "pulled" };
+	schema.actions.push_back( { "pull", 0, "Q" } );
+	schema.actions.push_back( { "hold", 1, "E" } );
+	schema.actions.push_back( { "throw", 2, "R" } );
+	schema.actions.push_back( { "bat", 3, "F" } );
+	const std::string sheetText = "cbsheet 1\n"
+								  "motion Pull on press pull\n"
+								  "\tlasts 0.6 s\n"
+								  "\tcast sphere 0.4 range 18 holds players\n"
+								  "\t\temit tk.pulled\n"
+								  "\t\tapply pulled for 0.6 s on target\n"
+								  "\t\tforce 60 kind velocity top 14 on target toward owner\n"
+								  "motion Hold while held.hold\n"
+								  "\tgrab sphere 3 bodies max 8 at look 6\n"
+								  "\t\tforce 40 kind velocity top 12 toward look 6\n"
+								  "motion Throw on press throw if active Hold\n"
+								  "\tfind sphere 3 bodies max 8 at look 6\n"
+								  "\t\tthrow 30 along look marks tk.struck for 2 s\n"
+								  "motion Bat on press bat\n"
+								  "\tfind box (1.4, 1.4, 1.9) at (0, -0.8, 1.05) players first max 2\n"
+								  "\t\temit bat.hit\n"
+								  "\t\tif player\n"
+								  "\t\t\timpulse 2 along facing\n"
+								  "\t\telse\n"
+								  "\t\t\timpulse 7 along facing\n";
+	std::string errors;
+	const std::string text = SheetMotionsText( sheetText, errors );
+	CHECK( errors.empty() );
+	if ( errors.empty() == false )
+	{
+		std::printf( "    %s\n", errors.c_str() );
+		return;
+	}
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 4 );
+	if ( motions == nullptr || motions->list.size() != 4 )
+	{
+		std::printf( "    %s\n%s\n", warnings.c_str(), text.c_str() );
+		return;
+	}
+	const MotionFind& grabbed = motions->list[1].First().finds.at( 0 );
+	const MotionFind& bat = motions->list[3].First().finds.at( 0 );
+	CHECK( grabbed.grab && grabbed.at.kind == MotionPoint::Kind::Look && grabbed.at.distance == 6.0f && grabbed.effects.size() == 1 &&
+		   grabbed.effects[0].frame == MotionFrame::Toward && grabbed.effects[0].toward.kind == MotionPoint::Kind::Look );
+	CHECK( motions->list[2].First().finds.at( 0 ).effects.at( 0 ).markEvent == 1 && motions->list[0].holdApplies.size() == 1 );
+	CHECK( bat.playersFirst && bat.onlys.size() == 2 && bat.effects.size() == 2 && bat.effects[0].only == 0 && bat.effects[1].only == 1 );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	auto place = [&]( int slot, b3Vec3 at, uint16_t yaw ) {
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.target = sim.PlayerNetId( PlayerSlot( slot ) );
+		c.mode = 1;
+		c.a = { at.x, at.y, at.z };
+		c.index = yaw;
+		f.commands.push_back( c );
+	};
+	auto crate = [&]( b3Vec3 at ) {
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.value = -1;
+		c.a = { at.x, at.y, at.z };
+		c.c = { 0.25f, 0.25f, 0.25f };
+		f.commands.push_back( c );
+	};
+	auto events = [&]( int type ) {
+		std::vector<uint32_t> who;
+		for ( const ModEventRecord& e : seen )
+		{
+			if ( int( e.type ) == type )
+			{
+				who.push_back( e.netIdB );
+			}
+		}
+		return who;
+	};
+	auto position = [&]( uint32_t netId ) { return sim.EntityTransform( netId )->position; };
+	auto bodyVelocity = [&]( uint32_t netId ) {
+		const PhysicsBody* pb = sim.FindEntity( netId ).try_get<PhysicsBody>();
+		return pb != nullptr ? b3Body_GetLinearVelocity( sim.BodyOf( *pb ) ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 2 );
+	const uint32_t p0 = sim.PlayerNetId( 0 ), p1 = sim.PlayerNetId( 1 );
+
+	// The bat: a crate nearer than the player in its box; the player first all the same, each with
+	// its own push.
+	place( 0, { 0.0f, 1.0f, 0.0f }, 0 );
+	place( 1, { 0.0f, 1.0f, 1.7f }, 0 );
+	crate( { 0.3f, 0.3f, 0.8f } );
+	step( 60 );
+	std::vector<uint32_t> crates;
+	for ( const auto& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			crates.push_back( r.netId );
+		}
+	}
+	CHECK( crates.size() == 1 );
+	if ( crates.size() != 1 )
+	{
+		return;
+	}
+	f.inputs[0].actions = 8;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const b3Vec3 hitPlayer = sim.PlayerCharacter( 1 )->velocity, hitCrate = bodyVelocity( crates[0] );
+	std::printf( "    the bat: the player at %.2f m/s ahead, the crate at %.2f (it is at %.2f %.2f %.2f; %zu said)\n", double( hitPlayer.z ),
+				 double( hitCrate.z ), double( position( crates[0] ).x ), double( position( crates[0] ).y ), double( position( crates[0] ).z ),
+				 events( 2 ).size() );
+	CHECK( ( events( 2 ) == std::vector<uint32_t>{ p1, crates[0] } ) );
+	CHECK( hitPlayer.z > 1.5f && hitPlayer.z < 3.0f && hitCrate.z > 5.0f );
+	step( 60 );
+
+	// The hold: three crates around a point 6 m ahead (and one far off); held, they come to it.
+	place( 0, { 0.0f, 1.0f, 0.0f }, 0 );
+	place( 1, { 20.0f, 1.0f, 0.0f }, 0 );
+	{
+		SimCommand gone;
+		gone.type = CommandType::Destroy;
+		gone.target = crates[0];
+		f.commands.push_back( gone );
+	}
+	crate( { -1.0f, 0.3f, 6.0f } );
+	crate( { 1.0f, 0.3f, 6.5f } );
+	crate( { 0.0f, 0.3f, 5.0f } );
+	crate( { 0.0f, 0.3f, 15.0f } );
+	step( 60 );
+	crates.clear();
+	for ( const auto& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			crates.push_back( r.netId );
+		}
+	}
+	CHECK( crates.size() == 4 );
+	if ( crates.size() != 4 )
+	{
+		return;
+	}
+	f.inputs[0].actions = 2;
+	step( 90 );
+	const b3Vec3 chest = sim.ViewPivot( sim.FindEntity( p0 ), position( p0 ) );
+	const b3Vec3 middle = { chest.x, chest.y, chest.z + 6.0f };
+	float farthest = 0.0f;
+	for ( size_t k = 0; k < 3; ++k )
+	{
+		farthest = std::max( farthest, b3Distance( position( crates[k] ), middle ) );
+	}
+	const MotionGrab* grab = sim.FindEntity( p0 ).try_get<MotionGrab>();
+	std::printf( "    the hold: %d held, the farthest %.2f m from its middle, the far crate %.2f m off\n", grab != nullptr ? int( grab->count ) : -1,
+				 double( farthest ), double( b3Distance( position( crates[3] ), middle ) ) );
+	CHECK( grab != nullptr && grab->count == 3 && farthest < 1.2f && b3Distance( position( crates[3] ), middle ) > 8.0f );
+
+	// Copied while it holds: the copy goes on the same.
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation copy( TestConfig(), FlatMap() );
+	copy.SetMotions( motions );
+	CHECK( copy.LoadPortable( image ) && copy.ComputeHash() == sim.ComputeHash() );
+	for ( int i = 0; i < 20; ++i )
+	{
+		f.tick = sim.Tick();
+		copy.Step( f );
+		sim.Step( f );
+	}
+	counted = sim.Globals().modEventCount;
+	CHECK( copy.ComputeHash() == sim.ComputeHash() );
+
+	// The throw, the key still held: along the look, at the player 12 m ahead; struck, it is said.
+	place( 1, { 0.0f, 1.0f, 12.0f }, 0 );
+	step( 5 );
+	f.inputs[0].actions = 2 | 4;
+	step( 1 );
+	f.inputs[0].actions = 2;
+	const b3Vec3 thrown = bodyVelocity( crates[0] );
+	step( 30 );
+	f.inputs[0].actions = 0;
+	const std::vector<uint32_t> struck = events( 1 );
+	std::printf( "    the throw: %.1f m/s ahead; %zu struck the player; the crates %.1f m out\n", double( thrown.z ), struck.size(),
+				 double( b3Distance( position( crates[0] ), middle ) ) );
+	CHECK( thrown.z > 25.0f && struck.empty() == false && struck.size() <= 3 );
+	for ( const ModEventRecord& e : seen )
+	{
+		CHECK( int( e.type ) != 1 || ( e.netIdA == p0 && e.netIdB == p1 && e.value >= 15 ) );
+	}
+	// (Thrown, they are out of its hands: the hold does not take them back.)
+	CHECK( b3Distance( position( crates[0] ), middle ) > 6.0f );
+	step( 120 );
+
+	// The pull: the player 10 m ahead is held, pulled toward the owner, and has the status a while.
+	place( 0, { 0.0f, 1.0f, 0.0f }, 0 );
+	place( 1, { 0.0f, 1.0f, 10.0f }, 0 );
+	step( 60 );
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const MotionState theirs = sim.GetMotionState( sim.FindEntity( p1 ) );
+	CHECK( HasMotionStatus( theirs, 0, sim.Tick() ) && ( events( 0 ) == std::vector<uint32_t>{ p1 } ) );
+	step( 36 );
+	const float left = position( p1 ).z;
+	std::printf( "    the pull: from 10 m to %.2f m\n", double( left ) );
+	CHECK( left < 6.0f );
+	step( 30 );
+	CHECK( HasMotionStatus( sim.GetMotionState( sim.FindEntity( p1 ) ), 0, sim.Tick() ) == false );
 }
 
 // M250 lag compensation in the simulation (SimConfig::compensation): a player's finds and probes meet
@@ -14471,6 +14781,7 @@ int main( int argc, char** argv )
 		{ "prop_walls", TestPropWalls },
 		{ "prop_leaves_walls", TestPropLeavesWalls },
 		{ "motion_finds", TestMotionFinds },
+		{ "motion_telekinesis", TestMotionTelekinesis },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_lag_compensation", TestMotionLagCompensation },
 		{ "motion_curves", TestMotionCurves },

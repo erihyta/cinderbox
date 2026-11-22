@@ -1,4 +1,4 @@
-// A brawler's kit (first made in M163). Five skills on the
+// A brawler's kit (first made in M163). Six skills on the
 // hotbar, as a Roblox fighting game has them, each an item of its own (client/prefabs). The skills
 // are used by their slots' keys where they are (CbItem.slot_key_uses): nothing changes hands.
 //
@@ -8,12 +8,17 @@
 //   slot 3  Uppercut     3, on the ground: whoever is ahead is launched up (4 s)
 //   slot 4  Ground slam  4, in the air: a dive, and a shockwave where you land (5 s)
 //   slot 5  Guard        hold 5: slow, and the kit's hits on you do a quarter
+//   slot 6  Telekinesis  selected, click: pulls a player to you; right button held: breaks walls
+//                        loose and holds bodies 6 m along your look; click while holding: throws
+//                        them (M290: the owner's weapon, until its own look is made)
 //
 // What a skill does to bodies (the lunge, the knockback, the launch, the dive) is its scene's: every
 // simulation runs it from the player's input, so it is predicted. The cooldowns and the combo are
 // timers the skills' sheets set (they count down by themselves, M287). This file is what nodes cannot say:
 //   - damage: a hit is the probe's event (brawl.jab.hit ..., with who was hit), and this mod turns
 //     it into combat.damage, a quarter of it on someone guarding
+//   - what telekinesis throws is its sheet's (a mark on each body thrown, M290); a player one
+//     strikes is hurt by its speed (brawl.tk.struck: brawl.telekinesis damage at 30 m/s)
 //   - the slam's shockwave is its sheet's too (a motion block waits for the ground, then finds who
 //     is in its Shockwave region and throws them, predicted); this mod hurts each one it says
 //     (brawl.slam.hit, with who was found)
@@ -30,7 +35,7 @@
 // It runs by default, beside the weapons; its skills then go to whatever slots are free (their
 // slots' keys use them wherever they are). Alone, with only what it needs:
 //   cb_server --mods inventory,combat,brawl
-// Server options: brawl.jab, brawl.finisher, brawl.dash, brawl.uppercut, brawl.slam (damage);
+// Server options: brawl.jab, brawl.finisher, brawl.dash, brawl.uppercut, brawl.slam, brawl.telekinesis (damage);
 // brawl.toss_break (8: m/s a tossed body breaks walls at; 0: never), brawl.toss_hole (1.2 m).
 
 #include "mod_api.h"
@@ -83,6 +88,9 @@ public:
 		m_slamStarted = declare.Event( "brawl.slam.started" );
 		m_slamLanded = declare.Event( "brawl.slam.landed" );
 		m_slamHit = declare.Event( "brawl.slam.hit" );
+		// Telekinesis (M290): what it throws strikes someone (its sheet's mark: a = who threw it, b =
+		// who it struck, value its speed in m/s).
+		m_struck = declare.Event( "brawl.tk.struck" );
 		// A marker in the fist's punches (its pack, brawl.fists): the frame the fist lands. The
 		// fist's sheet hits on it, not on the click.
 		declare.Event( "brawl.fist.strike" );
@@ -91,7 +99,7 @@ public:
 		m_damage = declare.Event( "combat.damage" );
 		m_team = declare.Field( "team.id", BoardType::Int, BoardScope::Entity, true ); // (the teams mod's)
 		m_hand = declare.Socket( "RightHand" );
-		// The five skills: all of them are their scenes'.
+		// The six skills: all of them are their scenes'.
 		declare.ItemsOfLook();
 	}
 
@@ -104,6 +112,7 @@ public:
 			m_amounts[size_t( i )] = int32_t( ctx.Option( names[i], defaults[i] ) );
 		}
 		m_slamDamage = int32_t( ctx.Option( "brawl.slam", 25.0 ) );
+		m_tkDamage = float( std::max( 0.0, ctx.Option( "brawl.telekinesis", 20.0 ) ) );
 		m_tossBreak = float( std::max( 0.0, ctx.Option( "brawl.toss_break", 8.0 ) ) );
 		m_tossHole = float( std::max( 0.1, ctx.Option( "brawl.toss_hole", 1.2 ) ) );
 		m_friendlyFire = ctx.Option( "combat.friendly_fire", 0.0 ) != 0.0;
@@ -149,6 +158,12 @@ public:
 					// the ragdoll keeps; struck where the fist landed, it folds there.
 					ctx.Toss( e.netIdB, {}, e.point, shove, m_tossBreak, m_tossHole );
 				}
+			}
+			// Someone a thrown body struck: hurt by how fast it was going (the full damage at 30 m/s).
+			if ( int( e.type ) == m_struck.index )
+			{
+				const int32_t amount = int32_t( std::lround( m_tkDamage * std::min( float( e.value ) / 30.0f, 1.5f ) ) );
+				Hurt( ctx, e.netIdA, e.netIdB, std::max( amount, 1 ), e.point, b3MulSV( 0.3f, e.vector ) );
 			}
 			// Someone the slam's shockwave found (its sheet throws them): hurt, by the slam's damage.
 			if ( int( e.type ) == m_slamHit.index )
@@ -206,10 +221,12 @@ public:
 	EventHandle m_slamStarted;
 	EventHandle m_slamLanded;
 	EventHandle m_slamHit;
+	EventHandle m_struck;
 	EventHandle m_damage;
 	FieldHandle m_team;
 	bool m_friendlyFire = false;
 	int32_t m_slamDamage = 25;
+	float m_tkDamage = 20.0f;
 	float m_tossBreak = 8.0f;
 	float m_tossHole = 1.2f;
 	int m_guard = -1;

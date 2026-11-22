@@ -28,7 +28,7 @@ function(cb_table_tests source out)
 endfunction()
 
 add_executable(cb_tests test_main.cpp)
-target_link_libraries(cb_tests PRIVATE cb_sim cb_anim cb_capture cb_sheet)
+target_link_libraries(cb_tests PRIVATE cb_sim cb_anim cb_capture cb_sheet cb_sheet_bake)
 target_compile_definitions(cb_tests PRIVATE CB_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 cb_target_warnings(cb_tests)
 

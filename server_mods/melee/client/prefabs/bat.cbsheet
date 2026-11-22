@@ -16,30 +16,32 @@ param pickup.hold_seconds 0.5 s
 
 # A swing, on the left mouse button: the pack plays it (melee.swing), and at the clip's melee.strike
 # marker a box where the player looks, pitch and all: 1.9 m ahead, 1.4 m across, 1.4 m from low to
-# high, turned about the chest with the look. In it, the nearest player (hurt by the server, nudged
-# here) and the two nearest loose bodies (knocked away): a player is never missed for a ball lying
-# nearer. Without the marker (a body the pack does not fit) the timeout hits the same way. The next
-# swing waits for melee.done, the follow-through's end: how long a swing lasts is the clip's alone
-# (1.1 s, animation_packs/source/Sword_Attack.res).
+# high, turned about the chest with the look. In it, the two nearest things, players first (M290: a
+# player is never missed for a ball lying nearer): a player hurt by the server, nudged here, and the
+# bat hot; a loose body knocked away. Without the marker (a body the pack does not fit) the timeout
+# hits the same way. The next swing waits for melee.done, the follow-through's end: how long a swing
+# lasts is the clip's alone (1.1 s, animation_packs/source/Sword_Attack.res).
+let swing = box (1.4, 1.4, 1.9) at (0, 1, 1.05) turned look players first max 2
+
 motion Swing on use
 	cooldown 0.3
 	emit melee.swing
 	wait for melee.strike within 0.6
-	find box (1.4, 1.4, 1.9) at (0, 1, 1.05) turned look players max 1
+	find swing
 		emit melee.hit
-		change melee.hot_left = 2
-		impulse 2 along facing
-	find box (1.4, 1.4, 1.9) at (0, 1, 1.05) turned look bodies max 2
-		emit melee.hit
-		impulse 7 along facing
+		if player
+			change melee.hot_left = 2
+			impulse 2 along facing
+		else
+			impulse 7 along facing
 	timeout
-	find box (1.4, 1.4, 1.9) at (0, 1, 1.05) turned look players max 1
+	find swing
 		emit melee.hit
-		change melee.hot_left = 2
-		impulse 2 along facing
-	find box (1.4, 1.4, 1.9) at (0, 1, 1.05) turned look bodies max 2
-		emit melee.hit
-		impulse 7 along facing
+		if player
+			change melee.hot_left = 2
+			impulse 2 along facing
+		else
+			impulse 7 along facing
 	wait for melee.done within 1.3
 
 # GlowWhileHot: for 2 s after it hurts someone (its timer).

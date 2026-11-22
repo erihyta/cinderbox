@@ -23,7 +23,7 @@ constexpr float kMinClipLength = 1.0f / 1024.0f;
 const char* const kBuiltinNames[AnimExpr::BuiltinCount] = {
 	"speed",	  "forward_speed", "vertical_speed", "grounded",	"airborne_time", "jumped",
 	"aiming",	  "backward",	   "state_time",	 "move_forward", "move_right",	"linked",	  "link_distance",
-	"time",		  "distance",	   "reach",
+	"time",		  "distance",	   "reach",			 "player",
 };
 
 thread_local const std::vector<AnimCurve>* t_curveNames = nullptr;
@@ -162,6 +162,23 @@ private:
 			if ( step.kind == AnimExpr::VarKind::Zero && m_warnings.find( "'" + name + "'" ) == std::string::npos )
 			{
 				m_warnings += "'" + name + "': no mod declares the field (it reads as 0); ";
+			}
+			return;
+		}
+		if ( name.rfind( "$other:", 0 ) == 0 )
+		{
+			// What a find found, or a cast holds (M290): its field, or its status.
+			const std::string own = name.substr( 7 );
+			const BoardField* field = m_schema.FindField( own );
+			const int status = m_schema.FindStatus( own );
+			step.kind = status >= 0 ? AnimExpr::VarKind::TargetStatus
+						: field != nullptr && field->scope != BoardScope::Private ? AnimExpr::VarKind::TargetField
+																				: AnimExpr::VarKind::Zero;
+			step.index = uint16_t( status >= 0 ? status : field != nullptr ? field->slot : 0 );
+			step.type = field != nullptr ? field->type : BoardType::Int;
+			if ( step.kind == AnimExpr::VarKind::Zero && m_warnings.find( "'" + name + "'" ) == std::string::npos )
+			{
+				m_warnings += "'" + name + "': no mod declares the field or status (it reads as 0); ";
 			}
 			return;
 		}
@@ -420,6 +437,24 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			}
 			return 0.0f;
 		}
+		case AnimExpr::VarKind::TargetField:
+		{
+			if ( in.targetBoard == nullptr || size_t( step.index ) >= in.targetBoard->size() )
+			{
+				return 0.0f;
+			}
+			const int32_t value = ( *in.targetBoard )[size_t( step.index )];
+			return step.type == BoardType::Float ? BoardToFloat( value ) : step.type == BoardType::Bool ? ( value != 0 ? 1.0f : 0.0f ) : float( value );
+		}
+		case AnimExpr::VarKind::TargetStatus:
+			for ( int k = 0; in.targetStatuses != nullptr && k < kMaxStatuses; ++k )
+			{
+				if ( in.targetStatuses[k].endTick > in.tick && in.targetStatuses[k].status == step.index )
+				{
+					return 1.0f;
+				}
+			}
+			return 0.0f;
 		case AnimExpr::VarKind::MotionReady:
 		case AnimExpr::VarKind::MotionCooldown:
 		case AnimExpr::VarKind::MotionUses:

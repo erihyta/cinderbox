@@ -11,7 +11,7 @@ param inventory.start 1
 
 use if brawl.cd_dash <= 0
 	tags attack
-	blocked by guard
+	blocked by guard, pulled
 	change brawl.cd_dash = 3
 	emit brawl.dash_strike.started
 	impulse 16 replace horizontal

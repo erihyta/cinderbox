@@ -1,0 +1,132 @@
+rule motion line 22 head 0
+  name: text "Pull"
+  trigger: text "use"
+  conditions: texts
+    - "not motion.Hold"
+  tags: texts
+    - "attack"
+  blocked: texts
+    - "guard"
+    - "pulled"
+  cooldown: float 4
+  lasts: float 0.6
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "cast"
+              range: float 18
+              kind: text "cast"
+              shape: dict
+                kind: text "sphere"
+                radius: float 0.4
+              holds: texts
+                - "players"
+              statements: list
+                - dict
+                    line: int 28
+                    verb: text "emit"
+                    only: text ""
+                    kind: text "emit"
+                    text: text "brawl.tk.pulled"
+                - dict
+                    line: int 29
+                    verb: text "apply"
+                    only: text ""
+                    kind: text "apply"
+                    text: text "pulled"
+                    value: text "0.6"
+                - dict
+                    line: int 30
+                    verb: text "force"
+                    only: text ""
+                    kind: text "part"
+                    part: dict
+                      class: text "CbForce"
+                      properties: dict
+                        strength: float 60
+                        kind: int 2
+                        speed: float 14
+                        target: int 1
+                        toward: text "owner"
+              guard: text ""
+              line: int 27
+rule motion line 32 head 0
+  name: text "Hold"
+  trigger: text "while"
+  expression: text "held.use2 and brawl.telekinesis"
+  blocked: texts
+    - "pulled"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "break"
+              radius: text "2"
+              speed: text "2"
+              point: text "look 6"
+              kind: text "break"
+              guard: text ""
+              line: int 34
+          - dict
+              verb: text "grab"
+              most: int 8
+              point: text "look 6"
+              kind: text "find"
+              grab: bool true
+              shape: dict
+                kind: text "sphere"
+                radius: float 3
+              who: text "bodies"
+              statements: list
+                - dict
+                    line: int 36
+                    verb: text "force"
+                    only: text ""
+                    kind: text "part"
+                    part: dict
+                      class: text "CbForce"
+                      properties: dict
+                        strength: float 40
+                        kind: int 2
+                        speed: float 12
+                        toward: text "look 6"
+                        target: int 3
+              guard: text ""
+              line: int 35
+rule motion line 38 head 0
+  name: text "Throw"
+  trigger: text "use"
+  conditions: texts
+    - "motion.Hold"
+  tags: texts
+    - "attack"
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "find"
+              most: int 8
+              point: text "look 6"
+              kind: text "find"
+              grab: bool false
+              shape: dict
+                kind: text "sphere"
+                radius: float 3
+              who: text "bodies"
+              statements: list
+                - dict
+                    line: int 41
+                    verb: text "throw"
+                    only: text ""
+                    kind: text "part"
+                    part: dict
+                      class: text "CbImpulse"
+                      properties: dict
+                        speed: float 30
+                        frame: int 0
+                        marks: text "brawl.tk.struck"
+                        marks_seconds: float 2
+                        target: int 3
+              guard: text ""
+              line: int 40
