@@ -165,6 +165,17 @@ private:
 			}
 			return;
 		}
+		if ( name.rfind( "remaining.", 0 ) == 0 )
+		{
+			const int status = m_schema.FindStatus( name.substr( 10 ) );
+			step.kind = status >= 0 ? AnimExpr::VarKind::StatusRemaining : AnimExpr::VarKind::Zero;
+			step.index = uint16_t( status >= 0 ? status : 0 );
+			if ( status < 0 && m_warnings.find( "'" + name + "'" ) == std::string::npos )
+			{
+				m_warnings += "'" + name + "': no mod declares the status (it reads as 0); ";
+			}
+			return;
+		}
 		for ( const char* state : { "ready.", "cooldown.", "uses." } )
 		{
 			if ( name.rfind( state, 0 ) == 0 )
@@ -260,6 +271,12 @@ private:
 					m_warnings += "'" + name + "': no mod declares the action (it reads as 0); ";
 				}
 			}
+			return;
+		}
+		if ( const int status = m_schema.FindStatus( name ); status >= 0 )
+		{
+			step.kind = AnimExpr::VarKind::Status;
+			step.index = uint16_t( status );
 			return;
 		}
 		const BoardField* field = m_schema.FindField( name );
@@ -389,6 +406,19 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			}
 			const int32_t value = ( *in.itemBoard )[size_t( step.index )];
 			return step.type == BoardType::Float ? BoardToFloat( value ) : step.type == BoardType::Bool ? ( value != 0 ? 1.0f : 0.0f ) : float( value );
+		}
+		case AnimExpr::VarKind::Status:
+		case AnimExpr::VarKind::StatusRemaining:
+		{
+			for ( int k = 0; in.statuses != nullptr && k < kMaxStatuses; ++k )
+			{
+				const MotionStatus& s = in.statuses[k];
+				if ( s.endTick > in.tick && s.status == step.index )
+				{
+					return step.kind == AnimExpr::VarKind::Status ? 1.0f : float( s.endTick - in.tick ) / float( std::max( 1u, in.tickRate ) );
+				}
+			}
+			return 0.0f;
 		}
 		case AnimExpr::VarKind::MotionReady:
 		case AnimExpr::VarKind::MotionCooldown:

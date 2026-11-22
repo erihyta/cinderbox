@@ -234,6 +234,7 @@ const LineRule kLineRules[] = {
 	{ "if", kInStep | kInEvery | kInTimeout | kInItem },
 	{ "else", kInStep | kInEvery | kInTimeout | kInItem },
 	{ "move for", kInStep | kInFind | kInCast },
+	{ "apply", kInStep | kInEvery | kInTimeout | kInFind },
 	{ "move", kInStep | kInCast },
 	{ "force", kInStep | kInCast },
 	{ "link", kInStep | kInCast },
@@ -1032,6 +1033,22 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				rule.settings["trigger"] = "press";
 				rule.settings["action"] = w[4].text;
 			}
+			else if ( how == "on" && w.size() >= 5 && ( w[3].text == "release" || w[3].text == "tap" || w[3].text == "hold" ) && ( cut == 5 || cut == 6 ) )
+			{
+				// on release ACTION, on tap ACTION [S], on hold ACTION [S] (M288)
+				rule.settings["trigger"] = w[3].text;
+				rule.settings["action"] = w[4].text;
+				double seconds = 0.0;
+				if ( cut == 6 )
+				{
+					if ( w[3].text == "release" || Number( w[5], seconds ) == false || seconds <= 0.0 )
+					{
+						fail( number, "on tap ACTION [S], on hold ACTION [S]: a tap is released before S, a hold still down at S (0.25 s)" );
+						continue;
+					}
+					rule.settings["seconds"] = seconds;
+				}
+			}
 			else if ( how == "on" && cut == 4 )
 			{
 				rule.settings["trigger"] = "event";
@@ -1102,6 +1119,13 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 					}
 					statement["kind"] = "change";
 					statement["text"] = RestFrom( line, w[1] );
+				}
+				else if ( verb == "apply" && w.size() >= 4 && w[2].text == "for" )
+				{
+					// (On each player found, M288.)
+					statement["kind"] = "apply";
+					statement["text"] = w[1].text;
+					statement["value"] = RestFrom( line, w[3] );
 				}
 				else if ( verb == "emit" && w.size() == 2 )
 				{
@@ -1218,7 +1242,8 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				rule.steps[rule.steps.size() - 1] = step;
 				continue;
 			}
-			const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "item" || verb == "owner";
+			const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "item" || verb == "owner" ||
+								 verb == "tags" || verb == "blocked" || verb == "cancels";
 			if ( ( stepLine || setting ) && top == false )
 			{
 				fail( number, "\"" + verb + "\" is the motion's: as far in as its first line, not under an if" );
@@ -1294,6 +1319,28 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 				{
 					rule.settings[verb] = value;
 				}
+				else if ( verb == "cooldown" && w.size() == 4 && w[2].text == "shared" && Number( w[1], value ) && value >= 0.0 )
+				{
+					// cooldown S shared NAME (M288): every motion naming it waits for it
+					rule.settings["cooldown"] = value;
+					rule.settings["cooldown_shared"] = w[3].text;
+				}
+				else if ( ( verb == "tags" || verb == "cancels" || ( verb == "blocked" && w.size() >= 3 && w[1].text == "by" ) ) && w.size() >= 2 )
+				{
+					// tags A, B; blocked by A, B; cancels A, B (M288): names, commas or spaces between
+					Strings names = rule.settings.Get( verb, Strings() ).AsStrings();
+					for ( size_t k = verb == "blocked" ? 2 : 1; k < w.size(); ++k )
+					{
+						for ( const std::string& one : Split( Replace( w[k].text, ",", " " ), " " ) )
+						{
+							if ( one.empty() == false )
+							{
+								names.push_back( one );
+							}
+						}
+					}
+					rule.settings[verb] = names;
+				}
 				else if ( verb == "uses" && w.size() >= 2 && IsValidInt( w[1].text ) && ToInt( w[1].text ) > 0 &&
 						  ( w.size() == 2 || ( w.size() == 4 && w[2].text == "refill" && w[3].text == "ground" ) ||
 							( w.size() == 5 && w[2].text == "refill" && w[3].text == "after" && Number( w[4], value ) && value > 0.0 ) ) )
@@ -1315,6 +1362,8 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 								  : verb == "uses"	 ? std::string( "uses N, uses N refill ground, or uses N refill after S" )
 								  : verb == "item"	 ? std::string( "item hand (the default: whoever has it out) or item carried (in the hand or put away)" )
 								  : verb == "owner" ? std::string( "owner item (the item runs it, lying in the world) or owner player (the default)" )
+								  : verb == "tags" || verb == "cancels" ? verb + " NAME, NAME ..."
+								  : verb == "blocked" ? std::string( "blocked by NAME, NAME ... (a tag, a motion or a status)" )
 													 : verb + " <seconds>" );
 				}
 				continue;
@@ -1603,6 +1652,18 @@ std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
 					continue;
 				}
 				statement["kind"] = "end";
+			}
+			else if ( verb == "apply" )
+			{
+				// apply STATUS for S (M288): on the owner
+				if ( w.size() < 4 || w[2].text != "for" )
+				{
+					fail( number, "apply STATUS for S" );
+					continue;
+				}
+				statement["kind"] = "apply";
+				statement["text"] = w[1].text;
+				statement["value"] = RestFrom( line, w[3] );
 			}
 			else
 			{

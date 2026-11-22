@@ -9,6 +9,8 @@ event brawl.uppercut.hit
 param inventory.start 1
 
 motion Rise on use if not linked and brawl.cd_upper <= 0 and grounded
+	tags attack
+	blocked by guard
 	until brawl.uppercut.used or pressed.jump
 	lasts 0.05
 	change brawl.cd_upper = 4

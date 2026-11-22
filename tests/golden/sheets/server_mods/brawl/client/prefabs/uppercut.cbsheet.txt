@@ -3,6 +3,10 @@ rule motion line 11 head 0
   trigger: text "use"
   conditions: texts
     - "not linked and brawl.cd_upper <= 0 and grounded"
+  tags: texts
+    - "attack"
+  blocked: texts
+    - "guard"
   until: texts
     - "brawl.uppercut.used or pressed.jump"
   lasts: float 0.05
@@ -14,13 +18,13 @@ rule motion line 11 head 0
               kind: text "change"
               text: text "brawl.cd_upper = 4"
               guard: text ""
-              line: int 14
+              line: int 16
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "brawl.uppercut.started"
               guard: text ""
-              line: int 15
+              line: int 17
           - dict
               verb: text "cast"
               range: float 3
@@ -31,12 +35,12 @@ rule motion line 11 head 0
               holds: texts
               statements: list
                 - dict
-                    line: int 17
+                    line: int 19
                     verb: text "emit"
                     kind: text "emit"
                     text: text "brawl.uppercut.hit"
                 - dict
-                    line: int 18
+                    line: int 20
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -47,7 +51,7 @@ rule motion line 11 head 0
                         replace: int 1
                         target: int 1
                 - dict
-                    line: int 19
+                    line: int 21
                     verb: text "impulse"
                     kind: text "part"
                     part: dict
@@ -58,4 +62,4 @@ rule motion line 11 head 0
                         frame: int 3
                         replace: int 1
               guard: text ""
-              line: int 16
+              line: int 18

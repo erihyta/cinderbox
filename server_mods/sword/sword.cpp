@@ -14,7 +14,8 @@
 //     of its own, facing the swing (within 75 degrees): then a fifth (sword.block_share) and
 //     sword.blocked is said; and if its block went up within sword.parry_seconds (0.2) before the
 //     hit, a parry: nothing, sword.parried is said, and the swinger reels: pushed back, slowed and
-//     unable to swing for sword.stun_seconds (0.8; the field sword.stunned)
+//     unable to swing for sword.stun_seconds (0.8; the status "stunned", M288: the sheet's swing and
+//     block are blocked by it, and its Reeling motion slows the player while it lasts)
 //
 // Options: sword.damage, sword.block_share, sword.parry_seconds, sword.stun_seconds.
 
@@ -38,7 +39,6 @@ struct Wielder
 {
 	bool out = false;
 	uint32_t blockSince = 0; // the tick its block went up (0: down)
-	uint32_t stunnedUntil = 0;
 };
 
 class SwordMod final : public ServerMod
@@ -58,7 +58,7 @@ public:
 		}
 		m_hand = declare.Socket( "RightHand" );
 		m_block = declare.Action( "use2", "MouseRight" ); // (the item mod's: the same name, the same action)
-		m_stunned = declare.Field( "sword.stunned", BoardType::Bool, BoardScope::Entity, true );
+		m_stunned = declare.Status( "stunned" );
 		// What the sheet says: a swing starting, its hit; the clip's markers.
 		declare.Event( "sword.swing" );
 		m_hit = declare.Event( "sword.hit" );
@@ -76,7 +76,7 @@ public:
 		m_amount = int32_t( ctx.Option( "sword.damage", 30.0 ) );
 		m_blockShare = float( std::clamp( ctx.Option( "sword.block_share", 0.2 ), 0.0, 1.0 ) );
 		m_parryTicks = uint32_t( std::max( 0.0, ctx.Option( "sword.parry_seconds", 0.2 ) ) * ctx.Config().tickRate + 0.5 );
-		m_stunTicks = uint32_t( std::max( 0.0, ctx.Option( "sword.stun_seconds", 0.8 ) ) * ctx.Config().tickRate + 0.5 );
+		m_stunSeconds = float( std::max( 0.0, ctx.Option( "sword.stun_seconds", 0.8 ) ) );
 		m_friendlyFire = ctx.Option( "combat.friendly_fire", 0.0 ) != 0.0;
 	}
 
@@ -110,14 +110,6 @@ public:
 			}
 			const bool blocking = holding && ctx.Held( slot, m_block ) && c->frozen == 0;
 			w.blockSince = blocking ? ( w.blockSince != 0 ? w.blockSince : tick ) : 0;
-			if ( w.stunnedUntil != 0 && tick >= w.stunnedUntil )
-			{
-				w.stunnedUntil = 0;
-				ctx.Set( target, m_stunned, 0 );
-				ctx.ResetMove( target, MoveParam::WalkSpeed );
-				ctx.ResetMove( target, MoveParam::SprintSpeed );
-				ctx.ResetMove( target, MoveParam::JumpSpeed );
-			}
 		}
 
 		for ( const ModEventRecord& e : ctx.RecentEvents() )
@@ -171,13 +163,7 @@ private:
 			// A parry: nothing lands, and the swinger reels.
 			ctx.Emit( m_parried, victim, attacker, 0, point );
 			ctx.Push( attacker, from->position, b3Add( b3MulSV( -kRecoil, away ), b3Vec3{ 0.0f, 2.0f, 0.0f } ), ImpulseVelocity );
-			Wielder& reeling = m_wielders[size_t( attackerSlot )];
-			reeling.stunnedUntil = ctx.Tick() + m_stunTicks;
-			const uint32_t target = SlotTarget( PlayerSlot( attackerSlot ) );
-			ctx.Set( target, m_stunned, 1 );
-			ctx.SetMove( target, MoveParam::WalkSpeed, 1.0f );
-			ctx.SetMove( target, MoveParam::SprintSpeed, 1.0f );
-			ctx.SetMove( target, MoveParam::JumpSpeed, 0.0f );
+			ctx.ApplyStatus( SlotTarget( PlayerSlot( attackerSlot ) ), m_stunned, m_stunSeconds );
 			return;
 		}
 		int32_t amount = m_amount;
@@ -197,7 +183,7 @@ private:
 	ItemKindHandle m_sword;
 	SocketHandle m_hand;
 	ActionHandle m_block;
-	FieldHandle m_stunned;
+	StatusHandle m_stunned;
 	FieldHandle m_team;
 	EventHandle m_hit;
 	EventHandle m_blocked;
@@ -206,7 +192,7 @@ private:
 	int32_t m_amount = 30;
 	float m_blockShare = 0.2f;
 	uint32_t m_parryTicks = 12;
-	uint32_t m_stunTicks = 48;
+	float m_stunSeconds = 0.8f;
 	bool m_friendlyFire = false;
 };
 

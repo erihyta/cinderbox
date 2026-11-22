@@ -248,6 +248,14 @@ struct MotionFind
 		bool item = false; // a field of the motion's item (M287: the bat's heat when it hits)
 	};
 	std::vector<Change> changes;
+	// Statuses on each player it found (M288): status, seconds (a number or an expression).
+	struct Apply
+	{
+		int status = -1;
+		float seconds = 0.0f;
+		int16_t expr = -1;
+	};
+	std::vector<Apply> applies;
 	// How far out along the ground its shape reaches from the player (its points and radius): what
 	// "reach" is a share of.
 	float extent = 0.0f;
@@ -289,6 +297,14 @@ struct MotionStep
 		// it holds (MoveValues: the mover has no expression's inputs at hand).
 		int16_t expr = -1;
 	};
+	// A status applied (M288: "apply stunned for 0.8"): on the owner, or in a find on each player it
+	// found. Its seconds a number or an expression.
+	struct Apply
+	{
+		int status = -1; // schema status; -1: no mod declared it
+		MotionValue seconds;
+		int8_t guard = -1;
+	};
 	struct Emit
 	{
 		int event = -1; // schema event; -1: no mod declared it (nothing is emitted)
@@ -316,6 +332,7 @@ struct MotionStep
 	std::vector<Param> params;
 	std::vector<Change> changes;
 	std::vector<Emit> emits;
+	std::vector<Apply> applies;		   // statuses on the owner (M288)
 	std::vector<int8_t> ends;		   // an "end" each, under a guard (-1: none)
 	std::vector<MotionEffect> effects; // in the order of the nodes
 	std::vector<MotionFind> finds;	   // after its effects
@@ -348,6 +365,11 @@ struct Motion
 		While = 1, // every tick `condition` holds
 		Event = 2, // the mod event `trigger` was recorded at the player this tick
 		Edge = 3,  // once, on the tick `edge` turns true (it was false on the tick before)
+		// (M288) `action` comes up; comes up within `holdSeconds` of going down (a tap); is still down
+		// `holdSeconds` after it went down (a hold: on that tick).
+		Release = 4,
+		Tap = 5,
+		Hold = 6,
 	};
 	using ChangeOp = MotionStep::ChangeOp;
 	using Change = MotionStep::Change;
@@ -402,6 +424,17 @@ struct Motion
 	// (`carried`), whose board "item:FIELD" reads and writes. -1: none.
 	int heldKind = -1;
 	bool heldCarried = false;
+
+	// How skills meet (M288). As written, resolved for every motion of a server (CompileMotions):
+	// what it is (tags), what keeps it from starting while it is on (a tag of a motion that is on, a
+	// motion, or a status of the player's), what it ends when it starts (tags, motions), and the
+	// cooldown it shares with every motion that names the same.
+	std::vector<std::string> tagNames, blockedNames, cancelNames;
+	std::string sharedCooldown;
+	uint32_t tags = 0, blockedTags = 0, cancelTags = 0;
+	std::vector<uint16_t> blockedMotions, cancelMotions, blockedStatuses;
+	int16_t sharedGroup = -1;
+	float holdSeconds = 0.25f; // Tap, Hold
 
 	// On from when it starts until something ends it (its condition, what its probe holds going away,
 	// a wait for its next step).
@@ -463,6 +496,7 @@ struct MotionRefusal
 		Uses = 4,		   // its uses are spent
 		Condition = 5,	   // its condition does not hold
 		NothingToHold = 6, // its cast found nothing
+		Blocked = 7,	   // a motion that is on, or a status, blocks it (M288)
 	};
 	uint16_t motion = 0;
 	Why why = Why::None;
@@ -513,6 +547,10 @@ struct MotionActive
 uint32_t MotionStepStart( const MotionSlot& slot );
 // Whether a statement under `guard` counts in the slot's step.
 bool MotionGuardHolds( const MotionSlot& slot, int8_t guard );
+// A status on a player until endTick (M288; the same one again: the longer stands), and whether it
+// has one now.
+void ApplyMotionStatus( MotionState& state, int status, uint32_t endTick, uint32_t tick );
+bool HasMotionStatus( const MotionState& state, int status, uint32_t tick );
 // A step's guards as they are now: a bit each (what a step's start decides).
 uint16_t MotionGuardBits( const MotionStep& step, const AnimGraphInputs& values );
 // A statement's number now, held within lo and hi.

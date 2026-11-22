@@ -12,6 +12,8 @@ event brawl.slam.hit
 param inventory.start 1
 
 motion Slam on use if brawl.cd_slam <= 0 and not grounded
+	tags attack
+	blocked by guard
 	lasts 3
 	change brawl.cd_slam = 5
 	emit brawl.slam.started

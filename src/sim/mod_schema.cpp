@@ -160,6 +160,18 @@ int ModSchema::FindLayer( const std::string& name ) const
 	return -1;
 }
 
+int ModSchema::FindStatus( const std::string& name ) const
+{
+	for ( size_t i = 0; i < statuses.size(); ++i )
+	{
+		if ( statuses[i] == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
 int ModSchema::FindStance( const std::string& name ) const
 {
 	for ( size_t i = 0; i < stances.size(); ++i )
@@ -421,6 +433,11 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.motionSets[i].mod );
 		PutString( out, schema.motionSets[i].name );
 		PutText( out, schema.motionSets[i].text );
+	}
+	PutU8( out, uint8_t( std::min<size_t>( schema.statuses.size(), 255 ) ) );
+	for ( size_t i = 0; i < schema.statuses.size() && i < 255; ++i )
+	{
+		PutString( out, schema.statuses[i] );
 	}
 }
 
@@ -756,6 +773,11 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		set.name = r.String();
 		set.text = r.Text();
 		out.motionSets.push_back( std::move( set ) );
+	}
+	uint8_t statuses = r.U8();
+	for ( uint8_t i = 0; i < statuses && r.ok; ++i )
+	{
+		out.statuses.push_back( r.String() );
 	}
 	return r.ok && r.at == size;
 }

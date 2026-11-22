@@ -4,7 +4,8 @@ cbsheet 1
 # answers. Damage, blocks and parries are the sword mod's (sword.cpp), on sword.hit.
 
 # Its names (the sword mod's C++ finds them) and its numbers.
-field sword.stunned bool shared
+# Parried, a swinger reels (M288): a status the sword mod applies, its slow this sheet's.
+status stunned
 event sword.swing
 event sword.strike
 event sword.done
@@ -21,7 +22,9 @@ param pickup.hold_seconds 0.5 s
 # 2.4 m ahead, 1.2 m across, 1.6 m from low to high, turned about the chest with the look. Without
 # the marker (a body the pack does not fit) the timeout hits the same way. The next swing waits for
 # sword.done, the follow-through's end.
-motion Swing on use if not active sword.blade.Block and not sword.stunned
+motion Swing on use
+	tags attack
+	blocked by block, stunned
 	cooldown 0.4
 	emit sword.swing
 	wait for sword.strike within 0.5
@@ -36,10 +39,18 @@ motion Swing on use if not active sword.blade.Block and not sword.stunned
 
 # The block, while the right mouse button is held: slow, no jump; the pack holds the blade up.
 # Whether a hit is blocked or parried (the block up within 0.2 s) is the server's (sword.cpp).
-motion Block while held.use2 and not active sword.blade.Swing
+motion Block while held.use2
+	tags block
+	blocked by attack, stunned
 	move walk_speed 2 sprint_speed 2 jump_speed 0
 
 # SparksOnHit
+
+# Reeling: stunned (parried), slowed and no jump, whatever is in the hand.
+motion Reeling while stunned
+	for carrier
+	move walk_speed 1 sprint_speed 1 jump_speed 0
+
 react on sword.hit
 	as holder
 		call Model/Sparks restart

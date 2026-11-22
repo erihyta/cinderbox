@@ -20,7 +20,9 @@ event brawl.jab.hit
 event brawl.finisher.hit
 param inventory.start 1
 
-motion Jab on use if not linked and brawl.combo < 2 and not active brawl.fist.Finisher
+motion Jab on use if not linked and brawl.combo < 2
+	tags attack, punch
+	blocked by punch, guard
 	cooldown 0.3
 	change brawl.combo += 1
 	change brawl.combo_left = 1.5
@@ -34,7 +36,9 @@ motion Jab on use if not linked and brawl.combo < 2 and not active brawl.fist.Fi
 		impulse 4 along facing
 	wait for brawl.fist.ready within 0.7
 
-motion Finisher on use if brawl.combo >= 2 and not active brawl.fist.Jab
+motion Finisher on use if brawl.combo >= 2
+	tags attack, punch
+	blocked by punch, guard
 	cooldown 0.3
 	change brawl.combo = 0
 	wait for brawl.fist.strike within 0.5

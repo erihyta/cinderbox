@@ -99,6 +99,15 @@ param gun.reload_seconds 1.5 s
   are for (`cooldown 0.4 m` is a mistake: cooldown takes a time) and dropped; a number without one
   means what it always did.
 
+### Statuses
+
+A **status** is a timed flag on a player (M288): `status stunned` declares it (in any sheet, or a
+mod's `declare.Status`), `apply stunned for 0.8` in a motion gives it (on its owner, or in a find on
+each player found), and a server mod gives it with `ctx.ApplyStatus( target, stunned, 0.8f )` (the
+sword's parry). A motion reads it (`stunned`, `remaining stunned`), is `blocked by stunned`, or runs
+`while stunned` (the sword's `Reeling`: slowed, no jump). It is the player's, in every simulation:
+predicted when a motion applies it, and the server's says it again.
+
 ### Words in expressions
 
 The same [expression language](looks.md#expressions) everywhere: a condition, a value, a HUD line.
@@ -110,6 +119,7 @@ The same [expression language](looks.md#expressions) everywhere: a condition, a 
 | `combat.health of target`, `combat.dead of holder` | another entity's field: `of me`, `holder`, `actor`, `target`, `local`, `world` |
 | `local` | the viewer's own player is the subject (looks only) |
 | `active Slam`, `active brawl.fist.Jab` | a motion is on now (its own sheet's by name, another item's by its kind) |
+| `stunned`, `remaining stunned` | in a motion (M288): the player has the status now; the seconds it has left |
 | `ready Fire`, `cooldown Fire`, `uses Fire` | in a motion (M287): the motion could start now (not on, off cooldown, a use left); the seconds of cooldown it has left; its uses left (0 without a limit). A HUD does not read them yet: a timer field is what it shows |
 | everything else | numbers, fields, `+ - * /`, comparisons, `( )`, `grounded`, `speed`, `held.jump`, `pressed.dash`, `using.gun.rifle`, `carried.KIND`, `hand.FIELD`, `event.value`, `time`, `distance`, `reach` |
 
@@ -158,6 +168,9 @@ motion NAME TRIGGER [if EXPRESSION]
 
 | Trigger | Starts it |
 |---|---|
+| `on release ACTION` | the action comes up (M288) |
+| `on tap ACTION [S]` | it comes up within S seconds (0.25) of going down: a short press |
+| `on hold ACTION [S]` | it is still down S seconds (0.25) after it went down: on that tick, a long press (the first 16 actions a server declares) |
 | `on use` | the item is used (its key, or the use button with it in the hand). An item used while its key is held (`use`: a press, and while held) has it on while it is held. An item's sheet only |
 | `on press ACTION` | the action goes down: `jump`, `sprint`, or one a mod declares |
 | `on EVENT` | a mod event, or a simulation event, said at the owner this tick (`brawl.stunned`); in an item's sheet `on expired` is its own time running out |
@@ -174,6 +187,10 @@ As far in as the motion's first line, not under an `if`, before its first `wait`
 | `uses N`, `uses N refill ground`, `uses N refill after S` | charges |
 | `lasts S` | it ends S seconds after it starts |
 | `until EXPRESSION` | it ends when this holds (several lines: any) |
+| `cooldown S shared NAME` | its cooldown, and every motion that names the same shares it: one starting starts the others' (M288) |
+| `tags NAME, ...` | what kind of thing it is, for others to block or cancel (`attack`, `guard`, `punch`) |
+| `blocked by NAME, ...` | it does not start while a motion of one of these tags is on, or a motion of that name, or the player has that status (`blocked by guard, stunned`) |
+| `cancels NAME, ...` | starting, it ends the motions of these tags (or names) that are on (a parry ends an attack) |
 | `for holder` / `for carrier` | in an item's sheet: whoever has it out (the default), or whoever carries it |
 | `on item` | the item runs it, while it lies in the world ([an item's motion](#an-items-motion)); without it the player does |
 
@@ -207,11 +224,12 @@ As far in as the motion's first line, not under an `if`, before its first `wait`
 ## Where a line may stand
 
 One table: the parser says every refusal from it (`"force" cannot stand in a find: there a line is
-change, emit, impulse or move for`).
+change, emit, impulse, move for or apply`).
 
 | Line | In a step | After `every` | In a `timeout` | In a `find` | In a `cast` | In an item's motion |
 |---|---|---|---|---|---|---|
 | `change` | yes | yes | yes | yes: the owner's field, once for each thing found | | yes |
+| `apply` | yes | yes | yes | yes: on each player found | | |
 | `emit` | yes | yes | yes | yes: with what it found | one, when it takes hold | yes |
 | `impulse` | yes | yes | yes | yes: on what it found | yes: on what it holds | yes |
 | `launch` | yes | yes | yes | | | |
@@ -241,6 +259,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 | `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | an item into the world: a new one of a kind, or the one carried (in a hand first, else the lowest slot's), with the player's own velocity; `seconds` until it is removed (0: it stays); `from` a marker's place instead of `ahead` of where the look starts |
 | `break radius R [speed S] [seconds S]` | breakable walls whose nearest piece is within R of the owner lose their pieces that near, flung at S (10), staying S seconds (0: for good) |
 | `remove self` | the owner item leaves the world |
+| `apply STATUS for S` | a status on the owner for S seconds (in a find: on each player it found). The same status again: the longer stands; a player has 8 at most (a new one takes the place of the one that ends first) (M288) |
 | `end` | the motion ends here |
 
 ### Lasting

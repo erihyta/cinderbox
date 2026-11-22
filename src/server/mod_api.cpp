@@ -80,6 +80,9 @@ void Declarations::DeclareSheet( const std::string& path, const std::string& tex
 				break;
 			case sheet::Declaration::Kind::Param:
 				break; // (the item's: baked into items/<kind>.cfg)
+			case sheet::Declaration::Kind::Status:
+				Status( d.name );
+				break;
 		}
 		for ( size_t e = before; e < m_errors.size(); ++e )
 		{
@@ -213,6 +216,21 @@ StanceHandle Declarations::Stance( const std::string& name )
 	}
 	m_schema.stances.push_back( name );
 	return { int( m_schema.stances.size() - 1 ) };
+}
+
+StatusHandle Declarations::Status( const std::string& name )
+{
+	if ( const int existing = m_schema.FindStatus( name ); existing >= 0 )
+	{
+		return { existing };
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.statuses.size() >= 255 )
+	{
+		m_errors.push_back( m_mod + ": bad status \"" + name + "\"" );
+		return {};
+	}
+	m_schema.statuses.push_back( name );
+	return { int( m_schema.statuses.size() - 1 ) };
 }
 
 ItemKindHandle Declarations::ItemKind( const std::string& name )
@@ -1073,6 +1091,20 @@ void Context::Respawn( uint32_t target )
 	SimCommand c;
 	c.type = CommandType::Respawn;
 	c.target = target;
+	Add( c );
+}
+
+void Context::ApplyStatus( uint32_t target, StatusHandle status, float seconds )
+{
+	if ( status.Valid() == false || seconds <= 0.0f )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::ApplyStatus;
+	c.target = target;
+	c.index = uint16_t( status.index );
+	c.value = int32_t( std::max( 1.0f, seconds * float( Config().tickRate ) + 0.5f ) );
 	Add( c );
 }
 
