@@ -11,7 +11,8 @@
 //   CbFieldBinding  writes a field into any property of any node (a bar's value, a panel's
 //                   visibility, a colour's alpha, a part of one: "scale:x"), or formatted
 //                   words into its text, so any asset can show mod state
-//   CbList          a row per player, item, slot or event that happened: its first child is the
+//   CbList          a row per player, item, slot, event that happened, or row a mod published (a
+//                   shop's offers, M292): its first child is the
 //                   row, copied for each, sorted and filtered; the HUD nodes in a row read that
 //                   row's entity (a scoreboard, a team list, the items a player carries, a kill
 //                   feed)
@@ -325,6 +326,7 @@ public:
 		OF_SLOTS = 3,
 		OF_EVENTS = 4,
 		OF_CONTAINER_SLOTS = 5, // the slots of the container open to the subject (a chest)
+		OF_ROWS = 6,			// the rows of a list a mod published (M292: `rows`, "shop.offers")
 	};
 
 	CbList();
@@ -341,6 +343,15 @@ public:
 	int get_of() const
 	{
 		return m_of;
+	}
+	void set_rows( const godot::String& v )
+	{
+		m_rowsList = v;
+		update_configuration_warnings();
+	}
+	godot::String get_rows() const
+	{
+		return m_rowsList;
 	}
 	void set_item_kind( const godot::String& v )
 	{
@@ -448,6 +459,7 @@ private:
 	int m_of = OF_PLAYERS;
 	// OF_ITEMS, OF_HELD_ITEMS: only this kind ("pistol.gun"); empty: any.
 	godot::String m_itemKind;
+	godot::String m_rowsList;
 	// Conditions on an entry: only those that hold are listed ("team.id == 1").
 	godot::PackedStringArray m_where;
 	// An expression over an entry's fields ("deathmatch.score"); empty keeps the world's order.

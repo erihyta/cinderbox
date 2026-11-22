@@ -175,6 +175,9 @@ public:
 	{
 		return m_texts;
 	}
+	// The rows of a list a mod published (M292: "shop.offers"), each a Dictionary of its fields: a
+	// number where the words are one, else the words. Empty for a list nobody published.
+	godot::Array get_rows( const godot::String& list ) const;
 	// Slots (the simulation's): how many a player has, which one is selected (-1: empty hands),
 	// and the item in one (0: empty).
 	int64_t get_slot_count( int64_t player ) const;

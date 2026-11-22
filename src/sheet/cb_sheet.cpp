@@ -134,6 +134,10 @@ int main( int argc, char** argv )
 		if ( command == "check" )
 		{
 			cb::sheet::Strings errors;
+			if ( const std::string why = cb::sheet::NotVersion1( text ); why.empty() == false )
+			{
+				errors.push_back( "line 1: " + why );
+			}
 			cb::sheet::ParseRules( text, errors );
 			for ( const std::string& error : errors )
 			{

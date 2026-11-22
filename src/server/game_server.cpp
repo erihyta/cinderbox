@@ -533,10 +533,12 @@ bool GameServer::Start( const ServerOptions& options )
 		ctx.SetHitTester( m_hits.get() );
 		ctx.SetNavMesh( &m_nav );
 		ctx.SetBots( this );
+		ctx.SetRows( &m_rows );
 		for ( const auto& mod : m_mods )
 		{
 			mod->Start( ctx );
 		}
+		m_rows.changed.clear(); // (nobody is here yet: each is sent every list when welcomed)
 	}
 	return true;
 }
@@ -1102,6 +1104,7 @@ void GameServer::SendSnapshots()
 		c.welcomed = true;
 		SendNames( c.peer );
 		SendPrivates( c );
+		SendRows( c.peer );
 		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
 		c.ackTick = m_sim->Tick();
 		c.framesFrom = c.ackTick;
@@ -1392,6 +1395,7 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetBots( this );
 	ctx.SetOverflow( &m_overflow );
 	ctx.SetTexts( &m_typed, &m_said );
+	ctx.SetRows( &m_rows );
 	// Each player's view of the others, as its input says it saw them (this tick's mods see the
 	// world as of Tick(): a view `seenBack` ticks before, kept by RecordPast), no further back
 	// than lagCompensationTicks, nor than its round trip explains (HandleInput: SeenBackLimit).
@@ -1430,6 +1434,7 @@ void GameServer::RunMods( InputFrame& frame )
 	}
 	m_typed.clear();
 	SendSaid();
+	SendRows();
 	// What a mod told one player goes to that player, and to nobody else.
 	for ( const Client& c : m_clients )
 	{
@@ -1604,6 +1609,32 @@ bool GameServer::ReplaceItem( const ModItem& item )
 	return true;
 }
 
+void GameServer::SendRows( PeerId only )
+{
+	for ( const auto& [list, rows] : m_rows.lists )
+	{
+		if ( only == 0 && m_rows.changed.count( list ) == 0 )
+		{
+			continue;
+		}
+		MsgRows msg;
+		msg.list = list;
+		msg.rows = rows;
+		Encode( msg, m_buffer );
+		for ( const Client& c : m_clients )
+		{
+			if ( c.used && c.connected && c.welcomed && ( only == 0 || c.peer == only ) )
+			{
+				Deliver( c, m_buffer, true, &CrowdBench::other );
+			}
+		}
+	}
+	if ( only == 0 )
+	{
+		m_rows.changed.clear();
+	}
+}
+
 void GameServer::SendNames( PeerId only )
 {
 	// To one just welcomed, every name; to everyone after a change, the slots whose name changed
@@ -1680,6 +1711,12 @@ void GameServer::RecordView( const InputFrame& frame )
 	{
 		v.names = names;
 		v.namesGeneration += 1;
+	}
+	// The lists the mods published (M292): a viewer of the file lists them as a player's screen does.
+	if ( v.rows != m_rows.lists )
+	{
+		v.rows = m_rows.lists;
+		v.rowsGeneration += 1;
 	}
 	present::CaptureFrame( *m_sim, v.frame );
 	v.frame.resetGeneration = 1;

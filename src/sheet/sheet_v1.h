@@ -37,6 +37,11 @@ namespace cb::sheet
 // The version a sheet's first line says ("cbsheet N"): 0 without one, -1 when it names one this
 // compiler does not read.
 int SheetVersion( const std::string& text );
+// (M292) What is said of a sheet that is not version 1 where shipped content comes in (the server
+// reading a mod's sheets, publishing, cb_sheet check, the editor's Sheet screen); empty for a
+// version 1 sheet, or one with nothing in it. Version 0 stays the compiler's own form, what version
+// 1 is lowered to (sheet_rules.h): no file is it.
+std::string NotVersion1( const std::string& text );
 
 // Version 1 as version 0: the text, and for each of its lines (from 1) the version 1 line it came
 // from. Mistakes of version 1's own ("line N: why", N its own) in `errors`.

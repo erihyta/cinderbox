@@ -469,7 +469,10 @@ void CbList::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_nobody_text" ), &CbList::get_nobody_text );
 	ClassDB::bind_method( D_METHOD( "on_mod_event", "name", "a", "b", "value", "position", "vector" ), &CbList::on_mod_event );
 	ADD_GROUP( "Rows", "" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds,Slots of its subject,Events that happened,Slots of the container open to its subject" ), "set_of", "get_of" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds,Slots of its subject,Events that happened,Slots of the container open to its subject,Rows a mod published" ), "set_of", "get_of" );
+	ClassDB::bind_method( D_METHOD( "set_rows", "value" ), &CbList::set_rows );
+	ClassDB::bind_method( D_METHOD( "get_rows" ), &CbList::get_rows );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "rows", PROPERTY_HINT_PLACEHOLDER_TEXT, "shop.offers" ), "set_rows", "get_rows" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "item_kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "pistol.gun (empty: any)" ), "set_item_kind",
 				  "get_item_kind" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "where" ), "set_where", "get_where" );
@@ -493,6 +496,7 @@ void CbList::_bind_methods()
 	BIND_ENUM_CONSTANT( OF_SLOTS );
 	BIND_ENUM_CONSTANT( OF_EVENTS );
 	BIND_ENUM_CONSTANT( OF_CONTAINER_SLOTS );
+	BIND_ENUM_CONSTANT( OF_ROWS );
 }
 
 Control* CbList::Template() const
@@ -519,6 +523,10 @@ PackedStringArray CbList::_get_configuration_warnings() const
 	{
 		warnings.push_back( "Give it a child (any Control): that is one row. In the game it is copied for every entry, and the "
 							"CbFieldLabel and CbFieldBinding nodes in it read that entry's fields." );
+	}
+	if ( m_of == OF_ROWS && m_rowsList.strip_edges().is_empty() )
+	{
+		warnings.push_back( "Name the list whose rows it shows (rows: shop.offers): a mod publishes them (Context::SetRows)." );
 	}
 	if ( m_of == OF_EVENTS && m_event.strip_edges().is_empty() )
 	{
@@ -607,6 +615,7 @@ void CbList::_process( double )
 			break;
 		case OF_EVENTS:
 		case OF_SLOTS:
+		case OF_ROWS:
 			break; // below
 		case OF_PLAYERS:
 		default:
@@ -659,6 +668,23 @@ void CbList::_process( double )
 			names["slot.count"] = client->get_item_count( item );
 			names["slot.container"] = 1;
 			found.push_back( item );
+			rowNames.push_back( names );
+		}
+	}
+	if ( m_of == OF_ROWS )
+	{
+		// A row per row the list's mod published, in its order (M292): its fields are the row's names
+		// ({shop.name} in a format, shop.price in a condition), with row.index (from 0: what a click
+		// asks for) and row.number (from 1). What a row is about is the subject.
+		const Array rows = client->get_rows( m_rowsList.strip_edges() );
+		found.clear();
+		rowNames.clear();
+		for ( int64_t i = 0; i < rows.size(); ++i )
+		{
+			Dictionary names = Dictionary( rows[i] ).duplicate();
+			names["row.index"] = i;
+			names["row.number"] = i + 1;
+			found.push_back( subject );
 			rowNames.push_back( names );
 		}
 	}

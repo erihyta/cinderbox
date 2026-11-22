@@ -576,9 +576,13 @@ Each line becomes a `CbFieldBinding` on the control.
 
 ## Version 0
 
-A sheet without the `cbsheet 1` line is read as version 0, the spelling before M285. `cb_sheet
-convert` writes it as version 1, comments kept, and writes nothing if the result would mean anything
-else (each action's settings, compared); every shipped sheet was converted so.
+A sheet without the `cbsheet 1` line is version 0, the spelling before M285. **The game reads
+version 1 only** (M292): a mod's sheet of version 0 is a mistake the server says (and does not
+start), publishing refuses it, `cb_sheet check` says it, and the Sheet screen offers **Convert**.
+`cb_sheet convert` (and Convert) writes it as version 1, comments kept, and writes nothing if the
+result would mean anything else (each action's settings, compared); every shipped sheet was
+converted so. Version 0 stays the compiler's own form: version 1 is lowered to it (`sheet_v1.h`),
+and its reader is tested as such.
 
 | Version 0 | Version 1 |
 |---|---|

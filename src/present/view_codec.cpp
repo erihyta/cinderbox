@@ -40,6 +40,7 @@ enum ExtraFlag : uint8_t
 {
 	ExtraTexts = 1 << 0,	 // the typed text's count and lines follow (else: the base's)
 	ExtraConfirmed = 1 << 1, // the server's confirmed tick follows (else: 0)
+	ExtraRows = 1 << 2,		 // the published lists' rows follow (else: the base's), M292
 };
 
 enum WorldFlag : uint8_t
@@ -1321,7 +1322,8 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	bool stats = base == nullptr || base->stats != frame.stats;
 	bool privates = base == nullptr ? frame.privates != kNoPrivates : frame.privates != base->privates;
 	bool texts = base == nullptr ? frame.textCount != 0 : frame.textCount != base->textCount;
-	uint8_t extra = uint8_t( ( texts ? ExtraTexts : 0 ) | ( frame.confirmedTick != 0 ? ExtraConfirmed : 0 ) );
+	bool rows = base == nullptr ? frame.rowsGeneration != 0 : frame.rowsGeneration != base->rowsGeneration;
+	uint8_t extra = uint8_t( ( texts ? ExtraTexts : 0 ) | ( frame.confirmedTick != 0 ? ExtraConfirmed : 0 ) | ( rows ? ExtraRows : 0 ) );
 	uint8_t flags = uint8_t( ( frame.hasWorld ? FlagWorld : 0 ) | ( map ? FlagMap : 0 ) | ( schema ? FlagSchema : 0 ) |
 							 ( names ? FlagNames : 0 ) | ( stats ? FlagStats : 0 ) | ( compact ? FlagCompact : 0 ) |
 							 ( privates ? FlagPrivates : 0 ) | ( extra != 0 ? FlagExtra : 0 ) );
@@ -1430,6 +1432,30 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 		if ( extra & ExtraConfirmed )
 		{
 			w.Write( frame.confirmedTick );
+		}
+		if ( extra & ExtraRows )
+		{
+			w.Write( frame.rowsGeneration );
+			w.Write( uint8_t( std::min<size_t>( frame.rows.size(), 255 ) ) );
+			size_t lists = 0;
+			for ( const auto& [list, rowsOf] : frame.rows )
+			{
+				if ( lists++ >= 255 )
+				{
+					break;
+				}
+				WriteString( w, list );
+				w.Write( uint8_t( std::min<size_t>( rowsOf.size(), 255 ) ) );
+				for ( size_t i = 0; i < rowsOf.size() && i < 255; ++i )
+				{
+					w.Write( uint8_t( std::min<size_t>( rowsOf[i].size(), 255 ) ) );
+					for ( size_t k = 0; k < rowsOf[i].size() && k < 255; ++k )
+					{
+						WriteString( w, rowsOf[i][k].first );
+						WriteString( w, rowsOf[i][k].second );
+					}
+				}
+			}
 		}
 	}
 	section( &ViewCost::session );
@@ -1697,6 +1723,35 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 		out.texts = base != nullptr ? base->texts : std::vector<ViewText>{};
 	}
 	out.confirmedTick = ( extra & ExtraConfirmed ) != 0 ? r.Read<uint32_t>() : 0;
+	if ( extra & ExtraRows )
+	{
+		out.rowsGeneration = r.Read<uint64_t>();
+		const uint8_t lists = r.Read<uint8_t>();
+		out.rows.clear();
+		for ( uint8_t l = 0; l < lists && r.Ok(); ++l )
+		{
+			const std::string list = ReadString( r );
+			const uint8_t count = r.Read<uint8_t>();
+			std::vector<ViewFrame::Row>& rowsOf = out.rows[list];
+			for ( uint8_t i = 0; i < count && r.Ok(); ++i )
+			{
+				const uint8_t fields = r.Read<uint8_t>();
+				ViewFrame::Row row;
+				for ( uint8_t k = 0; k < fields && r.Ok(); ++k )
+				{
+					std::string name = ReadString( r );
+					std::string value = ReadString( r );
+					row.push_back( { std::move( name ), std::move( value ) } );
+				}
+				rowsOf.push_back( std::move( row ) );
+			}
+		}
+	}
+	else
+	{
+		out.rowsGeneration = base != nullptr ? base->rowsGeneration : 0;
+		out.rows = base != nullptr ? base->rows : std::map<std::string, std::vector<ViewFrame::Row>>{};
+	}
 
 	out.hasWorld = ( flags & FlagWorld ) != 0;
 	if ( out.hasWorld == false )

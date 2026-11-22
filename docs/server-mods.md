@@ -233,6 +233,25 @@ ctx.Say( "chat", "Slow down.", kNoSlot, typed.slot );    // the server's own wor
 
 - The `chat` mod is the example, and `net_chat` the check.
 
+### Rows for a list
+
+What a mod has to offer (a shop's offers, a vote's choices) is rows a HUD lists (M292): the mod
+publishes them once, the look says how a row looks. Nothing is written twice.
+
+```cpp
+declare.Rows( "shop.offers", { "shop.name", "shop.price", "shop.cost" } ); // (the editor's names)
+...
+ctx.SetRows( "shop.offers", { { { "shop.name", "Bat" }, { "shop.price", "1" }, { "shop.cost", "1 coin" } }, ... } );
+```
+
+| | What |
+|---|---|
+| Sent | a reliable message (`Rows`): a list's rows, whole, to everyone when a mod publishes it again, every list to whoever joins. At most 32 lists, 64 rows of 16 fields; names 32 bytes, values 200 |
+| Shown | a [`CbList` of rows](looks.md#lists) (`of` Rows a mod published, `rows` the list): a row's fields are its names, `{shop.name}` in a format, `shop.price` in a condition; `row.index` (from 0) and `row.number` (from 1). A `CbClick` in a row asks with `intent_a = "row.index"` |
+| Not | in the simulation or its hash (view files keep them) |
+
+- The `shop` mod is the example (its offers: those whose item a mod declares), and `net_shop` the check.
+
 ### The combat mod
 
 Health, death and the next life, for every mod that hurts. A weapon does not own health and does

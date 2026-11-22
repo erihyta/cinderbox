@@ -2,7 +2,7 @@
 
 // Wire protocol between server and clients.
 //
-// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest, PlayerNames, PrivateFields, Items, Text,
+// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest, PlayerNames, PrivateFields, Items, Text, Rows,
 // InfoRequest, Info.
 // Channel 1 (unreliable), both directions:
 //   client -> server: Input, repeating the last few ticks and acknowledging received frames;
@@ -23,7 +23,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 99; // each version's change: docs/versions.md (add a row when raising it)
+inline constexpr uint32_t kProtocolVersion = 100; // each version's change: docs/versions.md (add a row when raising it)
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -51,6 +51,7 @@ enum class MsgType : uint8_t
 	Info = 14,
 	State = 15, // S -> C, the hybrid: the server's characters' state (state_codec.h), unreliable
 	InputLoss = 16, // S -> C (M261): how many of its input packets the server did not get lately
+	Rows = 17,		// S -> C (M292): a list's rows a mod published (a shop's offers)
 };
 
 // How a server keeps its clients' worlds (ROADMAP step 3), its choice for everyone. Inputs: every
@@ -134,6 +135,20 @@ struct MsgText
 // Printable characters only (no control characters), trimmed, at most `limit` bytes cut on a
 // character boundary.
 std::string SanitizeText( const std::string& text, size_t limit );
+
+// S -> C, to everyone (M292): the rows of a list a mod published (Context::SetRows: a shop's
+// offers), whole, after a client's Welcome (every list) and whenever a mod publishes one again. Each
+// row is named fields, words or numbers as words; the HUD's CbList lists them. Presentation only:
+// never part of the simulation, its hash or recordings.
+inline constexpr size_t kMaxRowLists = 32;
+inline constexpr size_t kMaxRows = 64;
+inline constexpr size_t kMaxRowFields = 16;
+inline constexpr size_t kMaxRowName = 32; // a list's name, a field's name
+struct MsgRows
+{
+	std::string list;
+	std::vector<std::vector<std::pair<std::string, std::string>>> rows;
+};
 
 // S -> C, to one client: its own private fields (BoardScope::Private), after its Welcome and
 // whenever a mod changes one. All of them each time (the ones that are not 0); nobody else's are
@@ -231,6 +246,7 @@ void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out );
 void Encode( const MsgItems& m, std::vector<uint8_t>& out );
 void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out );
 void Encode( const MsgText& m, std::vector<uint8_t>& out );
+void Encode( const MsgRows& m, std::vector<uint8_t>& out );
 void Encode( const MsgInfoRequest& m, std::vector<uint8_t>& out );
 void Encode( const MsgInfo& m, std::vector<uint8_t>& out );
 
@@ -245,6 +261,7 @@ bool Decode( ByteReader& r, MsgPlayerNames& m );
 bool Decode( ByteReader& r, MsgItems& m );
 bool Decode( ByteReader& r, MsgPrivateFields& m );
 bool Decode( ByteReader& r, MsgText& m );
+bool Decode( ByteReader& r, MsgRows& m );
 bool Decode( ByteReader& r, MsgInfoRequest& m );
 // False also for an Info of another version past its version (only `version` is then set).
 bool Decode( ByteReader& r, MsgInfo& m );

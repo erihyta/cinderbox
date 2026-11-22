@@ -74,6 +74,11 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 			f.texts.push_back( { t.channel, t.from, t.text } );
 		}
 	}
+	if ( f.rowsGeneration != client.RowsGeneration() )
+	{
+		f.rowsGeneration = client.RowsGeneration();
+		f.rows = client.PublishedRows();
+	}
 	if ( f.namesGeneration != client.NamesGeneration() )
 	{
 		f.namesGeneration = client.NamesGeneration();
@@ -229,7 +234,7 @@ void LiveSource::Run()
 		uint32_t tick = client.CurrentTick();
 		bool rolledBack = client.GetStats().rolledBackLastFrame;
 		bool changed = published == false || tick != lastTick || rolledBack || client.ResetGeneration() != lastReset ||
-					   client.TextCount() != Building().textCount ||
+					   client.TextCount() != Building().textCount || client.RowsGeneration() != Building().rowsGeneration ||
 					   client.State() != lastState || client.GetStats().connectFailures != lastFailures;
 		if ( changed )
 		{
