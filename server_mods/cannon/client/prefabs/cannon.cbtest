@@ -1,0 +1,9 @@
+# The cannon (cannon.cbsheet; its mod is switched off: the test runs it). Run with cb_sheet test, and
+# in CI (net_sheet_tests).
+
+test "a use fires a ball; the next waits for its cooldown"
+	item cannon.cannon in hand
+	press use at 0
+	press use at 0.5
+	expect event cannon.fired at 0
+	expect no event cannon.fired from 0.3 to 0.8

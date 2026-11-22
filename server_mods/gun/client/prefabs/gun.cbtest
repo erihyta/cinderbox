@@ -1,0 +1,9 @@
+# Every gun's rounds and reload (gun.cbsheet), as the pistol has them: run with cb_sheet test, and in
+# CI (net_sheet_tests). The pistol's own: pistol.cbtest.
+
+test "an empty magazine: a press clicks, and it reloads by itself"
+	item gun.pistol in hand
+	set gun.rounds of item = 0
+	press use at 0
+	expect event item.reload at 0
+	expect gun.rounds of item == 12 at 1.7

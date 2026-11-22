@@ -1,0 +1,8 @@
+# The dash boots (boots.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "a use dashes and spends a charge"
+	item dash.boots in hand
+	press use at 0
+	expect event dash.started at 0
+	expect speed > 8 at 0.05
+	expect dash.charges == 1 at 0.1

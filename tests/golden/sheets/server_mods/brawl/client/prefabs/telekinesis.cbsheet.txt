@@ -54,7 +54,7 @@ rule motion line 22 head 0
 rule motion line 32 head 0
   name: text "Hold"
   trigger: text "while"
-  expression: text "held.use2 and brawl.telekinesis"
+  expression: text "held.use2"
   blocked: texts
     - "pulled"
   steps: list

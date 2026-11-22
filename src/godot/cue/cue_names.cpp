@@ -756,6 +756,7 @@ void CbNames::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "sheet_problems", "text" ), &CbNames::sheet_problems );
 	ClassDB::bind_method( D_METHOD( "complete", "prefix" ), &CbNames::complete );
 	ClassDB::bind_method( D_METHOD( "word_kind", "word" ), &CbNames::word_kind );
+	ClassDB::bind_method( D_METHOD( "format_sheet", "text" ), &CbNames::format_sheet );
 }
 
 bool CbNames::is_known() const
@@ -806,6 +807,17 @@ PackedStringArray CbNames::complete( const String& prefix ) const
 String CbNames::word_kind( const String& word ) const
 {
 	return names::WordKind( word );
+}
+
+String CbNames::format_sheet( const String& text ) const
+{
+	const CharString utf8 = text.utf8();
+	std::string formatted, why;
+	if ( sheet::FormatVersion1( std::string( utf8.get_data(), size_t( utf8.length() ) ), formatted, why ) == false )
+	{
+		return String();
+	}
+	return String::utf8( formatted.c_str() );
 }
 
 PackedStringArray CbNames::check_scene( Node* root ) const

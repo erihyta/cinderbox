@@ -38,7 +38,7 @@ foreach(name IN LISTS sim_tests)
 endforeach()
 
 add_executable(cb_net_tests net_test.cpp)
-target_link_libraries(cb_net_tests PRIVATE cb_server_mods cb_client_core miniz)
+target_link_libraries(cb_net_tests PRIVATE cb_server_mods cb_client_core cb_sheet_test miniz)
 target_compile_definitions(cb_net_tests PRIVATE CB_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 if(WIN32)
 	target_link_libraries(cb_net_tests PRIVATE winmm)

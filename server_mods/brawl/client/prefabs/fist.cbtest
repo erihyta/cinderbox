@@ -1,0 +1,16 @@
+# The fist (fist.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "a jab hurts the player ahead"
+	item brawl.fist in hand
+	other ahead 1.3
+	press use at 0
+	expect event brawl.jab.hit at 0 within 0.5
+	expect combat.health of other == 92 at 0.6
+
+test "three in a row: the third is the finisher"
+	item brawl.fist in hand
+	other ahead 1.3
+	press use at 0
+	press use at 0.7
+	press use at 1.4
+	expect event brawl.finisher.hit at 1.4 within 0.6

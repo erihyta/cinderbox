@@ -1,0 +1,7 @@
+# The frag (frag.cbsheet): run with cb_sheet test, and in CI (net_sheet_tests).
+
+test "thrown, it blasts 2.5 s later"
+	item frag.grenade in hand
+	press use at 0
+	expect event frag.thrown at 0 within 0.5
+	expect event frag.blast at 2.6 within 0.4

@@ -1,0 +1,40 @@
+{
+	"comments": {
+		"lineComment": "#"
+	},
+	"brackets": [
+		[
+			"(",
+			")"
+		]
+	],
+	"autoClosingPairs": [
+		{
+			"open": "(",
+			"close": ")"
+		},
+		{
+			"open": "\"",
+			"close": "\"",
+			"notIn": [
+				"string",
+				"comment"
+			]
+		}
+	],
+	"surroundingPairs": [
+		[
+			"(",
+			")"
+		],
+		[
+			"\"",
+			"\""
+		]
+	],
+	"indentationRules": {
+		"increaseIndentPattern": "^\\s*(motion|react|hud|test|predict|use|show|text|bind|if|else|find|grab|cast|every|timeout|as|at|after|chance|replace\\s+\\w+)\\b.*$",
+		"decreaseIndentPattern": "^$"
+	},
+	"onEnterRules": []
+}

@@ -1,0 +1,8 @@
+# The guard (guard.cbsheet): its slot's key, held. Run with cb_sheet test, and in CI.
+
+test "held, it slows the walk; let go, it does not"
+	hold forward from 0 to 2.5
+	hold brawl.guard from 1 to 2
+	expect speed > 3 at 0.8
+	expect speed < 3 at 1.8
+	expect speed > 3 at 2.4

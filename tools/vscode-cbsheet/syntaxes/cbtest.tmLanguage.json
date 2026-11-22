@@ -1,0 +1,42 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Cinderbox sheet test",
+	"scopeName": "source.cbtest",
+	"patterns": [
+		{
+			"match": "#.*$",
+			"name": "comment.line.number-sign.cbtest"
+		},
+		{
+			"match": "^(test)\\s+(\".*\")",
+			"captures": {
+				"1": {
+					"name": "storage.type.cbtest"
+				},
+				"2": {
+					"name": "entity.name.function.cbtest"
+				}
+			}
+		},
+		{
+			"match": "^\\s+(mods|option|item|set|other|crate|look|press|hold|expect)\\b",
+			"name": "keyword.control.cbtest"
+		},
+		{
+			"match": "\\b(in|hand|of|at|from|to|within|no|event|ahead|right|up|size|distance|speed|other|world)\\b",
+			"name": "keyword.other.cbtest"
+		},
+		{
+			"match": "(?<![A-Za-z_.])-?[0-9]+(\\.[0-9]+)?",
+			"name": "constant.numeric.cbtest"
+		},
+		{
+			"match": "\\b[a-z_][a-z0-9_]*(\\.[a-z0-9_]+)+\\b",
+			"name": "variable.other.cbtest"
+		},
+		{
+			"match": "(==|!=|<=|>=|=|<|>)",
+			"name": "keyword.operator.cbtest"
+		}
+	]
+}

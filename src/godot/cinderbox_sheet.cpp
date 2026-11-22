@@ -1,6 +1,12 @@
 #include "cinderbox_sheet.h"
 
 #include "cinderbox_rules_editor.h"
+#include "cue_names.h"
+#include "sheet_v1.h"
+
+#include <godot_cpp/classes/button.hpp>
+#include <godot_cpp/classes/h_box_container.hpp>
+#include <godot_cpp/classes/text_server.hpp>
 
 #include <godot_cpp/classes/editor_interface.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>
@@ -21,6 +27,15 @@ void CbSheetEditorPlugin::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "on_text_changed", "edit" ), &CbSheetEditorPlugin::on_text_changed );
 }
 
+namespace
+{
+std::string Utf8( const String& text )
+{
+	const CharString utf8 = text.utf8();
+	return std::string( utf8.get_data(), size_t( utf8.length() ) );
+}
+} // namespace
+
 void CbSheetEditorPlugin::_enter_tree()
 {
 	m_screen = memnew( VBoxContainer );
@@ -31,6 +46,19 @@ void CbSheetEditorPlugin::_enter_tree()
 	m_tabs->set_v_size_flags( Control::SIZE_EXPAND_FILL );
 	m_tabs->get_tab_bar()->set_tab_close_display_policy( TabBar::CLOSE_BUTTON_SHOW_ACTIVE_ONLY );
 	m_tabs->get_tab_bar()->connect( "tab_close_pressed", callable_mp( this, &CbSheetEditorPlugin::on_tab_close ) );
+	m_tabs->connect( "tab_changed", callable_mp( this, &CbSheetEditorPlugin::on_tab_changed ) );
+	// (M291) A bar above: the formatter, and the open sheet's mistakes as it is typed.
+	auto* bar = memnew( HBoxContainer );
+	auto* format = memnew( Button );
+	format->set_text( "Format" );
+	format->set_tooltip_text( "Write the sheet in the one style (cb_sheet fmt): indented with tabs, no spaces at the ends of lines, at most one blank line in a row" );
+	format->connect( "pressed", callable_mp( this, &CbSheetEditorPlugin::on_format ) );
+	bar->add_child( format );
+	m_status = memnew( Label );
+	m_status->set_h_size_flags( Control::SIZE_EXPAND_FILL );
+	m_status->set_text_overrun_behavior( TextServer::OVERRUN_TRIM_ELLIPSIS );
+	bar->add_child( m_status );
+	m_screen->add_child( bar );
 	m_screen->add_child( m_tabs );
 	EditorInterface::get_singleton()->get_editor_main_screen()->add_child( m_screen );
 	m_screen->hide();
@@ -44,6 +72,7 @@ void CbSheetEditorPlugin::_exit_tree()
 		m_screen->queue_free();
 		m_screen = nullptr;
 		m_tabs = nullptr;
+		m_status = nullptr;
 	}
 }
 
@@ -102,6 +131,7 @@ void CbSheetEditorPlugin::_edit( Object* object )
 	Title( m_open.size() - 1 );
 	m_tabs->set_current_tab( int32_t( tab ) );
 	EditorInterface::get_singleton()->set_main_screen_editor( "Sheet" );
+	Status();
 }
 
 void CbSheetEditorPlugin::on_tab_close( int64_t tab )
@@ -126,6 +156,7 @@ void CbSheetEditorPlugin::on_text_changed( Object* edit )
 		{
 			// What it says now is the sheet's at once: the scenes that use it show it.
 			open.sheet->set_text( open.edit->get_text() );
+			Status();
 			if ( open.dirty == false )
 			{
 				open.dirty = true;
@@ -134,6 +165,65 @@ void CbSheetEditorPlugin::on_text_changed( Object* edit )
 			return;
 		}
 	}
+}
+
+void CbSheetEditorPlugin::on_tab_changed( int64_t )
+{
+	Status();
+}
+
+void CbSheetEditorPlugin::Status()
+{
+	if ( m_status == nullptr || m_tabs == nullptr )
+	{
+		return;
+	}
+	const int64_t tab = m_tabs->get_current_tab();
+	if ( tab < 0 || size_t( tab ) >= m_open.size() )
+	{
+		m_status->set_text( String() );
+		return;
+	}
+	// The same mistakes its lines are marked with (the highlighter's): how many, and the first.
+	const std::vector<std::pair<int, String>> problems = names::SheetProblems( m_open[size_t( tab )].edit->get_text() );
+	if ( problems.empty() )
+	{
+		m_status->set_text( "No mistakes" );
+		m_status->remove_theme_color_override( "font_color" );
+		return;
+	}
+	m_status->set_text( String::num_int64( int64_t( problems.size() ) ) + ( problems.size() == 1 ? " mistake: line " : " mistakes; the first: line " ) +
+						String::num_int64( problems.front().first ) + ": " + problems.front().second );
+	m_status->add_theme_color_override( "font_color", Color( 1.0f, 0.45f, 0.45f ) );
+}
+
+void CbSheetEditorPlugin::on_format()
+{
+	const int64_t tab = m_tabs != nullptr ? m_tabs->get_current_tab() : -1;
+	if ( tab < 0 || size_t( tab ) >= m_open.size() )
+	{
+		return;
+	}
+	CodeEdit* edit = m_open[size_t( tab )].edit;
+	std::string formatted, why;
+	if ( sheet::FormatVersion1( Utf8( edit->get_text() ), formatted, why ) == false )
+	{
+		m_status->set_text( "Not formatted: " + String::utf8( why.c_str() ) );
+		m_status->add_theme_color_override( "font_color", Color( 1.0f, 0.45f, 0.45f ) );
+		return;
+	}
+	const String text = String::utf8( formatted.c_str() );
+	if ( text == edit->get_text() )
+	{
+		return;
+	}
+	// As one change the undo takes back, the caret kept on its line.
+	const int line = edit->get_caret_line();
+	edit->begin_complex_operation();
+	edit->select_all();
+	edit->insert_text_at_caret( text );
+	edit->end_complex_operation();
+	edit->set_caret_line( std::min( line, edit->get_line_count() - 1 ) );
 }
 
 void CbSheetEditorPlugin::Title( size_t tab )
