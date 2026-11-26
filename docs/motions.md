@@ -480,7 +480,9 @@ Two things a state machine (the character's own, or an item's pack) can take a t
 - **A state machine reads it as this tick's motions left it**, so the pose starts on the tick the
   motion does. **A motion's own condition reads it as the tick found it**, like the fields.
 - **Looks read it too** (a reaction's or a HUD node's condition), of the player they are about.
-- **The first 64 motions** of a server can be asked for.
+- **Any motion** of a server can be asked for (M295; the first 64 before). Another player's body and the looks
+  see up to 16 of a player's motions on at once (the lowest-numbered): a count of skills in use
+  together, not of how many motions the mods have.
 
 ## The look of a motion
 
@@ -564,7 +566,7 @@ emit	dash.started
 | `guard` | a condition (none: no guard): what follows counts only if it held when its step started |
 | `end` | the motion ends after this tick |
 | `impulse_momentum` | as `impulse`, its number momentum (N s) shared out by what the target weighs |
-| `every` | seconds: what follows in its step happens when the step starts and that often after, 64 times at most |
+| `every` | seconds: what follows in its step happens when the step starts and that often after, for as long as the step lasts (M295) |
 | `owner` | `item`: the item of the set's kind runs it, lying in the world, once, when its event is said at it |
 | `break` | a radius, a speed, seconds (each a number or an expression): walls near the owner broken |
 | `remove` | the owner item leaves the world |

@@ -1578,15 +1578,28 @@ bool ListingMotionNames()
 	return t_listingMotions;
 }
 
-uint64_t MotionsOnAt( const MotionState& state, uint32_t tick )
+void MotionsOnAt( const MotionState& state, uint32_t tick, std::vector<uint16_t>& out )
 {
-	uint64_t on = 0;
-	for ( size_t i = 0; i < state.slots.size() && i < 64; ++i )
+	out.clear();
+	for ( size_t i = 0; i < state.slots.size() && i < size_t( kMotionLimit ); ++i )
 	{
 		const MotionSlot& slot = state.slots[i];
 		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick )
 		{
-			on |= uint64_t( 1 ) << i;
+			out.push_back( uint16_t( i ) );
+		}
+	}
+}
+
+MotionsOn ShownMotionsOn( const MotionState& state, uint32_t tick )
+{
+	MotionsOn on;
+	for ( size_t i = 0; i < state.slots.size() && i < size_t( kMotionLimit ) && on.count < kMotionsOnShown; ++i )
+	{
+		const MotionSlot& slot = state.slots[i];
+		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick )
+		{
+			on.Add( uint16_t( i ) );
 		}
 	}
 	return on;
@@ -1624,35 +1637,42 @@ std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::str
 	{
 		return nullptr;
 	}
-	// How skills meet (M288): tags as bits (32 at most), the names a motion is blocked by or cancels
-	// as tags, motions or statuses, shared cooldowns as groups.
+	// How skills meet (M288): tags by number (M295: as many as the motions name, a list on each; until
+	// then a bit each, 32 a server, the rest dropped), the names a motion is blocked by or cancels as
+	// tags, motions or statuses, shared cooldowns as groups.
 	std::vector<std::string> tagTable, groups;
 	for ( const Motion& m : motions->list )
 	{
 		for ( const std::string& tag : m.tagNames )
 		{
-			if ( std::find( tagTable.begin(), tagTable.end(), tag ) == tagTable.end() && tagTable.size() < 32 )
+			if ( std::find( tagTable.begin(), tagTable.end(), tag ) == tagTable.end() && tagTable.size() < 65535 )
 			{
 				tagTable.push_back( tag );
 			}
 		}
 	}
-	auto tagBit = [&]( const std::string& name ) -> uint32_t {
+	auto tagOf = [&]( const std::string& name ) -> int {
 		auto it = std::find( tagTable.begin(), tagTable.end(), name );
-		return it == tagTable.end() ? 0u : uint32_t( 1 ) << uint32_t( it - tagTable.begin() );
+		return it == tagTable.end() ? -1 : int( it - tagTable.begin() );
+	};
+	auto addTag = []( std::vector<uint16_t>& tags, int tag ) {
+		if ( std::find( tags.begin(), tags.end(), uint16_t( tag ) ) == tags.end() )
+		{
+			tags.insert( std::lower_bound( tags.begin(), tags.end(), uint16_t( tag ) ), uint16_t( tag ) );
+		}
 	};
 	for ( Motion& m : motions->list )
 	{
 		for ( const std::string& tag : m.tagNames )
 		{
-			m.tags |= tagBit( tag );
+			addTag( m.tags, tagOf( tag ) );
 		}
-		auto resolve = [&]( const std::vector<std::string>& names, uint32_t& tags, std::vector<uint16_t>& motionList, std::vector<uint16_t>* statusList ) {
+		auto resolve = [&]( const std::vector<std::string>& names, std::vector<uint16_t>& tags, std::vector<uint16_t>& motionList, std::vector<uint16_t>* statusList ) {
 			for ( const std::string& name : names )
 			{
-				if ( const uint32_t bit = tagBit( name ); bit != 0 )
+				if ( const int tag = tagOf( name ); tag >= 0 )
 				{
-					tags |= bit;
+					addTag( tags, tag );
 					continue;
 				}
 				if ( const int index = FindMotionByName( schema, name ); index >= 0 && size_t( index ) < motions->list.size() )
@@ -1686,6 +1706,21 @@ std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::str
 namespace
 {
 
+// Whether two lists of tags (in order) share one.
+bool SharesTag( const std::vector<uint16_t>& a, const std::vector<uint16_t>& b )
+{
+	size_t i = 0, j = 0;
+	while ( i < a.size() && j < b.size() )
+	{
+		if ( a[i] == b[j] )
+		{
+			return true;
+		}
+		( a[i] < b[j] ? i : j ) += 1;
+	}
+	return false;
+}
+
 // A step's guards as they are now: a bit each.
 uint16_t GuardBits( const MotionStep& step, const AnimGraphInputs& values )
 {
@@ -1710,7 +1745,7 @@ bool MotionRepeatsNow( const MotionStep& step, uint32_t stepStart, uint32_t tick
 	}
 	const uint32_t period = std::max<uint32_t>( 1, Ticks( step.every, tickRate ) );
 	const uint32_t since = tick - stepStart;
-	return since % period == 0 && since / period < kMotionRepeats;
+	return since % period == 0; // (as often as the step lasts: M295; until then 64 times at most)
 }
 
 uint16_t MotionGuardBits( const MotionStep& step, const AnimGraphInputs& values )
@@ -1995,14 +2030,14 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		}
 		// (M288) What is on, or a status, may block it: a motion of a tag it is blocked by, a motion it
 		// names, a status it names.
-		if ( starts && ( wasOn == false ) && ( m.blockedTags != 0 || m.blockedMotions.empty() == false || m.blockedStatuses.empty() == false ) )
+		if ( starts && ( wasOn == false ) && ( m.blockedTags.empty() == false || m.blockedMotions.empty() == false || m.blockedStatuses.empty() == false ) )
 		{
 			bool blocked = false;
 			for ( size_t j = 0; j < motions.list.size() && blocked == false; ++j )
 			{
 				const MotionSlot& other = state.slots[j];
 				const bool otherOn = j != i && other.lastTick != 0 && other.sinceTick <= in.tick && in.tick < other.untilTick;
-				blocked = otherOn && ( ( motions.list[j].tags & m.blockedTags ) != 0 ||
+				blocked = otherOn && ( SharesTag( motions.list[j].tags, m.blockedTags ) ||
 									   std::find( m.blockedMotions.begin(), m.blockedMotions.end(), uint16_t( j ) ) != m.blockedMotions.end() );
 			}
 			for ( uint16_t status : m.blockedStatuses )
@@ -2120,7 +2155,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 						continue;
 					}
 					const bool otherOn = other.lastTick != 0 && other.sinceTick <= in.tick && in.tick < other.untilTick;
-					if ( otherOn && ( ( motions.list[j].tags & m.cancelTags ) != 0 ||
+					if ( otherOn && ( SharesTag( motions.list[j].tags, m.cancelTags ) ||
 									  std::find( m.cancelMotions.begin(), m.cancelMotions.end(), uint16_t( j ) ) != m.cancelMotions.end() ) )
 					{
 						other.untilTick = in.tick;

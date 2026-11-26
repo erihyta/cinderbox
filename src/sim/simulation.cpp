@@ -2632,8 +2632,15 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.carriedCount = carriedCount;
 				values.usingKinds = usingKinds;
 				values.usingCount = usingCount;
-				// (As the tick found them: what was on when the last tick ended.)
-				values.motionsOn = m_globals.tick > 0 ? MotionsOnAt( motion, m_globals.tick - 1 ) : 0;
+				// (As the tick found them: what was on when the last tick ended. All of them: M295.)
+				thread_local std::vector<uint16_t> on;
+				on.clear();
+				if ( m_globals.tick > 0 )
+				{
+					MotionsOnAt( motion, m_globals.tick - 1, on );
+				}
+				values.motionsOn = on.data();
+				values.motionsOnCount = uint32_t( on.size() );
 
 				MotionInputs motionIn;
 				motionIn.input = &in;
@@ -2806,10 +2813,16 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.carriedCount = carriedCount;
 			graphIn.usingKinds = usingKinds;
 			graphIn.usingCount = usingCount;
+			// (Its motions that are on, all of them, in a list of this thread's: the characters move apart in
+			// parallel.)
+			thread_local std::vector<uint16_t> on;
+			on.clear();
 			if ( m_motions && HasMotionState( e ) )
 			{
-				graphIn.motionsOn = MotionsOnAt( GetMotionState( e ), m_globals.tick );
+				MotionsOnAt( GetMotionState( e ), m_globals.tick, on );
 			}
+			graphIn.motionsOn = on.data();
+			graphIn.motionsOnCount = uint32_t( on.size() );
 			out.markers.clear();
 			UpdateAnimGraph( anim, *graph, m_animPacks, graphIn, m_config.TimeStep(), out.markers );
 		}
@@ -7366,7 +7379,7 @@ const Transform* Simulation::EntityTransform( uint32_t netId ) const
 	return e.is_valid() ? e.try_get<Transform>() : nullptr;
 }
 
-uint64_t Simulation::EntityMotionsOn( uint32_t netId ) const
+MotionsOn Simulation::EntityMotionsOn( uint32_t netId ) const
 {
 	flecs::entity e = FindEntity( netId );
 	if ( const PuppetState* ps = e.is_valid() && StandsIn( e ) ? e.try_get<PuppetState>() : nullptr )
@@ -7374,7 +7387,7 @@ uint64_t Simulation::EntityMotionsOn( uint32_t netId ) const
 		return ps->now.motionsOn; // (a puppet's motions are the server's to run: M253)
 	}
 	// (The last tick simulated: the state is the one after it.)
-	return e.is_valid() && m_motions && HasMotionState( e ) && m_globals.tick > 0 ? MotionsOnAt( GetMotionState( e ), m_globals.tick - 1 ) : 0;
+	return e.is_valid() && m_motions && HasMotionState( e ) && m_globals.tick > 0 ? ShownMotionsOn( GetMotionState( e ), m_globals.tick - 1 ) : MotionsOn{};
 }
 
 AnimStateCopy Simulation::EntityAnimState( uint32_t netId ) const

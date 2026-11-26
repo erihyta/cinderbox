@@ -106,7 +106,7 @@ After:
 | Tags: 32 for the whole server, the rest dropped silently (`motions.cpp:1634`) | as many as the motions name (a mask per motion set, or a list); never dropped silently |
 | `every` repeats 64 times at most (`kMotionRepeats`) | no count: a repetition costs only its own tick (step 6's P18) |
 
-These change what the simulation hashes: the reference hashes are refreshed, with every compiler
+These could change what the simulation hashes (as built: they did not; nothing shipped reached the limits): the reference hashes would be refreshed, with every compiler
 agreeing, as in M287 and M289.
 
 ### 3.4 The language, made regular (M296)
@@ -143,7 +143,7 @@ agreeing, as in M287 and M289.
 |---|---|---|
 | **M293** (**done**, 2026-11-26: as built, below the table) | **One front end** ([§3.1](#31-the-front-end-m293)) | every shipped, check and starter sheet lowers to the same rules (golden files unchanged, CI's re-bake unchanged); the 23 sheet tests pass; `LowerVersion1`, `ParseVersion0`, version 0 and `convert` deleted; errors with columns; a `let` named like a word of the language is refused |
 | **M294** (**done**, 2026-11-26: as built, below the table) | **The server compiles the sheet** ([§3.2](#32-the-server-compiles-the-sheet-m294)) | no mod has a `motions/` folder; the server, `cb_sheet test` and `cb_sheet check` compile sheets against baked parts; `CbItem.use_*` gone; the tests and the bots pass |
-| **M295** | **Limits** ([§3.3](#33-limits-m295)) | `active` reads any motion; no tag dropped; `every` without a cap; reference hashes refreshed, every compiler agreeing |
+| **M295** (**done**, 2026-11-26: as built, below the table) | **Limits** ([§3.3](#33-limits-m295)) | `active` reads any motion; no tag dropped; `every` without a cap; reference hashes refreshed, every compiler agreeing |
 | **M296** | **The language, made regular** ([§3.4](#34-the-language-made-regular-m296)) | each change has a `.cbtest` or a golden file; `sheets.md` updated |
 | **M297** | **Shipped sheets on the new words** ([§3.5](#35-shipped-sheets-on-the-new-words-m297)) | no `cd_*` field in brawl; no number written twice in the guns; a playtest by hand of the kit, the sword, the bat and the guns |
 
@@ -168,6 +168,16 @@ agreeing, as in M287 and M289.
 | `cb_sheet test` and `check` | `test` runs the sheet as it is (an edit with no bake is what it tests); `check` compiles a sheet's motions against the parts naming it, so a node the scene lacks (`along down`) is said there |
 | `CbItem.use_*` | gone, with the scene interface's item questions (the bake is given the kind and the use) |
 | Found on the way | the published items left out `motion_sets/` (its scenes are editor-only), and with it the sets' sheets the server now reads: the export excludes only `motion_sets/*.tscn`, and the game's pack check allows `motion_sets/` (sheets are plain data there as anywhere). A sheet's motion blocks now count as the server's in an item (`ItemServerParts`): only its looks (react, predict, hud) are left out |
+
+**M295 as built** (2026-11-26):
+
+| Planned | Built |
+|---|---|
+| `active X` for any motion | the mask of the server's first 64 went everywhere it was: a motion's conditions and its own state machine read **all** the motions on (a list, `MotionsOnAt`); what others see (another player's body in a state, the presentation, a view file, a look's `motion.<name>`) is a list of **up to 16 on at once** (`MotionsOn`, by index): a count of skills in use together, not of how many motions the mods have. Protocol 101, view file 11 |
+| No tag dropped | a list of tag numbers on each motion, as many as the motions name (until M295 a bit each, 32 a server, the rest dropped with no word) |
+| `every` without a cap | as often as its step lasts (the rifle's 30 was inside the 64; a 3 s step of every tick now repeats 180 times) |
+| Reference hashes refreshed | **not needed**: every tick hash and the animation hash match as they were. The limits only lift; nothing shipped reached them |
+| Proved | a test of 71 motions: the 69th, with the 69th tag, is on, read by another's condition (`motion.Far`), seen from outside, and its tag blocks a third until it ends; a state machine's `motion.<name>` with a list; the puppet codec's fuzz with lists. 195 tests; the Godot checks; a server's view file read by the game |
 
 **Order, and why.** M293 first: every later change is made once, on the tree, not in a text
 rewrite that is about to go. M294 next: it decides what an item carries, which 6b builds on. M295

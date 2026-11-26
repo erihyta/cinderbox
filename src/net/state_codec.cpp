@@ -443,8 +443,12 @@ void EncodePuppet( const Puppet& now, const Puppet* base, uint32_t tick, std::ve
 	}
 	if ( changed & PuppetMotions )
 	{
-		PutVarint( out, uint32_t( now.motionsOn ) );
-		PutVarint( out, uint32_t( now.motionsOn >> 32 ) );
+		// (M295: how many, then each motion's index: a list, not a mask of the first 64.)
+		PutVarint( out, now.motionsOn.count );
+		for ( int i = 0; i < now.motionsOn.count; ++i )
+		{
+			PutVarint( out, now.motionsOn.ids[i] );
+		}
 	}
 	if ( changed & PuppetStances )
 	{
@@ -531,9 +535,21 @@ bool DecodePuppet( ByteReader& r, const Puppet* base, uint32_t tick, Puppet& out
 	}
 	if ( changed & PuppetMotions )
 	{
-		const uint64_t lo = ReadVarint( r );
-		const uint64_t hi = ReadVarint( r );
-		out.motionsOn = lo | ( hi << 32 );
+		const uint32_t n = ReadVarint( r );
+		if ( r.Ok() == false || n > uint32_t( kMotionsOnShown ) )
+		{
+			return false;
+		}
+		out.motionsOn = MotionsOn{};
+		for ( uint32_t i = 0; i < n; ++i )
+		{
+			const uint32_t id = ReadVarint( r );
+			if ( r.Ok() == false || id > 65535u )
+			{
+				return false;
+			}
+			out.motionsOn.Add( uint16_t( id ) );
+		}
 	}
 	if ( changed & PuppetStances )
 	{

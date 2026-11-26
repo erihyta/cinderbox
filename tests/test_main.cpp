@@ -4640,6 +4640,61 @@ void TestMotions()
 			CHECK( hundred.ComputeHash() == hashThen );
 		}
 	}
+	// (M295) Past the first 64 motions and the first 32 tags: the 69th motion, with the 69th tag, is
+	// read by another's condition (active), seen on from outside, and its tag blocks a third. Until
+	// M295 a motion past 64 read as never on, and a tag past 32 was dropped.
+	{
+		ModSchema many = schema;
+		many.actions.push_back( { "far", 40, "X" } );
+		many.actions.push_back( { "near", 41, "Y" } );
+		std::string set = "cinderbox_motions\t3\n";
+		for ( int i = 0; i < 68; ++i )
+		{
+			set += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\tdash\nif\tairborne_time > 100\ntags\tt" + std::to_string( i ) + "\n";
+		}
+		set += "motion\tFar\nwhen\tpress\tfar\nduration\t0.5\ntags\tt68\n";		  // the 69th motion, the 69th tag
+		set += "motion\tNear\nwhen\tpress\tnear\nblocked\tt68\nduration\t0.1\n";	  // blocked by it
+		set += "motion\tEcho\nwhen\twhile\nif\tmotion.Far\n";					  // on while it is
+		many.motionSets = { { "dash", "dash.far", set } };
+		warned.clear();
+		auto all = CompileMotions( many, warned );
+		CHECK( all != nullptr && all->list.size() == 71 && warned.empty() );
+		AnimExpr far;
+		std::string farError, farWarnings;
+		CHECK( CompileAnimExpr( "motion.Far", many, far, farError, farWarnings ) && farWarnings.empty() );
+		if ( all != nullptr && all->list.size() == 71 )
+		{
+			SimConfig wide = TestConfig();
+			wide.motions = 71;
+			Simulation sim( wide );
+			sim.SetMotions( all );
+			InputFrame mf;
+			mf.events.push_back( { PlayerEventType::Join, 0 } );
+			auto steps = [&]( int n, ActionBits actions ) {
+				for ( int i = 0; i < n; ++i )
+				{
+					mf.inputs[0].actions = i == 0 ? actions : 0;
+					mf.tick = sim.Tick();
+					sim.Step( mf );
+					mf.events.clear();
+				}
+			};
+			steps( 60, 0 );
+			const uint32_t p = sim.PlayerNetId( 0 );
+			auto slot = [&]( int i ) { return sim.GetMotionState( sim.FindEntity( p ) ).slots[size_t( i )]; };
+			steps( 5, many.ActionMask( "far" ) );
+			const bool farOn = sim.EntityMotionsOn( p ).Has( 68 ), echoOn = sim.EntityMotionsOn( p ).Has( 70 );
+			steps( 2, many.ActionMask( "near" ) );
+			const bool nearBlocked = slot( 69 ).lastTick == 0;
+			steps( 40, 0 );
+			const bool echoOff = sim.EntityMotionsOn( p ).Has( 70 ) == false;
+			steps( 2, many.ActionMask( "near" ) );
+			const bool nearLater = slot( 69 ).lastTick != 0;
+			std::printf( "    the 69th motion on %d, read by another %d, its 69th tag blocks %d, later not %d, the other off with it %d\n", int( farOn ),
+						 int( echoOn ), int( nearBlocked ), int( nearLater ), int( echoOff ) );
+			CHECK( farOn && echoOn && nearBlocked && nearLater && echoOff );
+		}
+	}
 	// A server without motions has none, and its players carry nothing for them.
 	ModSchema none;
 	CHECK( CompileMotions( none, warned ) == nullptr );
@@ -4854,7 +4909,7 @@ void TestMotionsMeet()
 		std::printf( "    %s\n", warnings.c_str() );
 		return;
 	}
-	CHECK( motions->list[0].tags != 0 && motions->list[0].blockedTags == motions->list[1].tags && motions->list[0].blockedStatuses.size() == 1 &&
+	CHECK( motions->list[0].tags.empty() == false && motions->list[0].blockedTags == motions->list[1].tags && motions->list[0].blockedStatuses.size() == 1 &&
 		   motions->list[2].cancelTags == motions->list[0].tags && motions->list[6].sharedGroup == motions->list[7].sharedGroup &&
 		   motions->list[6].sharedGroup >= 0 );
 	Simulation sim( TestConfig(), FlatMap() );
@@ -4891,9 +4946,9 @@ void TestMotionsMeet()
 	// An attack on, a parry cancels it.
 	step( 40 );
 	step( 1, key( 0 ) );
-	const bool attackOn = ( sim.EntityMotionsOn( p0 ) & 1u ) != 0;
+	const bool attackOn = sim.EntityMotionsOn( p0 ).Has( 0 );
 	step( 1, key( 6 ) );
-	const bool attackAfterParry = ( sim.EntityMotionsOn( p0 ) & 1u ) != 0;
+	const bool attackAfterParry = sim.EntityMotionsOn( p0 ).Has( 0 );
 	// A tap (5 ticks down), a hold (30 ticks down): the hold says so at 0.25 s, still down.
 	step( 40 );
 	step( 5, key( 2 ) );
@@ -5006,7 +5061,7 @@ void TestMotionSteps()
 	step( 60 );
 	const uint32_t p0 = sim.PlayerNetId( 0 );
 	auto grounded = [&] { return sim.PlayerCharacter( 0 )->grounded != 0; };
-	auto on = [&]( int motion ) { return ( sim.EntityMotionsOn( p0 ) >> motion & 1u ) != 0; };
+	auto on = [&]( int motion ) { return sim.EntityMotionsOn( p0 ).Has( uint16_t( motion ) ); };
 	// A player who spawns standing has not landed: the edge's first answer is only remembered.
 	const int spawnLandings = count( 4 );
 	std::printf( "    landings by the spawn: %d\n", spawnLandings );
@@ -8191,11 +8246,11 @@ void TestMotionRepeats()
 	f.inputs[0].actions = 0;
 	step( 30 );
 	CHECK( sim.BoardValue( p0, 1 ) == 3 );
-	// Every tick for three seconds stops at 64.
+	// Every tick for three seconds: as long as its step lasts (M295: no count; it stopped at 64).
 	press( 16 );
 	step( 200 );
 	std::printf( "    every tick for 3 s: %d times\n", sim.BoardValue( p0, 2 ) );
-	CHECK( sim.BoardValue( p0, 2 ) == int32_t( kMotionRepeats ) );
+	CHECK( sim.BoardValue( p0, 2 ) == 180 );
 
 	// What a file may not say.
 	auto fails = [&]( const std::string& body ) {
@@ -8244,9 +8299,12 @@ void TestMotionConditions()
 	CHECK( CompileAnimExpr( "motion.Hold and not motion.b.moves.Twin", schema, expr, error, exprWarnings ) && exprWarnings.empty() );
 	AnimGraphInputs in;
 	CHECK( EvaluateAnimExpr( expr, in, 0.0f ) == 0.0f );
-	in.motionsOn = 1;
+	const uint16_t hold[] = { 0 }, both[] = { 0, 4 };
+	in.motionsOn = hold;
+	in.motionsOnCount = 1;
 	CHECK( EvaluateAnimExpr( expr, in, 0.0f ) != 0.0f );
-	in.motionsOn = 1 | ( uint64_t( 1 ) << 4 );
+	in.motionsOn = both;
+	in.motionsOnCount = 2;
 	CHECK( EvaluateAnimExpr( expr, in, 0.0f ) == 0.0f );
 
 	Simulation sim( TestConfig(), FlatMap() );
@@ -8265,21 +8323,21 @@ void TestMotionConditions()
 	step( 60 );
 	uint32_t p0 = sim.PlayerNetId( 0 );
 	auto value = [&]( int slot ) { return BoardToFloat( sim.BoardValue( p0, slot ) ); };
-	CHECK( value( 0 ) == 0.0f && value( 1 ) == 0.0f && sim.EntityMotionsOn( p0 ) == 0 );
+	CHECK( value( 0 ) == 0.0f && value( 1 ) == 0.0f && sim.EntityMotionsOn( p0 ).count == 0 );
 
 	// A press: Hold is on for half a second, and the two that ask for it run that long (a tick
 	// behind it: they read it as the tick found it).
 	f.inputs[0].actions = 4;
 	step( 1 );
 	f.inputs[0].actions = 0;
-	CHECK( ( sim.EntityMotionsOn( p0 ) & 1 ) != 0 );
+	CHECK( sim.EntityMotionsOn( p0 ).Has( 0 ) );
 	step( 10 );
-	CHECK( ( sim.EntityMotionsOn( p0 ) & 1 ) != 0 && value( 0 ) > 5.0f && value( 1 ) == value( 0 ) );
+	CHECK( sim.EntityMotionsOn( p0 ).Has( 0 ) && value( 0 ) > 5.0f && value( 1 ) == value( 0 ) );
 	step( 60 );
 	float after = value( 0 );
 	step( 30 );
 	std::printf( "    while Hold was on: %.1f and %.1f; a motion nobody has: %.1f\n", value( 0 ), value( 1 ), value( 2 ) );
-	CHECK( ( sim.EntityMotionsOn( p0 ) & 1 ) == 0 && value( 0 ) == after && after > 25.0f && after < 35.0f );
+	CHECK( sim.EntityMotionsOn( p0 ).Has( 0 ) == false && value( 0 ) == after && after > 25.0f && after < 35.0f );
 	CHECK( value( 2 ) == 0.0f );
 }
 

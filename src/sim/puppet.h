@@ -66,7 +66,6 @@ struct Puppet
 	uint32_t lastJumpTick = 0;	 // Character::lastJumpTick
 	uint32_t airSince = 0;		 // the tick it left the ground (0 on it)
 	uint32_t stepCount = 0;		 // Character::stepCount
-	uint64_t motionsOn = 0;		 // Simulation::EntityMotionsOn
 	uint8_t stances[kPuppetLayers] = {};
 	PuppetLayer layers[kPuppetLayers];
 	uint32_t reserved = 0;
@@ -74,11 +73,12 @@ struct Puppet
 	uint16_t kindsInUse = 0;		   // of those, a bit each: in use (in a hand), not put away
 	uint8_t kindCount = 0;
 	uint8_t reserved2 = 0;
-	uint32_t reserved3 = 0;
+	MotionsOn motionsOn;		 // Simulation::EntityMotionsOn (M295: a list, not a mask of the first 64)
+	uint16_t reserved3 = 0;
 
 	bool operator==( const Puppet& ) const = default;
 };
-static_assert( sizeof( PuppetLayer ) == 8 && sizeof( Puppet ) == 192, "Puppet has padding: a server hashes it as bytes" );
+static_assert( sizeof( MotionsOn ) == 34 && sizeof( PuppetLayer ) == 8 && sizeof( Puppet ) == 216, "Puppet has padding: a server hashes it as bytes" );
 
 // A puppet of one entity in a state (by NetId), and the state it was made in: a client keeps one
 // it was last sent while the entity is left out of later ones (by distance).

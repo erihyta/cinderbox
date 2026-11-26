@@ -225,7 +225,7 @@ private:
 				return;
 			}
 			int motion = FindMotionByName( m_schema, name.substr( 7 ) );
-			if ( motion >= 0 && motion < 64 )
+			if ( motion >= 0 && motion < 65535 )
 			{
 				step.kind = AnimExpr::VarKind::MotionOn;
 				step.index = uint16_t( motion );
@@ -233,9 +233,7 @@ private:
 			else if ( m_warnings.find( "'" + name + "'" ) == std::string::npos )
 			{
 				m_warnings += "'" + name + "': " +
-							  ( motion == -2	 ? "several motions have that node name: say the set too (motion.<set>.<node>)"
-								: motion >= 64 ? "only a server's first 64 motions can be asked for"
-											   : "no motion of that name" ) +
+							  ( motion == -2 ? "several motions have that node name: say the set too (motion.<set>.<node>)" : "no motion of that name" ) +
 							  " (it reads as 0); ";
 			}
 			return;
@@ -414,7 +412,14 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			}
 			return 0.0f;
 		case AnimExpr::VarKind::MotionOn:
-			return ( in.motionsOn >> step.index ) & 1 ? 1.0f : 0.0f;
+			for ( uint32_t i = 0; in.motionsOn != nullptr && i < in.motionsOnCount; ++i )
+			{
+				if ( in.motionsOn[i] == step.index )
+				{
+					return 1.0f;
+				}
+			}
+			return 0.0f;
 		case AnimExpr::VarKind::ItemField:
 		{
 			if ( in.itemBoard == nullptr || size_t( step.index ) >= in.itemBoard->size() )
