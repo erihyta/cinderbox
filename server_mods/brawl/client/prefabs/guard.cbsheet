@@ -5,6 +5,8 @@ cbsheet 1
 # Its names (the brawl mod's C++ finds them) and its numbers.
 event brawl.guard.up
 param inventory.start 1
+# Its tag, which the other skills wait out.
+tag guard
 
 use
 	tags guard

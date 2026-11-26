@@ -1,4 +1,4 @@
-rule motion line 27 head 0
+rule motion line 30 head 0
   name: text "OnUse"
   trigger: text "use"
   conditions: texts
@@ -20,14 +20,14 @@ rule motion line 27 head 0
               kind: text "change"
               text: text "cov.count += 1"
               guard: text ""
-              line: int 32
+              line: int 35
           - dict
               verb: text "change"
               kind: text "change"
               text: text "cov.left = 1.5"
               guard: text ""
-              line: int 33
-rule motion line 35 head 0
+              line: int 36
+rule motion line 38 head 0
   name: text "OnPress"
   trigger: text "press"
   action: text "cov.key"
@@ -46,8 +46,8 @@ rule motion line 35 head 0
               kind: text "change"
               text: text "item:cov.rounds = 12"
               guard: text ""
-              line: int 39
-rule motion line 41 head 0
+              line: int 42
+rule motion line 44 head 0
   name: text "OnRelease"
   trigger: text "release"
   action: text "cov.key"
@@ -61,8 +61,8 @@ rule motion line 41 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text ""
-              line: int 43
-rule motion line 45 head 0
+              line: int 46
+rule motion line 48 head 0
   name: text "OnTap"
   trigger: text "tap"
   action: text "cov.key"
@@ -75,8 +75,8 @@ rule motion line 45 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text ""
-              line: int 46
-rule motion line 48 head 0
+              line: int 49
+rule motion line 51 head 0
   name: text "OnHold"
   trigger: text "hold"
   action: text "cov.other"
@@ -92,8 +92,8 @@ rule motion line 48 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text ""
-              line: int 52
-rule motion line 54 head 0
+              line: int 55
+rule motion line 57 head 0
   name: text "OnEvent"
   trigger: text "event"
   event: text "cov.hit"
@@ -108,8 +108,8 @@ rule motion line 54 head 0
               text: text "cov.said"
               value: text "2 * cov.count"
               guard: text ""
-              line: int 55
-rule motion line 57 head 0
+              line: int 58
+rule motion line 60 head 0
   name: text "While"
   trigger: text "while"
   expression: text "held.jump and not grounded"
@@ -121,7 +121,7 @@ rule motion line 57 head 0
               kind: text "change"
               text: text "cov.speed -= 30"
               guard: text ""
-              line: int 58
+              line: int 61
           - dict
               verb: text "force"
               kind: text "part"
@@ -131,7 +131,7 @@ rule motion line 57 head 0
                   strength: float 26
                   frame: int 3
               guard: text ""
-              line: int 59
+              line: int 62
           - dict
               verb: text "move"
               kind: text "part"
@@ -143,8 +143,8 @@ rule motion line 57 head 0
                     gravity: float 3
                     max_fall: float 2.5
               guard: text ""
-              line: int 60
-rule motion line 62 head 0
+              line: int 63
+rule motion line 65 head 0
   name: text "When"
   trigger: text "when"
   expression: text "grounded"
@@ -158,8 +158,8 @@ rule motion line 62 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text ""
-              line: int 63
-rule motion line 65 head 0
+              line: int 66
+rule motion line 68 head 0
   name: text "Status"
   trigger: text "event"
   event: text "cov.hit"
@@ -174,8 +174,8 @@ rule motion line 65 head 0
               text: text "cov.stunned"
               value: text "0.8"
               guard: text ""
-              line: int 66
-rule motion line 68 head 0
+              line: int 69
+rule motion line 71 head 0
   name: text "Use"
   trigger: text "use"
   conditions: texts
@@ -194,7 +194,7 @@ rule motion line 68 head 0
                   speed: float 16
                   replace: int 2
               guard: text ""
-              line: int 70
+              line: int 73
           - dict
               verb: text "move for"
               kind: text "part"
@@ -205,8 +205,8 @@ rule motion line 68 head 0
                   parameters: dict
                     friction: float 0
               guard: text ""
-              line: int 71
-rule motion line 74 head 0
+              line: int 74
+rule motion line 77 head 0
   name: text "Steps"
   trigger: text "press"
   action: text "jump"
@@ -218,7 +218,7 @@ rule motion line 74 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text ""
-              line: int 75
+              line: int 78
     - dict
         statements: list
           - dict
@@ -226,8 +226,8 @@ rule motion line 74 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text ""
-              line: int 77
-        line: int 76
+              line: int 80
+        line: int 79
         after: float 0.5
     - dict
         statements: list
@@ -236,7 +236,7 @@ rule motion line 74 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text "( cov.count > 0 )"
-              line: int 80
+              line: int 83
           - dict
               verb: text "move for"
               kind: text "part"
@@ -247,19 +247,19 @@ rule motion line 74 head 0
                   parameters: dict
                     walk_speed: float 0
               guard: text "( cov.count > 0 )"
-              line: int 81
+              line: int 84
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "cov.said"
               guard: text "not ( cov.count > 0 )"
-              line: int 83
+              line: int 86
           - dict
               verb: text "end"
               kind: text "end"
               guard: text "not ( cov.count > 0 ) and ( cov.on )"
-              line: int 85
-        line: int 78
+              line: int 88
+        line: int 81
         within: float 2
         wait: text "grounded"
     - dict
@@ -269,10 +269,10 @@ rule motion line 74 head 0
               kind: text "emit"
               text: text "cov.said"
               guard: text ""
-              line: int 87
-        line: int 86
+              line: int 90
+        line: int 89
         timeout: bool true
-rule motion line 89 head 0
+rule motion line 92 head 0
   name: text "GoesOn"
   trigger: text "press"
   action: text "sprint"
@@ -294,14 +294,14 @@ rule motion line 89 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 92
+                    line: int 95
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "cov.hit"
               guard: text ""
-              line: int 91
-        line: int 90
+              line: int 94
+        line: int 93
         within: float 0.35
         or: bool true
         wait: text "cov.hit"
@@ -311,19 +311,19 @@ rule motion line 89 head 0
               kind: text "every"
               verb: text "every"
               seconds: float 0.1
-              line: int 94
+              line: int 97
               guard: text ""
           - dict
               verb: text "change"
               kind: text "change"
               text: text "cov.count += 1"
               guard: text ""
-              line: int 95
-        line: int 93
+              line: int 98
+        line: int 96
         within: float 0.7
         or: bool true
         wait: text "cov.said"
-rule motion line 98 head 0
+rule motion line 101 head 0
   name: text "Effects"
   trigger: text "press"
   action: text "jump"
@@ -339,7 +339,7 @@ rule motion line 98 head 0
                   speed: float 4
                   frame: int 2
               guard: text ""
-              line: int 99
+              line: int 102
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -353,7 +353,7 @@ rule motion line 98 head 0
                   frame: int 0
                   turn: vec2 10 5
               guard: text ""
-              line: int 100
+              line: int 103
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -365,7 +365,7 @@ rule motion line 98 head 0
                   direction: vec3 0 -1 0
                   replace: int 1
               guard: text ""
-              line: int 101
+              line: int 104
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -376,20 +376,20 @@ rule motion line 98 head 0
                   frame: int 1
                   replace: int 3
               guard: text ""
-              line: int 102
+              line: int 105
           - dict
-              verb: text "force"
+              verb: text "steer"
               kind: text "part"
               part: dict
                 class: text "CbForce"
                 properties: dict
-                  strength: float 40
                   kind: int 2
                   speed: float 30
+                  strength: float 40
                   ramp_in: float 0.2
                   react: bool true
               guard: text ""
-              line: int 103
+              line: int 106
           - dict
               verb: text "force"
               kind: text "part"
@@ -400,7 +400,7 @@ rule motion line 98 head 0
                   kind: int 1
                   frame: int 3
               guard: text ""
-              line: int 104
+              line: int 107
           - dict
               verb: text "break"
               radius: text "2"
@@ -408,14 +408,14 @@ rule motion line 98 head 0
               seconds: text "3"
               kind: text "break"
               guard: text ""
-              line: int 105
+              line: int 108
           - dict
               verb: text "break"
               radius: text "2"
               point: text "look 6"
               kind: text "break"
               guard: text ""
-              line: int 106
+              line: int 109
           - dict
               verb: text "launch"
               kind: text "part"
@@ -428,7 +428,7 @@ rule motion line 98 head 0
                   ahead: float 0.8
                   seconds: float 2.5
               guard: text ""
-              line: int 107
+              line: int 110
           - dict
               verb: text "launch"
               kind: text "part"
@@ -439,8 +439,8 @@ rule motion line 98 head 0
                   item_kind: text "cov.ball"
                   speed: float 10
               guard: text ""
-              line: int 108
-rule motion line 111 head 0
+              line: int 111
+rule motion line 114 head 0
   name: text "Finding"
   trigger: text "press"
   action: text "jump"
@@ -459,13 +459,13 @@ rule motion line 111 head 0
               who: text "players"
               statements: list
                 - dict
-                    line: int 113
+                    line: int 116
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "cov.hit"
                 - dict
-                    line: int 114
+                    line: int 117
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -476,7 +476,7 @@ rule motion line 111 head 0
                         frame: int 6
                         target: int 3
                 - dict
-                    line: int 115
+                    line: int 118
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -489,7 +489,7 @@ rule motion line 111 head 0
                           2: text "(distance < 8) * (1 - distance / 8) * 9"
                         target: int 3
                 - dict
-                    line: int 116
+                    line: int 119
                     verb: text "move for"
                     only: text ""
                     kind: text "part"
@@ -500,20 +500,20 @@ rule motion line 111 head 0
                         parameters: dict
                           walk_speed: float 1
                 - dict
-                    line: int 117
+                    line: int 120
                     verb: text "apply"
                     only: text ""
                     kind: text "apply"
                     text: text "cov.stunned"
                     value: text "1"
                 - dict
-                    line: int 118
+                    line: int 121
                     verb: text "change"
                     only: text ""
                     kind: text "change"
                     text: text "cov.count += 1"
                 - dict
-                    line: int 120
+                    line: int 123
                     verb: text "impulse"
                     only: text "( player )"
                     kind: text "part"
@@ -524,7 +524,7 @@ rule motion line 111 head 0
                         frame: int 2
                         target: int 3
                 - dict
-                    line: int 122
+                    line: int 125
                     verb: text "impulse"
                     only: text "not ( player )"
                     kind: text "part"
@@ -535,7 +535,7 @@ rule motion line 111 head 0
                         frame: int 2
                         target: int 3
               guard: text ""
-              line: int 112
+              line: int 115
           - dict
               verb: text "find"
               frame: text "look"
@@ -550,13 +550,13 @@ rule motion line 111 head 0
               who: text "all"
               statements: list
                 - dict
-                    line: int 124
+                    line: int 127
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "cov.hit"
               guard: text ""
-              line: int 123
+              line: int 126
           - dict
               verb: text "find"
               sight: bool true
@@ -568,7 +568,7 @@ rule motion line 111 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 126
+                    line: int 129
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -583,7 +583,7 @@ rule motion line 111 head 0
                           2: text "(distance < 8) * (1 - distance / 8) * 6"
                         target: int 3
               guard: text ""
-              line: int 125
+              line: int 128
           - dict
               verb: text "find"
               self: bool true
@@ -597,7 +597,7 @@ rule motion line 111 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 128
+                    line: int 131
                     verb: text "throw"
                     only: text ""
                     kind: text "part"
@@ -610,8 +610,8 @@ rule motion line 111 head 0
                         marks_seconds: float 2
                         target: int 3
               guard: text ""
-              line: int 127
-rule motion line 130 head 0
+              line: int 130
+rule motion line 133 head 0
   name: text "Casting"
   trigger: text "press"
   action: text "jump"
@@ -632,33 +632,33 @@ rule motion line 130 head 0
                 - "players"
               statements: list
                 - dict
-                    line: int 133
+                    line: int 136
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "cov.hit"
                 - dict
-                    line: int 134
+                    line: int 137
                     verb: text "apply"
                     only: text ""
                     kind: text "apply"
                     text: text "cov.stunned"
                     value: text "0.6"
                 - dict
-                    line: int 135
-                    verb: text "force"
+                    line: int 138
+                    verb: text "steer"
                     only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbForce"
                       properties: dict
-                        strength: float 60
                         kind: int 2
-                        speed: float 14
                         target: int 1
                         toward: text "owner"
+                        speed: float 14
+                        strength: float 60
                 - dict
-                    line: int 136
+                    line: int 139
                     verb: text "link"
                     only: text ""
                     kind: text "part"
@@ -669,8 +669,8 @@ rule motion line 130 head 0
                         reel: float 6
                         react: bool false
               guard: text ""
-              line: int 132
-rule motion line 138 head 0
+              line: int 135
+rule motion line 141 head 0
   name: text "Ray"
   trigger: text "press"
   action: text "jump"
@@ -687,7 +687,7 @@ rule motion line 138 head 0
               holds: texts
               statements: list
                 - dict
-                    line: int 140
+                    line: int 143
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -698,8 +698,8 @@ rule motion line 138 head 0
                         target: int 1
                         frame: int 5
               guard: text ""
-              line: int 139
-rule motion line 142 head 0
+              line: int 142
+rule motion line 145 head 0
   name: text "Grabbing"
   trigger: text "while"
   expression: text "held.cov.other"
@@ -718,21 +718,21 @@ rule motion line 142 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 144
-                    verb: text "force"
+                    line: int 147
+                    verb: text "steer"
                     only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbForce"
                       properties: dict
-                        strength: float 40
                         kind: int 2
-                        speed: float 12
                         toward: text "look 6"
+                        speed: float 12
+                        strength: float 40
                         target: int 3
               guard: text ""
-              line: int 143
-rule motion line 146 head 0
+              line: int 146
+rule motion line 149 head 0
   name: text "Item"
   trigger: text "event"
   event: text "cov.hit"
@@ -745,13 +745,13 @@ rule motion line 146 head 0
               kind: text "emit"
               text: text "cov.hit"
               guard: text ""
-              line: int 148
+              line: int 151
           - dict
               verb: text "break"
               radius: text "2"
               kind: text "break"
               guard: text ""
-              line: int 149
+              line: int 152
           - dict
               verb: text "find"
               kind: text "find"
@@ -762,7 +762,7 @@ rule motion line 146 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 151
+                    line: int 154
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -773,13 +773,13 @@ rule motion line 146 head 0
                         frame: int 6
                         target: int 3
               guard: text ""
-              line: int 150
+              line: int 153
           - dict
               verb: text "remove"
               kind: text "remove"
               guard: text ""
-              line: int 152
-rule CbReaction line 160 head 155
+              line: int 155
+rule CbReaction line 163 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -794,7 +794,7 @@ rule CbReaction line 160 head 155
   pitch_jitter: float 0.15
   max_distance: float 40
   bus: text "SFX"
-rule CbReaction line 161 head 155
+rule CbReaction line 164 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -805,7 +805,7 @@ rule CbReaction line 161 head 155
   place: int 1
   scene: text "res://vfx/hit_puff.tscn"
   scene_lifetime: float 1
-rule CbReaction line 163 head 155
+rule CbReaction line 166 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -815,7 +815,7 @@ rule CbReaction line 163 head 155
   subject: text "^^"
   place: int 2
   scene: text "res://vfx/spark.tscn"
-rule CbReaction line 165 head 155
+rule CbReaction line 168 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -827,7 +827,7 @@ rule CbReaction line 165 head 155
   place_node: text "Muzzle"
   scene: text "res://vfx/tracer.tscn"
   scene_lifetime: float 0.06
-rule CbReaction line 168 head 155
+rule CbReaction line 171 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -841,7 +841,7 @@ rule CbReaction line 168 head 155
   delay: float 0.1
   sound: text "res://assets/sfx/hit_marker.wav"
   volume_db: float -6
-rule CbReaction line 171 head 155
+rule CbReaction line 174 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -849,11 +849,12 @@ rule CbReaction line 171 head 155
   cooldown: float 0.1
   wait_for_server: bool true
   subject: text "^^"
-  place: int 5
+  place: int 0
+  scene_parent: text "^^"
   chance: float 0.5
   shake: float 0.3
   shake_time: float 0.2
-rule CbReaction line 172 head 155
+rule CbReaction line 176 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -861,10 +862,11 @@ rule CbReaction line 172 head 155
   cooldown: float 0.1
   wait_for_server: bool true
   subject: text "^^"
-  scene: text "res://vfx/muzzle_flash.tscn"
+  place: int 0
   scene_parent: text "Muzzle"
+  scene: text "res://vfx/muzzle_flash.tscn"
   scene_lifetime: float 0.3
-rule CbReaction line 173 head 155
+rule CbReaction line 177 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -875,7 +877,7 @@ rule CbReaction line 173 head 155
   animation_player: text "AnimationPlayer"
   animation: text "slash"
   animation_off: text "idle"
-rule CbReaction line 174 head 155
+rule CbReaction line 178 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -886,7 +888,7 @@ rule CbReaction line 174 head 155
   target: text "Model/Sparks"
   method: text "restart"
   method_args: list
-rule CbReaction line 175 head 155
+rule CbReaction line 179 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -898,7 +900,7 @@ rule CbReaction line 175 head 155
   method: text "set_emitting"
   method_args: list
     - bool true
-rule CbReaction line 176 head 155
+rule CbReaction line 180 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -910,7 +912,7 @@ rule CbReaction line 176 head 155
   property: text "visible"
   value: bool false
   blend_time: float 0.2
-rule CbReaction line 177 head 155
+rule CbReaction line 181 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -921,7 +923,7 @@ rule CbReaction line 177 head 155
   target: text "Model/Light"
   property: text "light_energy"
   value_expression: text "cov.speed * 2"
-rule CbReaction line 178 head 155
+rule CbReaction line 182 head 158
   when: int 0
   event: text "cov.hit"
   conditions: texts
@@ -931,7 +933,7 @@ rule CbReaction line 178 head 155
   subject: text "^^"
   flash_color: color 1 0 0 0.3
   flash_time: float 0.2
-rule CbReaction line 182 head 180
+rule CbReaction line 186 head 184
   when: int 0
   event: text "cov.said"
   conditions: texts
@@ -940,14 +942,14 @@ rule CbReaction line 182 head 180
   subject: text "$at"
   sound: text "res://assets/sfx/thud.wav"
   volume_expression: text "cov.speed"
-rule CbReaction line 185 head 184
+rule CbReaction line 189 head 188
   when: int 1
   conditions: texts
     - "cov.hot > 0"
   target: text "Model/Barrel"
   property: text "surface_material_override/0:emission_energy_multiplier"
   value: float 4
-rule CbReaction line 189 head 187
+rule CbReaction line 193 head 191
   when: int 1
   conditions: texts
     - "first_person"
@@ -955,27 +957,27 @@ rule CbReaction line 189 head 187
   target: text "Arms"
   property: text "visible"
   value: bool true
-rule CbReaction line 193 head 191
+rule CbReaction line 197 head 195
   when: int 0
   event: text "cov.hit"
   subject: text "$other"
   shake: float 0.1
-rule CbReaction line 195 head 191
+rule CbReaction line 199 head 195
   when: int 0
   event: text "cov.hit"
   subject: text "$local"
   flash_color: color 1 1 1 1
-rule CbReaction line 197 head 191
+rule CbReaction line 201 head 195
   when: int 0
   event: text "cov.hit"
   subject: text "$world"
   sound: text "res://assets/sfx/ricochet.wav"
-rule CbReaction line 199 head 191
+rule CbReaction line 203 head 195
   when: int 0
   event: text "cov.hit"
   subject: text "$local@cov.target"
   sound: text "res://assets/sfx/ricochet.wav"
-rule CbPrediction line 202 head 0 prediction
+rule CbPrediction line 206 head 0 prediction
   action: text "use2"
   cue: text "cov.said"
   conditions: texts
@@ -986,32 +988,49 @@ rule CbPrediction line 202 head 0 prediction
   stance_layer: text "full"
   changes: texts
     - "cov.count -= 1"
-rule CbFieldBinding line 210 head 0
+rule CbFieldBinding line 214 head 0
   conditions: texts
     - "carried.cov.ball"
   target: text "Skills/Dash"
-rule CbFieldBinding line 211 head 0
+rule CbFieldBinding line 215 head 0
   conditions: texts
     - "cov.left <= 0"
   hides: bool false
   text_format: text "[{key:slot2}]  READY"
   target: text "Skills/Dash"
-rule CbFieldBinding line 212 head 0
+rule CbFieldBinding line 216 head 0
   conditions: texts
     - "cov.left > 0"
   hides: bool false
   text_format: text "{cov.left}s"
   property: text "text"
   target: text "Skills/Dash"
-rule CbFieldBinding line 213 head 0
+rule CbFieldBinding line 217 head 0
   hides: bool false
   property: text "modulate:r"
   field: text "1 - 0.45 * (cov.left <= 0)"
   target: text "Skills/Dash"
-rule CbFieldBinding line 214 head 0
+rule CbFieldBinding line 218 head 0
   conditions: texts
     - "cov.on"
   hides: bool false
   property: text "modulate:a"
   field: text "0.5"
   target: text "Skills/Dash"
+rule CbFieldBinding line 220 head 0
+  conditions: texts
+    - "not ready.OnPress"
+  hides: bool false
+  text_format: text "{cooldown.OnPress}s, {uses.OnRelease} left"
+  target: text "Skills/Clock"
+rule CbFieldBinding line 221 head 0
+  conditions: texts
+    - "cov.stunned"
+  hides: bool false
+  text_format: text "stunned {remaining.cov.stunned}s"
+  target: text "Skills/Clock"
+rule CbFieldBinding line 222 head 0
+  hides: bool false
+  property: text "value"
+  field: text "cooldown.OnPress"
+  target: text "Skills/Clock"

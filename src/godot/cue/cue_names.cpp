@@ -501,6 +501,7 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 			const char* kind = d.kind == sheet::Declaration::Kind::Event	? "event"
 							   : d.kind == sheet::Declaration::Kind::Action ? "action"
 							   : d.kind == sheet::Declaration::Kind::Status ? "status"
+							   : d.kind == sheet::Declaration::Kind::Tag	   ? "tag"
 																			: "field";
 			local.byKind[kind].insert( d.name );
 			if ( d.kind != sheet::Declaration::Kind::Action )
@@ -634,7 +635,9 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 								// (M290's)
 								"grab", "toward", "throw", "marks", "first",
 								// (M292's)
-								"sight" };
+								"sight",
+								// (M296's)
+								"tag", "attached", "steer", "strength", "speed", "down", "per", "second" };
 
 } // namespace
 

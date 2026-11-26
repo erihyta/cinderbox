@@ -9,8 +9,8 @@ cbsheet 1
 # Its names (the gun mod's C++ finds them), a gun's own fields (each copy's: a magazine put away half
 # empty comes out half empty), and the numbers a gun has unless its sheet says others (the gun mod
 # reads them as the item's properties).
-field gun.rounds int on item = 10
-field gun.magazine int on item = 10
+field gun.rounds int on item = gun.capacity
+field gun.magazine int on item = gun.capacity
 field gun.reloading bool on item
 field gun.reload_left timer on item
 event item.use
@@ -19,6 +19,7 @@ event item.reload
 event item.reach
 event item.hit
 action reload key R
+param gun.capacity 10
 param gun.damage 10
 param gun.kill_push 6 m/s
 param gun.prop_push 4 m/s

@@ -75,6 +75,7 @@ struct Tree
 	std::vector<Node> blocks;				   // the lines at a line's start, each with what is under it
 	std::map<std::string, std::string> params; // a param's name, and its number as text
 	std::set<std::string> itemFields;		   // the names of the fields "on item"
+	std::set<std::string> tags, statuses, motions; // (M296) what blocked by and cancels may name
 	std::string Mistake( int line, const std::string& why ) const
 	{
 		return source.Mistake( line, why );

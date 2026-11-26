@@ -526,6 +526,10 @@ private:
 	// one), "carried.<kind>" (has one, put away or not), "using.<kind>" (uses one this tick),
 	// "motion.<name>" (that motion of its is on). False: not such a name.
 	bool PlayerName( uint32_t netId, const std::string& name, float& value ) const;
+	// The local player's motion clock (M296), as its HUD reads it: "ready.<motion>", "cooldown.<motion>",
+	// "uses.<motion>", a status ("stunned": 1 while it lasts) and "remaining.<status>" (seconds). 0 for
+	// any other player (its clock is the server's). False: not such a name.
+	bool ClockName( uint32_t netId, const std::string& name, float& value ) const;
 	// "{key:pickup}" -> the binding of the server's action; "{look:pickup.target}" -> what the entity
 	// whose NetId the field holds is called (an item's display name, a player's name).
 	godot::String ResolveKeysAndLooks( int64_t net_id, const godot::String& format ) const;

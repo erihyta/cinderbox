@@ -1,4 +1,4 @@
-rule motion line 100032 head 0
+rule motion line 100033 head 0
   name: text "Fire"
   trigger: text "use"
   conditions: texts
@@ -12,14 +12,14 @@ rule motion line 100032 head 0
               kind: text "change"
               text: text "item:gun.rounds -= 1"
               guard: text ""
-              line: int 100034
+              line: int 100035
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.use"
               guard: text ""
-              line: int 100035
-rule motion line 100038 head 0
+              line: int 100036
+rule motion line 100039 head 0
   name: text "Dry"
   trigger: text "use"
   conditions: texts
@@ -33,26 +33,26 @@ rule motion line 100038 head 0
               kind: text "change"
               text: text "item:gun.reloading = 1"
               guard: text ""
-              line: int 100040
+              line: int 100041
           - dict
               verb: text "change"
               kind: text "change"
               text: text "item:gun.reload_left = 1.5"
               guard: text ""
-              line: int 100041
+              line: int 100042
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.use_failed"
               guard: text ""
-              line: int 100042
+              line: int 100043
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.reload"
               guard: text ""
-              line: int 100043
-rule motion line 100046 head 0
+              line: int 100044
+rule motion line 100047 head 0
   name: text "Reload"
   trigger: text "press"
   action: text "reload"
@@ -66,20 +66,20 @@ rule motion line 100046 head 0
               kind: text "change"
               text: text "item:gun.reloading = 1"
               guard: text ""
-              line: int 100047
+              line: int 100048
           - dict
               verb: text "change"
               kind: text "change"
               text: text "item:gun.reload_left = 1.5"
               guard: text ""
-              line: int 100048
+              line: int 100049
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.reload"
               guard: text ""
-              line: int 100049
-rule motion line 100052 head 0
+              line: int 100050
+rule motion line 100053 head 0
   name: text "Reloaded"
   trigger: text "when"
   expression: text "item:gun.reloading and item:gun.reload_left <= 0"
@@ -92,21 +92,22 @@ rule motion line 100052 head 0
               kind: text "change"
               text: text "item:gun.reloading = 0"
               guard: text ""
-              line: int 100054
+              line: int 100055
           - dict
               verb: text "change"
               kind: text "change"
               text: text "item:gun.rounds = item:gun.magazine"
               guard: text ""
-              line: int 100055
-rule CbReaction line 17 head 15
+              line: int 100056
+rule CbReaction line 17 head 14
   when: int 0
   event: text "item.use"
   subject: text "^^"
-  scene: text "res://vfx/muzzle_flash.tscn"
+  place: int 0
   scene_parent: text "Muzzle"
+  scene: text "res://vfx/muzzle_flash.tscn"
   scene_lifetime: float 0.3
-rule CbReaction line 19 head 15
+rule CbReaction line 19 head 14
   when: int 0
   event: text "item.use"
   subject: text "^^"

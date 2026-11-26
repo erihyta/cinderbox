@@ -4960,12 +4960,25 @@ void TestMotionsMeet()
 	step( 1 );
 	step( 1, key( 4 ) );
 	const int twoAtOnce = count( 6 );
+	// The clock a HUD reads (M296): One cooling down, and Two with it (their cooldown is shared).
+	const MotionClock cooling = sim.EntityMotionClock( p0 );
+	auto entry = [&]( uint16_t motion ) {
+		for ( const MotionClockEntry& e : cooling.motions )
+		{
+			if ( e.motion == motion )
+			{
+				return e;
+			}
+		}
+		return MotionClockEntry{ motion, true, 0, 0.0f };
+	};
 	step( 70 );
 	step( 1, key( 4 ) );
 	// A status: stunned for half a second blocks an attack; "remaining stunned" read.
 	step( 1, key( 5 ) );
 	step( 1 );
 	const bool stunned = HasMotionStatus( sim.GetMotionState( sim.FindEntity( p0 ) ), 0, sim.Tick() );
+	const MotionClock stunnedClock = sim.EntityMotionClock( p0 );
 	const int beforeStunned = count( 0 );
 	step( 1, key( 0 ) );
 	const int whileStunned = count( 0 );
@@ -4980,6 +4993,12 @@ void TestMotionsMeet()
 	CHECK( count( 2 ) == 1 && count( 3 ) == 1 && count( 4 ) == 2 );
 	CHECK( count( 5 ) == 1 && twoAtOnce == 0 && count( 6 ) == 1 );
 	CHECK( stunned && whileStunned == beforeStunned && count( 0 ) == beforeStunned + 1 && count( 8 ) == 1 );
+	std::printf( "    the clock: One %d %.2f s, Two %d %.2f s, Tap %d; stunned %.2f s left\n", int( entry( 6 ).ready ), double( entry( 6 ).cooldown ),
+				 int( entry( 7 ).ready ), double( entry( 7 ).cooldown ), int( entry( 3 ).ready ),
+				 stunnedClock.statuses.empty() ? 0.0 : double( stunnedClock.statuses[0].remaining ) );
+	CHECK( entry( 6 ).ready == false && entry( 6 ).cooldown > 0.9f && entry( 7 ).ready == false && entry( 7 ).cooldown > 0.9f && entry( 3 ).ready );
+	CHECK( stunnedClock.statuses.size() == 1 && stunnedClock.statuses[0].status == 0 && stunnedClock.statuses[0].remaining > 0.4f &&
+		   stunnedClock.statuses[0].remaining <= 0.5f );
 }
 
 void TestMotionSteps()
@@ -7113,10 +7132,10 @@ void TestMotionTelekinesis()
 								  "\tcast sphere 0.4 range 18 holds players\n"
 								  "\t\temit tk.pulled\n"
 								  "\t\tapply pulled for 0.6 s on target\n"
-								  "\t\tforce 60 kind velocity top 14 on target toward owner\n"
+								  "\t\tsteer on target toward owner speed 14 strength 60\n"
 								  "motion Hold while held.hold\n"
 								  "\tgrab sphere 3 bodies max 8 at look 6\n"
-								  "\t\tforce 40 kind velocity top 12 toward look 6\n"
+								  "\t\tsteer toward look 6 speed 12 strength 40\n"
 								  "motion Throw on press throw if active Hold\n"
 								  "\tfind sphere 3 bodies max 8 at look 6\n"
 								  "\t\tthrow 30 along look marks tk.struck for 2 s\n"
@@ -14546,6 +14565,27 @@ void TestViewCodec()
 		CHECK( changed.privates.values[3] == 0 && changed.privates.values[7] == 12 && changed.privates.values[30] == -5 );
 		std::printf( "    private fields: %zu bytes more when two of them changed\n", bytes.size() - unchanged );
 		CHECK( bytes.size() - unchanged < 16 );
+	}
+
+	// The local player's motion clock (M296: what its HUD's ready, cooldown, uses and statuses read):
+	// in a whole packet, the base's when it did not change, nothing once it is at rest again.
+	{
+		present::ViewFrame first = frames.back();
+		first.localClock.motions = { { 4, false, 2, 1.25f }, { 9, true, 3, 0.0f } };
+		first.localClock.statuses = { { 1, 0.5f } };
+		std::vector<uint8_t> bytes;
+		present::EncodeView( first, nullptr, 0.0, bytes );
+		present::ViewFrame got;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), nullptr, got ) && got.localClock == first.localClock );
+		present::ViewFrame second = first;
+		second.serial += 1;
+		present::EncodeView( second, &first, 0.0, bytes );
+		present::ViewFrame same;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), &got, same ) && same.localClock == first.localClock );
+		second.localClock = MotionClock{};
+		present::EncodeView( second, &first, 0.0, bytes );
+		present::ViewFrame rested;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), &got, rested ) && rested.localClock == MotionClock{} );
 	}
 
 	// Compact packets (what a small view file holds): the sender keeps exact frames, the receiver only

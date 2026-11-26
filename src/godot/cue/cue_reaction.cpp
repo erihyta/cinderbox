@@ -833,7 +833,9 @@ void CbReaction::Act( bool on, const cue::Context& context, Started* started )
 		case PLACE_NODE:
 			if ( Node3D* at = nodeAt( m_placeNode ) )
 			{
+				// Where the node is and how it is turned, then (M296: its rotation too; it stays there).
 				global = true;
+				where.basis = at->get_global_transform().basis.orthonormalized();
 				where.origin = at->get_global_position() + m_offset;
 			}
 			break;

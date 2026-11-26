@@ -20,6 +20,9 @@ param cov.range 80 m
 param cov.wait 1.5 s
 param cov.speed_top 30 m/s
 status cov.stunned
+tag attack
+tag punch
+tag guard
 let box_ahead = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 let falloff = (distance < 8) * (1 - distance / 8)
 
@@ -55,7 +58,7 @@ motion OnEvent on cov.hit if known cov.count
 	emit cov.said value 2 * cov.count
 
 motion While while held.jump and not grounded
-	change cov.speed -= 30
+	change cov.speed -= 30 per second
 	force 26 along up
 	move air_control 0.8 gravity 3 max_fall 2.5
 
@@ -100,7 +103,7 @@ motion Effects on press jump
 	impulse 2 kind momentum top 30 on self along look turn (10, 5)
 	impulse 3 along world (0, -1, 0) replace vertical
 	impulse 5 along move replace all
-	force 40 kind velocity top cov.speed_top ramp 0.2 react
+	steer speed cov.speed_top strength 40 ramp 0.2 react
 	force 9 kind force along up
 	break radius 2 speed 4 seconds 3
 	break radius 2 at look 6
@@ -132,7 +135,7 @@ motion Casting on press jump
 	cast sphere 0.4 range 18 speed 40 holds players along look
 		emit cov.hit
 		apply cov.stunned for 0.6 s on target
-		force 60 kind velocity top 14 on target toward owner
+		steer on target toward owner speed 14 strength 60
 		link length 0 reel 6 alone
 
 motion Ray on press jump
@@ -141,7 +144,7 @@ motion Ray on press jump
 
 motion Grabbing while held.cov.other
 	grab sphere 3 bodies max 8 at look 6
-		force 40 kind velocity top 12 toward look 6
+		steer toward look 6 speed 12 strength 40
 
 motion Item on cov.hit
 	on item
@@ -166,10 +169,11 @@ react on cov.hit if event.value > 0 and local
 		at holder/Head offset 0 0.2 0
 			after 0.1
 				sound hit_marker volume -6
-		at follow
+		at holder attached
 			chance 0.5
 				shake 0.3 for 0.2
-		create muzzle_flash under Muzzle for 0.3
+		at Muzzle attached
+			create muzzle_flash for 0.3
 		play AnimationPlayer slash off idle
 		call Model/Sparks restart
 		call Model/Sparks set_emitting true
@@ -212,3 +216,7 @@ hud Skills/Dash
 	text "{cov.left}s" into text if cov.left > 0
 	bind modulate:r = 1 - 0.45 * (cov.left <= 0)
 	bind modulate:a = 0.5 if cov.on
+hud Skills/Clock
+	text "{cooldown OnPress}s, {uses OnRelease} left" if not ready OnPress
+	text "stunned {remaining cov.stunned}s" if cov.stunned
+	bind value = cooldown OnPress

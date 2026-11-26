@@ -209,8 +209,57 @@ bool CinderboxClient::Holds( uint32_t netId, uint16_t kind ) const
 	return it != m_heldKinds.end() && std::find( it->second.begin(), it->second.end(), kind ) != it->second.end();
 }
 
+bool CinderboxClient::ClockName( uint32_t netId, const std::string& name, float& value ) const
+{
+	const MotionClock& clock = m_frame.localClock;
+	const bool own = netId != 0 && int64_t( netId ) == get_local_net_id();
+	for ( const char* prefix : { "ready.", "cooldown.", "uses." } )
+	{
+		if ( name.rfind( prefix, 0 ) != 0 )
+		{
+			continue;
+		}
+		// (The motion's index, as "motion.<name>" finds it.)
+		const String key = String::utf8( ( "motion." + name.substr( std::strlen( prefix ) ) ).c_str() );
+		for ( const auto& [motion, index] : const_cast<CinderboxClient*>( this )->MotionKeys() )
+		{
+			if ( motion != key )
+			{
+				continue;
+			}
+			MotionClockEntry at; // (one the clock does not list is at rest)
+			for ( const MotionClockEntry& e : clock.motions )
+			{
+				at = int( e.motion ) == index ? e : at;
+			}
+			value = own == false ? 0.0f : prefix[0] == 'r' ? ( at.ready ? 1.0f : 0.0f ) : prefix[0] == 'c' ? at.cooldown : float( at.uses );
+			return true;
+		}
+		return false;
+	}
+	const bool remaining = name.rfind( "remaining.", 0 ) == 0;
+	const int status = m_frame.schema.FindStatus( remaining ? name.substr( 10 ) : name );
+	if ( status < 0 )
+	{
+		return false;
+	}
+	value = 0.0f;
+	for ( const StatusClockEntry& s : clock.statuses )
+	{
+		if ( own && int( s.status ) == status )
+		{
+			value = remaining ? std::max( value, s.remaining ) : 1.0f;
+		}
+	}
+	return true;
+}
+
 bool CinderboxClient::PlayerName( uint32_t netId, const std::string& name, float& value ) const
 {
+	if ( ClockName( netId, name, value ) )
+	{
+		return true;
+	}
 	auto in = []( const std::unordered_map<uint32_t, std::vector<uint16_t>>& kinds, uint32_t who, int kind ) {
 		auto it = kinds.find( who );
 		return it != kinds.end() && std::find( it->second.begin(), it->second.end(), uint16_t( kind ) ) != it->second.end();
@@ -734,6 +783,22 @@ String CinderboxClient::FormatWith( int64_t net_id, const String& format, const 
 		float v = 0.0f;
 		HandField( uint32_t( net_id ), ToStd( own.substr( at + 1, close - at - 1 ) ), v );
 		own = own.substr( 0, at ) + ( v == std::floor( v ) ? String::num_int64( int64_t( v ) ) : String::num( v, 1 ) ) + own.substr( close + 1 );
+	}
+	// "{cooldown.<motion>}" and the rest of the local player's motion clock (M296): seconds with one
+	// decimal, uses and readiness as whole numbers.
+	for ( const char* prefix : { "{ready.", "{cooldown.", "{uses.", "{remaining." } )
+	{
+		for ( int64_t at = own.find( prefix ); at >= 0; at = own.find( prefix, at + 1 ) )
+		{
+			const int64_t close = own.find( "}", at );
+			float v = 0.0f;
+			if ( close < 0 || ClockName( uint32_t( net_id ), ToStd( own.substr( at + 1, close - at - 1 ) ), v ) == false )
+			{
+				break;
+			}
+			const bool seconds = std::strcmp( prefix, "{cooldown." ) == 0 || std::strcmp( prefix, "{remaining." ) == 0;
+			own = own.substr( 0, at ) + ( seconds ? String::num( std::ceil( v * 10.0f ) / 10.0f, 1 ) : String::num_int64( int64_t( v ) ) ) + own.substr( close + 1 );
+		}
 	}
 	String withName = ResolveNameFields(
 		net_id, ResolveKeysAndLooks( net_id, own ).replace( "{name}", get_entity_name( net_id ).replace( "{", "(" ) ) );

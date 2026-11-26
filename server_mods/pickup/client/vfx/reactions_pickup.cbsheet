@@ -6,9 +6,11 @@ cbsheet 1
 # Prompt
 react while pickup.target and pickup.hold == 0
 	as local
-		create prompt under local@pickup.target
+		at local@pickup.target attached
+			create prompt
 
 # PromptHold
 react while pickup.target and pickup.hold > 0
 	as local
-		create prompt_hold under local@pickup.target
+		at local@pickup.target attached
+			create prompt_hold

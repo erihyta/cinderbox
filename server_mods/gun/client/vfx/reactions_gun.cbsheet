@@ -6,5 +6,5 @@ cbsheet 1
 # Marked
 react on mark.found
 	as target
-		at follow
+		at target attached
 			create mark_zone for 3

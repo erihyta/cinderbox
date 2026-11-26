@@ -11,7 +11,6 @@ event melee.strike
 event melee.done
 event melee.hit
 param inventory.start 1
-param item.ruled 1
 param pickup.hold_seconds 0.5 s
 
 # A swing, on the left mouse button: the pack plays it (melee.swing), and at the clip's melee.strike

@@ -79,7 +79,8 @@ rule CbReaction line 40 head 37
   event: text "spawned"
   subject_template: text "bouncy_ball"
   subject: text "$at"
-  place: int 5
+  place: int 0
+  scene_parent: text "$at"
   scene: text "res://vfx/bouncy_trail.tscn"
   scene_lifetime: float 25
 rule CbReaction line 46 head 43

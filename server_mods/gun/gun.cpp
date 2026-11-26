@@ -4,14 +4,14 @@
 // the numbers below among its properties. Adding a gun is adding a scene; nothing is compiled.
 //
 //   gun.damage           what a hit does (the head doubles it: --mod-option gun.zone.<zone>=<x>)
-//   gun.magazine         rounds
+//   gun.capacity         rounds (its sheet's param: the fields gun.rounds and gun.magazine start at it)
 //   gun.reload_seconds   how long a reload takes
 //   gun.range            metres
 //   gun.kill_push, gun.prop_push   how hard a hit shoves the body it kills, and what is loose
 //
 // Since M287 a gun's rounds and its reload are its sheet's (prefabs/pistol.cbsheet), which every
 // simulation runs, so a shot, a click and a reload are predicted, not guessed:
-//   field gun.rounds int on item = 12, gun.magazine, gun.reloading, gun.reload_left (a timer): the
+//   field gun.rounds int on item = gun.capacity, gun.magazine, gun.reloading, gun.reload_left (a timer): the
 //   gun's own fields, so a magazine put away half empty comes out half empty in whose hand ever
 //   Fire     on use, while it has rounds and is not reloading: a round off the gun, and item.use
 //   Dry      on use, empty: item.use_failed (the click), item.reload, and the reload begins
@@ -96,13 +96,12 @@ public:
 			}
 			GunKind kind;
 			kind.damage = int32_t( number( "gun.damage", 10.0f ) );
-			kind.magazine = std::max( int32_t( number( "gun.magazine", 10.0f ) ), 1 );
+			kind.magazine = std::max( int32_t( number( "gun.capacity", 10.0f ) ), 1 ); // (its sheet's param, M296)
 			kind.range = number( "gun.range", 80.0f );
 			kind.killPush = number( "gun.kill_push", 6.0f );
 			kind.propPush = number( "gun.prop_push", 4.0f );
 			m_kinds[own.kind.index] = kind;
-			// (The item mod leaves its cues to this mod.)
-			declare.ItemProperty( own.kind, "item.ruled", 1.0f );
+			// (The item mod leaves its cues to the gun's sheet, which has motions: M296.)
 		}
 		// A gun's own fields (its sheet declares them; the same fields, for a refill).
 		m_rounds = declare.Field( "gun.rounds", BoardType::Int );

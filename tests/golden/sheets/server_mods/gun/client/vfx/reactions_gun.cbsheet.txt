@@ -2,6 +2,7 @@ rule CbReaction line 10 head 7
   when: int 0
   event: text "mark.found"
   subject: text "$other"
-  place: int 5
+  place: int 0
+  scene_parent: text "$other"
   scene: text "res://vfx/mark_zone.tscn"
   scene_lifetime: float 3

@@ -4,9 +4,8 @@ cbsheet 1
 # with its own numbers, and how it looks. Plain paths are from the scene's root.
 uses res://prefabs/gun.cbsheet
 
-# Its numbers and its magazine (the used sheet's otherwise).
-field gun.rounds int on item = 12
-field gun.magazine int on item = 12
+# Its numbers, its magazine's among them (the used sheet's otherwise).
+param gun.capacity 12
 param gun.damage 25
 param mark.range 80 m
 param mark.seconds 1 s
@@ -14,7 +13,8 @@ param mark.seconds 1 s
 # Flash, ShotSound
 react on item.use
 	as holder
-		create muzzle_flash under Muzzle for 0.3
+		at Muzzle attached
+			create muzzle_flash for 0.3
 		at Muzzle
 			sound gunshot volume -5 jitter 0.06 range 70
 

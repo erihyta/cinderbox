@@ -7,6 +7,10 @@ field cov.bad text
 field cov.twice int
 field cov.twice float
 param cov.nothing
+tag
+status cov.stunned
+tag cov.stunned
+field cov.speed float
 let = 3
 let up = 5
 
@@ -50,6 +54,17 @@ motion Item on cov.hit
 	wait 1
 	emit cov.hit
 
+motion Tags on use
+	tags gaurd
+	blocked by nobody, Item
+	cancels cov.stunned
+	change cov.speed -= 3 per second
+	force 40 kind velocity top 12
+	steer speed 12
+
+motion Rate while grounded
+	change cov.speed -= 3
+
 react on cov.hit
 	jump 3
 
@@ -60,6 +75,13 @@ react on cov.hit
 react on cov.hit
 	sound ricochet
 	cooldown 1
+
+react on cov.hit
+	at follow
+		sound ricochet
+	create spark under Muzzle
+	at point attached
+		sound ricochet
 
 react sideways
 	sound ricochet

@@ -10,6 +10,10 @@ event brawl.slam.started
 event brawl.slam.landed
 event brawl.slam.hit
 param inventory.start 1
+# How it meets the other skills: its tag, and what it waits out (the guard's tag, the telekinesis's status).
+tag attack
+tag guard
+status pulled
 
 motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	tags attack
@@ -17,7 +21,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	lasts 3
 	change brawl.cd_slam = 5
 	emit brawl.slam.started
-	impulse 25 along world (0, -1, 0) replace vertical
+	impulse 25 along down replace vertical
 	wait for grounded
 	emit brawl.slam.landed
 	find Shockwave players

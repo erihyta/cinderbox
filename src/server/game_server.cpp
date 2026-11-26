@@ -142,6 +142,20 @@ bool GameServer::Start( const ServerOptions& options )
 		if ( m_motions )
 		{
 			Log( "motions: %zu", m_motions->list.size() );
+			// (M296) A kind whose sheet has motions rules its own uses: they say what a use does and
+			// when (on its use, or while it is used: the rifle, the guard), so the item mod says no
+			// item.use for it; that is for items with no rules (until M296 a sheet wrote `param
+			// item.ruled 1`, or its mod declared it).
+			for ( size_t kind = 0; kind < m_schema.itemKinds.size(); ++kind )
+			{
+				const std::string set = m_schema.itemKinds[kind] + "/";
+				const bool ruled = std::any_of( m_motions->list.begin(), m_motions->list.end(),
+												[&set]( const Motion& m ) { return m.name.rfind( set, 0 ) == 0; } );
+				if ( ruled && m_itemProperties.emplace( std::make_pair( int( kind ), std::string( "item.ruled" ) ), 1.0f ).second )
+				{
+					Log( "item %s: item.ruled = 1 (its sheet has motions)", m_schema.itemKinds[kind].c_str() );
+				}
+			}
 		}
 	}
 	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
