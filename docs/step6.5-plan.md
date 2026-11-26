@@ -122,6 +122,7 @@ agreeing, as in M287 and M289.
 | `per second` said, in a `while` motion's changes | today `-=` in a `while` is per second without saying so |
 | An item's field has one name in motions and in looks | `gun.reloading` in one, `hand.gun.reloading` in the other |
 | A HUD reads `ready X`, `cooldown X`, `uses X` and statuses | the reason brawl kept its `cd_*` timers |
+| A mistake names its word, not only its line (`line:column`), and the Sheet screen underlines it (moved from M293) | in a long line the reader looks for what is wrong |
 | A cast and the owner's own effects in one step | the dash strike needs two motions with a copied condition (step 6's list) |
 | A word for "this item is being used", not `using.gun.rifle` | the rifle names its own kind |
 | `steer toward POINT speed S strength A` for `force A kind velocity top S` (the old spelling still read) | nobody can guess what the first number is |
@@ -140,11 +141,21 @@ agreeing, as in M287 and M289.
 
 | # | Milestone | Done when |
 |---|---|---|
-| **M293** | **One front end** ([§3.1](#31-the-front-end-m293)) | every shipped, check and starter sheet lowers to the same rules (golden files unchanged, CI's re-bake unchanged); the 23 sheet tests pass; `LowerVersion1`, `ParseVersion0`, version 0 and `convert` deleted; errors with columns; a `let` named like a word of the language is refused |
+| **M293** (**done**, 2026-11-26: as built, below the table) | **One front end** ([§3.1](#31-the-front-end-m293)) | every shipped, check and starter sheet lowers to the same rules (golden files unchanged, CI's re-bake unchanged); the 23 sheet tests pass; `LowerVersion1`, `ParseVersion0`, version 0 and `convert` deleted; errors with columns; a `let` named like a word of the language is refused |
 | **M294** | **The server compiles the sheet** ([§3.2](#32-the-server-compiles-the-sheet-m294)) | no mod has a `motions/` folder; the server, `cb_sheet test` and `cb_sheet check` compile sheets against baked parts; `CbItem.use_*` gone; the tests and the bots pass |
 | **M295** | **Limits** ([§3.3](#33-limits-m295)) | `active` reads any motion; no tag dropped; `every` without a cap; reference hashes refreshed, every compiler agreeing |
 | **M296** | **The language, made regular** ([§3.4](#34-the-language-made-regular-m296)) | each change has a `.cbtest` or a golden file; `sheets.md` updated |
 | **M297** | **Shipped sheets on the new words** ([§3.5](#35-shipped-sheets-on-the-new-words-m297)) | no `cd_*` field in brawl; no number written twice in the guns; a playtest by hand of the kit, the sword, the bat and the guns |
+
+**M293 as built** (2026-11-26):
+
+| Planned | Built |
+|---|---|
+| Tokens, a tree, lowering from the tree | `sheet_tree.h`: lines into a tree by indentation, what a sheet uses composed in, lets and units resolved, declarations read. `sheet_rules.cpp`: each block walked into its rules (motions, reactions, predictions, HUD lines). A line's own words are still read by the helpers that read them before (`SplitLine`, `ParsePart`), once its expressions are in the engine's spelling |
+| The same rules | all 43 good sheets' golden files unchanged, `every_word.cbsheet` (new: every word of `sheets.md`, recorded before the rewrite) included; every mod re-baked: no file changed; the 23 sheet tests and the Godot checks pass |
+| Deleted | `LowerVersion1` and its text helpers, `ParseVersion0` (1,366 lines), version 0, `cb_sheet convert`, the Sheet screen's Convert, `tools/reactions_to_rules.py` (it wrote version 0). The longest function is now 235 lines; the sheet compiler about 1,000 lines shorter |
+| Mistakes | said in version 1's words (`wait for`, `on item`, `create`), in the order of their lines; new ones: a let named like a word of the language, a line under a line that has none (`emit` with lines under it) |
+| Errors with columns | **not yet**: a mistake still names its line. Moved to M296, with the Sheet screen underlining the word |
 
 **Order, and why.** M293 first: every later change is made once, on the tree, not in a text
 rewrite that is about to go. M294 next: it decides what an item carries, which 6b builds on. M295

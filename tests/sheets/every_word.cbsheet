@@ -1,0 +1,214 @@
+cbsheet 1
+
+# Every word of the sheet language (docs/sheets.md), for the golden files (tests/golden/sheets):
+# what the compiler makes of each is recorded here, so a new compiler (step 6.5, M293) must make the
+# same. No game loads this sheet; its names need not exist.
+
+# --- Declarations
+field cov.count int
+field cov.speed float shared
+field cov.on bool private
+field cov.left timer
+field cov.round int on world
+field cov.rounds int on item = 12
+field cov.hot timer on item shared
+event cov.hit
+event cov.said everyone
+action cov.key key R
+action cov.other
+param cov.range 80 m
+param cov.wait 1.5 s
+param cov.speed_top 30 m/s
+status cov.stunned
+let box_ahead = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
+let falloff = (distance < 8) * (1 - distance / 8)
+
+# --- Triggers and settings
+motion OnUse on use if not linked and cov.count < 2
+	cooldown 0.3 s
+	tags attack, punch
+	blocked by guard, cov.stunned
+	cancels attack
+	change cov.count += 1
+	change cov.left = cov.wait
+
+motion OnPress on press cov.key if cov.rounds < 12
+	cooldown 0.5 shared cov.group
+	uses 2 refill after 3 s
+	for carrier
+	change cov.rounds = 12
+
+motion OnRelease on release cov.key
+	uses 3 refill ground
+	emit cov.hit
+
+motion OnTap on tap cov.key 0.3
+	emit cov.hit
+
+motion OnHold on hold cov.other
+	lasts 2
+	until not held.cov.other
+	until grounded
+	emit cov.hit
+
+motion OnEvent on cov.hit if known cov.count
+	emit cov.said value 2 * cov.count
+
+motion While while held.jump and not grounded
+	change cov.speed -= 30
+	force 26 along up
+	move air_control 0.8 gravity 3 max_fall 2.5
+
+motion When when grounded if not active OnUse and ready OnPress and cooldown OnTap <= 0 and uses OnRelease > 0
+	emit cov.hit
+
+motion Status on cov.hit if cov.stunned or remaining cov.stunned > 0.4 or cov.count of target > 1 or local
+	apply cov.stunned for 0.8 s
+
+use if cov.count >= 2
+	tags attack
+	impulse 16 replace horizontal
+	move for 0.25 friction 0
+
+# --- Steps
+motion Steps on press jump
+	emit cov.hit
+	wait 0.5
+	emit cov.hit
+	wait for grounded within 2
+	if cov.count > 0
+		emit cov.hit
+		move for 0.5 walk_speed 0
+	else
+		emit cov.said
+		if cov.on
+			end
+	timeout
+	emit cov.said
+
+motion GoesOn on press sprint
+	wait for cov.hit or 0.35
+	find box_ahead
+		emit cov.hit
+	wait for cov.said or 0.7 s
+	every 0.1
+	change cov.count += 1
+
+# --- Effects
+motion Effects on press jump
+	impulse 4 along facing
+	impulse 2 kind momentum top 30 on self along look turn (10, 5)
+	impulse 3 along world (0, -1, 0) replace vertical
+	impulse 5 along move replace all
+	force 40 kind velocity top cov.speed_top ramp 0.2 react
+	force 9 kind force along up
+	break radius 2 speed 4 seconds 3
+	break radius 2 at look 6
+	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
+	launch new cov.ball speed 10
+
+# --- Finding and holding
+motion Finding on press jump
+	find sphere 3 players max 2 turned none
+		emit cov.hit
+		impulse 9 along away
+		impulse falloff * 9 along up
+		move for 0.4 walk_speed 1
+		apply cov.stunned for 1 on target
+		change cov.count += 1
+		if player
+			impulse 2 along facing
+		else
+			impulse 7 along facing
+	find box (1.4, 1.4, 1.9) at (0, 1, 1.05) turned look players first max 2
+		emit cov.hit
+	find sphere 8 bodies in sight
+		impulse falloff * 6 kind momentum top 30 along away
+	find capsule 0.5 2 bodies self at look cov.range
+		throw 30 along look marks cov.hit for 2 s
+
+motion Casting on press jump
+	lasts 0.6
+	cast sphere 0.4 range 18 speed 40 holds players along look
+		emit cov.hit
+		apply cov.stunned for 0.6 s on target
+		force 60 kind velocity top 14 on target toward owner
+		link length 0 reel 6 alone
+
+motion Ray on press jump
+	cast ray range 4 along facing
+		impulse 10 on target along to
+
+motion Grabbing while held.cov.other
+	grab sphere 3 bodies max 8 at look 6
+		force 40 kind velocity top 12 toward look 6
+
+motion Item on cov.hit
+	on item
+	emit cov.hit
+	break radius 2
+	find sphere 4 bodies
+		impulse 9 along away
+	remove self
+
+# --- Reactions
+react on cov.hit if event.value > 0 and local
+	cooldown 0.1
+	server only
+	as holder
+		at point
+			sound body_hit volume -8 pitch 1.2 jitter 0.15 range 40 bus SFX
+			create hit_puff for 1
+		at end
+			create spark
+		at beam from Muzzle
+			create tracer for 0.06
+		at holder/Head offset 0 0.2 0
+			after 0.1
+				sound hit_marker volume -6
+		at follow
+			chance 0.5
+				shake 0.3 for 0.2
+		create muzzle_flash under Muzzle for 0.3
+		play AnimationPlayer slash off idle
+		call Model/Sparks restart
+		call Model/Sparks set_emitting true
+		set Model/Light visible false blend 0.2
+		set Model/Light light_energy = cov.speed * 2
+		flash rgba(1, 0, 0, 0.3) for 0.2
+
+react on cov.said if actor is prop and cov.count > 0
+	as actor
+		sound res://assets/sfx/thud.wav volume_by cov.speed
+
+react while cov.hot > 0
+	set Model/Barrel surface_material_override/0:emission_energy_multiplier 4.0
+
+react while first_person
+	as me
+		set Arms visible true
+
+react on cov.hit
+	as target
+		shake 0.1
+	as local
+		flash rgb(1, 1, 1)
+	as world
+		sound ricochet
+	as local@cov.target
+		sound ricochet
+
+# --- Predictions
+predict use2 as cov.said if !hand.cov.on and !combat.dead
+	cooldown 0.95
+	held
+	change cov.count -= 1
+	stance melee_swing on full
+
+# --- HUD
+hud Skills/Dash
+	show if carried.cov.ball
+	text "[{key:slot2}]  READY" if cov.left <= 0
+	text "{cov.left}s" into text if cov.left > 0
+	bind modulate:r = 1 - 0.45 * (cov.left <= 0)
+	bind modulate:a = 0.5 if cov.on

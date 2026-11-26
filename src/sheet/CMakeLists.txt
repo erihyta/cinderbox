@@ -11,6 +11,7 @@ add_library(cb_sheet STATIC
 	sheet_dump.cpp
 	sheet_rules.cpp
 	sheet_text.cpp
+	sheet_tree.cpp
 	sheet_v1.cpp
 	sheet_value.cpp
 )

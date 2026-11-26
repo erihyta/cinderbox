@@ -545,14 +545,11 @@ react on item.reach
   pistol's and the bat's sheets, and every mod's `reactions_<mod>.cbsheet`: 48 nodes became 13 sheets.
 - **A scope holds for the lines indented under it** (M285): one reaction plays a flash, a tracer and
   a shot, each where it belongs. Before M285 a setting held for the actions below it, top to bottom,
-  until another line changed it (version 0: still read; `cb_sheet convert` writes it as scopes).
+  until another line changed it (version 0: not read since M293).
 - **`under` attaches, `at` places**: `create ... under Muzzle` rides on the muzzle; `at Muzzle` puts
   it there, in the world, once. With neither, it goes where the `CbRules` node is (a `Node3D`).
 - **Short names**: `sound gunshot` is `res://assets/sfx/gunshot.wav`, `create tracer`
   `res://vfx/tracer.tscn`; another file by its full `res://` path.
-- **Converting a scene**: `python tools/reactions_to_rules.py <project> <scene>` writes its sheet
-  (version 0: then `cb_sheet convert` it) and leaves one `CbRules` node (each rule keeps the node's
-  name as a comment).
 - `check_rules.gd` checks it: `godot --headless --path godot --script res://addons/cinderbox_maps/check_rules.gd`.
 
 ### Cue Preview (editor)

@@ -1,0 +1,81 @@
+cbsheet 1
+
+# Mistakes, one or two a block, for the golden files (tests/golden/sheets): what the compiler says of
+# each is recorded, so a new compiler (step 6.5, M293) says at least as much. No game loads it.
+
+field cov.bad text
+field cov.twice int
+field cov.twice float
+param cov.nothing
+let = 3
+let up = 5
+
+motion on use
+	emit cov.hit
+
+motion Bad sideways
+	emit cov.hit
+
+motion Units on use
+	cooldown 0.4 m
+	emit cov.hit
+
+motion Placement on use
+	find sphere 3
+		force 4 along up
+		launch carried
+	every 0
+	remove self
+
+motion Setting on use
+	emit cov.hit
+	if grounded
+		cooldown 2
+	wait 1
+	lasts 3
+
+motion Timeout on use
+	wait for grounded or 1
+	timeout
+	emit cov.hit
+
+motion Else on use
+	else
+	if
+	emit cov.hit
+
+motion Item on cov.hit
+	on item
+	cooldown 1
+	wait 1
+	emit cov.hit
+
+react on cov.hit
+	jump 3
+
+react on cov.hit
+	as holder
+	sound ricochet
+
+react on cov.hit
+	sound ricochet
+	cooldown 1
+
+react sideways
+	sound ricochet
+
+react on cov.hit if actor is prop
+	sound ricochet
+
+hud
+	show if grounded
+
+hud Line
+	glow 3
+
+	indented under nothing
+
+predict use2 as
+	held
+
+whatever this is

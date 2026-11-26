@@ -1,12 +1,15 @@
 #include "sheet_rules.h"
 
 #include "sheet_text.h"
+#include "sheet_tree.h"
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
-// Moved from src/godot/cue/cue_rules.cpp in M283, line for line: what the parser does is what it
-// did (the golden files check it), only the types are plain C++.
+// The sheet compiler's lowering (M293, step 6.5): the tree of a version 1 sheet (sheet_tree.h) into
+// the rules the engine runs. The words of a line are read by the helpers below (moved from
+// src/godot/cue/cue_rules.cpp in M283); what a line governs is what is under it in the tree.
 
 namespace cb::sheet
 {
@@ -182,27 +185,6 @@ bool ParseAt( const std::vector<Token>& w, size_t i, size_t end, Dict& into, siz
 	return true;
 }
 
-// How far in a line's text starts: a tab is four spaces.
-int Column( const std::string& line )
-{
-	int column = 0;
-	for ( char c : line )
-	{
-		if ( c == ' ' )
-		{
-			column += 1;
-		}
-		else if ( c == '\t' )
-		{
-			column += 4;
-		}
-		else
-		{
-			break;
-		}
-	}
-	return column;
-}
 
 // --- Where a line of a motion block may stand -------------------------------------------------------
 // One table: every refusal of a line for where it stands is made from it, and the reference
@@ -214,7 +196,7 @@ enum Place : uint8_t
 	kInTimeout = 4,	 // a timeout's lines: once, and the motion ends
 	kInFind = 8,	 // what happens to each thing a find found
 	kInCast = 16,	 // what a cast does while it holds
-	kInItem = 32,	 // an item's motion (owner item): it all happens in one tick
+	kInItem = 32,	 // an item's motion (on item): it all happens in one tick
 	kItemOnly = 64,	 // (only an item's motion has it)
 	kInGrab = 128,	 // what a grab does to what it holds (M290): a find's lines, and forces
 };
@@ -288,7 +270,7 @@ std::string Misplaced( const std::string& verb, uint8_t place, bool item )
 	}
 	if ( itemOnly == false )
 	{
-		return "\"" + verb + "\" is an item's motion's (owner item)";
+		return "\"" + verb + "\" is an item's motion's (on item)";
 	}
 	const uint8_t where = here ? uint8_t( kInItem ) : place;
 	std::string list;
@@ -736,38 +718,1662 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 	return true;
 }
 
-struct Building
+// --- Lowering: the tree's blocks into rules (M293) -------------------------------------------------
+//
+// Each block of the tree (sheet_tree.h) becomes its rules here, read from the tree: what a line
+// governs is what is under it. The words of a line are read as the engine's (SplitLine, ParsePart)
+// once its expressions are in the engine's spelling (EngineExpression).
+
+struct Lowering
 {
-	int line = 0;
-	Dict settings;			// when it is (on, while, its conditions); a prediction: all of it
-	Dict current;			// the settings read so far: each action below takes them as they are
-	int pendingSetting = 0; // the line of a setting no action has come after yet
-	std::vector<Rule> actions;
-	bool prediction = false;
-	// A motion block (for the bake: run by the simulation). Its steps; the ifs open around the line
-	// being read (their column, their condition, whether it is their else now); its lines' columns.
-	bool motion = false;
-	List steps;
-	struct Frame
+	const Tree& tree;
+	Strings& errors;
+	std::vector<Rule>& out;
+	void Fail( int line, const std::string& why ) const
 	{
-		int column = 0;
-		std::string condition;
-		bool otherwise = false;
-	};
-	std::vector<Frame> frames;
-	int headColumn = 0;
-	int bodyColumn = -1;
-	// The find being read (its column; -1: none): the lines further in are what happens to each thing
-	// it found.
-	int findColumn = -1;
-	Dict find;
-	std::vector<Frame> findFrames; // the ifs open under it (M290)
-	bool castBlock = false; // the open block is a cast (else a find)
-	bool cast = false;		// the motion has one
-	Strings changes;		// a prediction's
-	bool bad = false;
+		errors.push_back( tree.Mistake( line, why ) );
+	}
 };
 
+// A line's code with its expressions in the engine's spelling: the verb as it is, the rest
+// translated (EngineExpression).
+std::string Resolved( const Tree& tree, const std::string& code, bool inMotion )
+{
+	const std::vector<Word> w = WordsOf( code );
+	if ( w.size() < 2 )
+	{
+		return code;
+	}
+	return w[0].text + " " + EngineExpression( tree, From( code, w, 1 ), inMotion );
+}
+
+// An if that is open around a line: its condition, and whether the line is in its else.
+struct Frame
+{
+	std::string condition;
+	bool otherwise = false;
+};
+
+std::string Conjunction( const std::vector<Frame>& frames )
+{
+	std::string all;
+	for ( const Frame& frame : frames )
+	{
+		const std::string one = frame.otherwise ? "not ( " + frame.condition + " )" : "( " + frame.condition + " )";
+		all += all.empty() ? one : " and " + one;
+	}
+	return all;
+}
+
+// A motion block (motion NAME TRIGGER [if EXPRESSION], or use [if EXPRESSION]): its settings and its
+// steps, for the bake (sheet_bake.h) and the simulation.
+class MotionLowering
+{
+public:
+	MotionLowering( const Lowering& lowering, const Node& block )
+		: m_l( lowering )
+		, m_block( block )
+	{
+	}
+
+	void Lower()
+	{
+		Dict first;
+		first["statements"] = List();
+		m_steps.push_back( first );
+		if ( Head() == false )
+		{
+			return;
+		}
+		std::vector<Frame> frames;
+		Lines( m_block.under, frames );
+		Finish();
+	}
+
+private:
+	const Lowering& m_l;
+	const Node& m_block;
+	Dict m_settings;
+	List m_steps;
+	bool m_cast = false; // the motion has one
+	bool m_bad = false;
+
+	void Fail( int line, const std::string& why )
+	{
+		m_l.Fail( line, why );
+		m_bad = true;
+	}
+
+	bool Head()
+	{
+		const int number = m_block.line.number;
+		const std::string line = Resolved( m_l.tree, m_block.line.code, true );
+		const std::vector<Token> w = SplitLine( line );
+		if ( w[0].text == "use" )
+		{
+			// use [if EXPRESSION]: motion Use on use [if EXPRESSION], word for word
+			m_settings["name"] = "Use";
+			m_settings["trigger"] = "use";
+			if ( w.size() >= 2 )
+			{
+				if ( w[1].text != "if" || w.size() < 3 )
+				{
+					Fail( number, "use [if EXPRESSION]" );
+					return false;
+				}
+				m_settings["conditions"] = Strings{ RestFrom( line, w[2] ) };
+			}
+			return true;
+		}
+		// motion NAME on use | on press ACTION | on release ACTION | on tap ACTION [S] | on hold ACTION [S]
+		// | on EVENT | while EXPRESSION | when EXPRESSION, then [if EXPRESSION]
+		const char* usage = "motion NAME on use, on press ACTION, on release ACTION, on tap ACTION [S], on hold ACTION [S], on EVENT, while EXPRESSION or "
+							"when EXPRESSION, then [if EXPRESSION]";
+		if ( w.size() < 3 || Contains( w[1].text, "/" ) || Contains( w[1].text, "." ) || w[1].quoted )
+		{
+			Fail( number, usage );
+			return false;
+		}
+		m_settings["name"] = w[1].text;
+		const std::string how = w[2].text;
+		size_t cut = w.size();
+		for ( size_t k = 3; k < w.size(); ++k )
+		{
+			if ( w[k].quoted == false && w[k].text == "if" )
+			{
+				cut = k;
+				break;
+			}
+		}
+		if ( how == "on" && w.size() >= 4 && w[3].text == "use" && cut == 4 )
+		{
+			m_settings["trigger"] = "use";
+		}
+		else if ( how == "on" && w.size() >= 5 && w[3].text == "press" && cut == 5 )
+		{
+			m_settings["trigger"] = "press";
+			m_settings["action"] = w[4].text;
+		}
+		else if ( how == "on" && w.size() >= 5 && ( w[3].text == "release" || w[3].text == "tap" || w[3].text == "hold" ) && ( cut == 5 || cut == 6 ) )
+		{
+			// on release ACTION, on tap ACTION [S], on hold ACTION [S] (M288)
+			m_settings["trigger"] = w[3].text;
+			m_settings["action"] = w[4].text;
+			double seconds = 0.0;
+			if ( cut == 6 )
+			{
+				if ( w[3].text == "release" || Number( w[5], seconds ) == false || seconds <= 0.0 )
+				{
+					Fail( number, "on tap ACTION [S], on hold ACTION [S]: a tap is released before S, a hold still down at S (0.25 s)" );
+					return false;
+				}
+				m_settings["seconds"] = seconds;
+			}
+		}
+		else if ( how == "on" && cut == 4 )
+		{
+			m_settings["trigger"] = "event";
+			m_settings["event"] = w[3].text;
+		}
+		else if ( ( how == "while" || how == "when" ) && cut > 3 )
+		{
+			m_settings["trigger"] = how;
+			m_settings["expression"] = Strip( line.substr( w[3].start, ( cut < w.size() ? w[cut].start : line.size() ) - w[3].start ) );
+		}
+		else
+		{
+			Fail( number, usage );
+			return false;
+		}
+		if ( cut < w.size() )
+		{
+			if ( cut + 1 >= w.size() || how == "while" )
+			{
+				Fail( number, how == "while" ? std::string( "a while's expression is its condition: no if" ) : std::string( "if what? if EXPRESSION" ) );
+				return false;
+			}
+			m_settings["conditions"] = Strings{ RestFrom( line, w[cut + 1] ) };
+		}
+		return true;
+	}
+
+	// Lines under the motion (`frames` empty) or under an if in it.
+	void Lines( const std::vector<Node>& lines, std::vector<Frame>& frames )
+	{
+		const Node* lastIf = nullptr; // the if just before, while an else may still follow it
+		for ( const Node& node : lines )
+		{
+			const Node* previous = lastIf;
+			lastIf = nullptr;
+			const int number = node.line.number;
+			const std::string verb = node.Verb();
+			const bool top = frames.empty();
+			if ( verb == "if" )
+			{
+				const std::string line = Resolved( m_l.tree, node.line.code, true );
+				const std::vector<Token> w = SplitLine( line );
+				if ( w.size() < 2 )
+				{
+					Fail( number, "if EXPRESSION" );
+					continue;
+				}
+				frames.push_back( { RestFrom( line, w[1] ), false } );
+				Lines( node.under, frames );
+				frames.pop_back();
+				lastIf = &node;
+				continue;
+			}
+			if ( verb == "else" )
+			{
+				if ( WordsOf( node.line.code ).size() != 1 || previous == nullptr )
+				{
+					Fail( number, "an else comes right after an if's lines, as far in as the if" );
+					continue;
+				}
+				const std::string line = Resolved( m_l.tree, previous->line.code, true );
+				frames.push_back( { RestFrom( line, SplitLine( line )[1] ), true } );
+				Lines( node.under, frames );
+				frames.pop_back();
+				continue;
+			}
+			Statement( node, frames, top );
+		}
+	}
+
+	// A line of a step (not an if): a setting, a wait, an every, or a statement.
+	void Statement( const Node& node, const std::vector<Frame>& frames, bool top )
+	{
+		const int number = node.line.number;
+		const std::vector<Word> words = WordsOf( node.line.code );
+		const std::string verb = words[0].text;
+		const bool opens = verb == "find" || verb == "grab" || verb == "cast";
+		if ( node.under.empty() == false && opens == false )
+		{
+			Fail( node.under[0].line.number, "nothing goes under \"" + verb + "\": only an if, an else, a find, a grab and a cast have lines under them" );
+		}
+		Dict step = m_steps[m_steps.size() - 1].AsDict();
+		List statements = step["statements"].AsList();
+		const bool stepLine = verb == "wait" || verb == "timeout";
+		const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "for" || ( verb == "on" && words.size() == 2 ) ||
+							 verb == "tags" || verb == "blocked" || verb == "cancels";
+		if ( ( stepLine || setting || verb == "every" ) && top == false )
+		{
+			Fail( number, "\"" + verb + "\" is the motion's: as far in as its first line, not under an if" );
+			return;
+		}
+		if ( stepLine )
+		{
+			Wait( node, step, statements );
+			return;
+		}
+		if ( setting )
+		{
+			Setting( node );
+			return;
+		}
+		const std::string line = Resolved( m_l.tree, node.line.code, true );
+		const std::vector<Token> w = SplitLine( line );
+		double value = 0.0;
+		if ( verb == "every" )
+		{
+			// every S: what follows in this step, again and again while it is the step
+			bool again = false;
+			for ( size_t k = 0; k < statements.size(); ++k )
+			{
+				again = again || statements[k].AsDict().Get( "kind", "" ).AsString() == "every";
+			}
+			if ( step.Get( "timeout", false ).AsBool() || again )
+			{
+				Fail( number, Misplaced( "every", again ? kInEvery : kInTimeout, false ) );
+				return;
+			}
+			if ( w.size() != 2 || Number( w[1], value ) == false || value <= 0.0 )
+			{
+				Fail( number, "every S: S seconds (more than 0); what follows in its step happens every S seconds" );
+				return;
+			}
+			Dict every;
+			every["kind"] = "every";
+			every["verb"] = "every";
+			every["seconds"] = value;
+			every["line"] = number;
+			every["guard"] = std::string();
+			statements.push_back( every );
+			return;
+		}
+		// --- statements, where they may stand (the table above): a step's own, after its every, a
+		// timeout's (an item's motion is checked as a whole when it ends)
+		Dict statement;
+		{
+			bool afterEvery = false;
+			for ( size_t k = 0; k < statements.size(); ++k )
+			{
+				afterEvery = afterEvery || statements[k].AsDict().Get( "kind", "" ).AsString() == "every";
+			}
+			const uint8_t place = step.Get( "timeout", false ).AsBool() ? kInTimeout : afterEvery ? kInEvery : kInStep;
+			const std::string placed = verb == "move" && w.size() > 1 && w[1].text == "for" ? std::string( "move for" ) : verb;
+			const bool ownerItem = m_settings.Get( "owner", "player" ).AsString() == "item";
+			// (An item's own line, before "on item" was said, is checked when the motion ends.)
+			const std::string misplaced = placed == "remove" ? std::string() : Misplaced( placed, place, ownerItem );
+			if ( misplaced.empty() == false )
+			{
+				Fail( number, misplaced );
+				return;
+			}
+			statement["verb"] = placed;
+		}
+		auto add = [&]() {
+			statement["guard"] = Conjunction( frames );
+			statement["line"] = number;
+			statements.push_back( statement );
+		};
+		if ( verb == "find" || verb == "grab" )
+		{
+			if ( Find( w, number, statement ) )
+			{
+				add();
+				Inside( node.under, statement, false );
+			}
+			return;
+		}
+		if ( verb == "cast" )
+		{
+			if ( m_steps.size() > 1 || frames.empty() == false || m_cast )
+			{
+				Fail( number, m_cast ? "a motion casts once" : "a cast is thrown when the motion starts: in its first step, not under an if" );
+				return;
+			}
+			if ( Cast( w, number, statement ) )
+			{
+				add();
+				m_cast = true;
+				Inside( node.under, statement, true );
+			}
+			return;
+		}
+		if ( verb == "follow" )
+		{
+			// follow PATH over S: carried along a Path3D drawn in the scene
+			if ( w.size() != 4 || w[1].quoted || w[2].text != "over" || Number( w[3], value ) == false || value <= 0.0 )
+			{
+				Fail( number, "follow PATH over S: a Path3D beside the sheet, and the seconds it takes" );
+				return;
+			}
+			statement["kind"] = "follow";
+			statement["path"] = w[1].text;
+			statement["seconds"] = value;
+			add();
+			return;
+		}
+		if ( verb == "break" )
+		{
+			// break radius R [speed S] [seconds S] [at look D | hit]: walls near the owner. A number, a
+			// name, or an expression in brackets each.
+			bool ok = w.size() >= 3;
+			auto breakStops = []( const std::string& next ) { return next == "radius" || next == "speed" || next == "seconds" || next == "at"; };
+			for ( size_t k = 1; ok && k < w.size(); )
+			{
+				const std::string word = w[k].text;
+				k += 1;
+				if ( word == "at" )
+				{
+					// at look D | hit (M290): around a point, not the owner.
+					ok = k < w.size() && ( w[k].text == "hit" || ( w[k].text == "look" && k + 1 < w.size() ) );
+					statement["point"] = ok ? ( w[k].text == "hit" ? std::string( "hit" ) : "look " + w[k + 1].text ) : std::string();
+					k += ok && w[k].text == "look" ? 2 : 1;
+					continue;
+				}
+				Amount amount;
+				ok = breakStops( word ) && TakeAmount( w, k, breakStops, amount );
+				statement[word] = amount.text; // (a number, or an expression: the bake writes it as it is)
+			}
+			if ( ok == false || statement.Has( "radius" ) == false )
+			{
+				Fail( number, "break radius R [speed S] [seconds S] [at look D | hit]: the walls within R of it, their pieces flung at S, staying S seconds (0: for good)" );
+				return;
+			}
+			statement["kind"] = "break";
+			add();
+			return;
+		}
+		if ( verb == "remove" )
+		{
+			if ( w.size() != 2 || w[1].text != "self" )
+			{
+				Fail( number, "remove self (an item's motion: the item leaves the world)" );
+				return;
+			}
+			statement["kind"] = "remove";
+			add();
+			return;
+		}
+		if ( verb == "change" )
+		{
+			if ( w.size() < 4 )
+			{
+				Fail( number, "change FIELD = VALUE, += or -=" );
+				return;
+			}
+			statement["kind"] = "change";
+			statement["text"] = RestFrom( line, w[1] );
+		}
+		else if ( verb == "emit" )
+		{
+			// emit EVENT [value EXPRESSION] (M287: the event's value, read when it happens)
+			if ( w.size() != 2 && ( w.size() < 4 || w[2].text != "value" ) )
+			{
+				Fail( number, "emit EVENT [value VALUE]: a number or an expression" );
+				return;
+			}
+			statement["kind"] = "emit";
+			statement["text"] = w[1].text;
+			if ( w.size() >= 4 )
+			{
+				statement["value"] = RestFrom( line, w[3] );
+			}
+		}
+		else if ( verb == "end" )
+		{
+			if ( w.size() != 1 )
+			{
+				Fail( number, "end (alone on its line)" );
+				return;
+			}
+			statement["kind"] = "end";
+		}
+		else if ( verb == "apply" )
+		{
+			// apply STATUS for S (M288): on the owner
+			if ( w.size() < 4 || w[2].text != "for" )
+			{
+				Fail( number, "apply STATUS for S" );
+				return;
+			}
+			statement["kind"] = "apply";
+			statement["text"] = w[1].text;
+			statement["value"] = RestFrom( line, w[3] );
+		}
+		else
+		{
+			Dict part;
+			std::string why;
+			if ( ParsePart( w, part, why ) == false )
+			{
+				Fail( number, BeginsWith( why, "\"" + verb + "\" is not one of" )
+								  ? "\"" + verb +
+										"\" is not a line of a motion: if, else, wait, timeout, every, cooldown, uses, lasts, until, tags, blocked by, cancels, for, on item, change, "
+										"emit, end, apply, find, grab, cast, impulse, throw, force, link, move, launch, follow, break, remove"
+								  : why );
+				return;
+			}
+			Dict props = part["properties"].AsDict();
+			if ( ResolveTarget( props, false, false ) == false )
+			{
+				Fail( number, "on target is what a find found or what a cast holds: inside one" );
+				return;
+			}
+			statement["kind"] = "part";
+			statement["part"] = part;
+		}
+		add();
+	}
+
+	// wait S | wait for EXPRESSION [within S | or S] | timeout: a new step.
+	void Wait( const Node& node, Dict& step, const List& statements )
+	{
+		const int number = node.line.number;
+		const std::string& code = node.line.code;
+		const std::vector<Word> w = WordsOf( code );
+		Dict next;
+		next["statements"] = List();
+		next["line"] = number;
+		double value = 0.0;
+		if ( w[0].text == "timeout" )
+		{
+			if ( w.size() != 1 || step.Get( "within", 0.0 ).AsFloat() <= 0.0 || step.Get( "timeout", false ).AsBool() || step.Get( "or", false ).AsBool() )
+			{
+				Fail( number, "a timeout comes right after a wait for ... within S (a wait for ... or S goes on: it has none)" );
+				return;
+			}
+			next["timeout"] = true;
+		}
+		else if ( w.size() == 2 && w[1].text != "for" )
+		{
+			const Token seconds{ w[1].text, 0, false };
+			if ( Number( seconds, value ) == false || value < 0.0 )
+			{
+				Fail( number, "wait S: S seconds" );
+				return;
+			}
+			next["after"] = value;
+		}
+		else
+		{
+			if ( w.size() < 3 || w[1].text != "for" )
+			{
+				Fail( number, "wait S, or wait for EXPRESSION [within S | or S]" );
+				return;
+			}
+			size_t last = w.size();
+			if ( w.size() >= 5 && ( w[w.size() - 2].text == "within" || w[w.size() - 2].text == "or" ) && IsValidFloat( w[w.size() - 1].text ) )
+			{
+				value = ToFloat( w[w.size() - 1].text );
+				if ( value <= 0.0 )
+				{
+					Fail( number, "wait for EXPRESSION within S, or S: S more than 0" );
+					return;
+				}
+				next["within"] = value;
+				if ( w[w.size() - 2].text == "or" )
+				{
+					next["or"] = true; // (it goes on after S without it, M287)
+				}
+				last = w.size() - 2;
+			}
+			next["wait"] = Strip( EngineExpression( m_l.tree, code.substr( w[2].start, w[last - 1].end - w[2].start ), true ) );
+		}
+		step["statements"] = statements;
+		m_steps[m_steps.size() - 1] = step;
+		m_steps.push_back( next );
+	}
+
+	// The motion's own settings: as far in as its first line, before its first wait.
+	void Setting( const Node& node )
+	{
+		const int number = node.line.number;
+		const std::vector<Word> words = WordsOf( node.line.code );
+		const std::string verb = words[0].text;
+		if ( m_steps.size() > 1 )
+		{
+			Fail( number, "\"" + verb + "\" is the motion's: before its first wait" );
+			return;
+		}
+		if ( verb == "for" )
+		{
+			if ( words.size() != 2 || ( words[1].text != "holder" && words[1].text != "carrier" ) )
+			{
+				Fail( number, "for holder (the default: whoever has the item out) or for carrier (in the hand or put away)" );
+				return;
+			}
+			m_settings["item"] = words[1].text == "holder" ? "hand" : "carried";
+			return;
+		}
+		if ( verb == "on" )
+		{
+			if ( words[1].text != "item" )
+			{
+				Fail( number, "on item: the item runs the motion, where it lies" );
+				return;
+			}
+			m_settings["owner"] = "item";
+			return;
+		}
+		const std::string line = Resolved( m_l.tree, node.line.code, true );
+		const std::vector<Token> w = SplitLine( line );
+		double value = 0.0;
+		if ( verb == "until" && w.size() >= 2 )
+		{
+			Strings until = m_settings.Get( "until", Strings() ).AsStrings();
+			until.push_back( RestFrom( line, w[1] ) );
+			m_settings["until"] = until;
+		}
+		else if ( ( verb == "cooldown" || verb == "lasts" ) && w.size() == 2 && Number( w[1], value ) && value >= 0.0 )
+		{
+			m_settings[verb] = value;
+		}
+		else if ( verb == "cooldown" && w.size() == 4 && w[2].text == "shared" && Number( w[1], value ) && value >= 0.0 )
+		{
+			// cooldown S shared NAME (M288): every motion naming it waits for it
+			m_settings["cooldown"] = value;
+			m_settings["cooldown_shared"] = w[3].text;
+		}
+		else if ( ( verb == "tags" || verb == "cancels" || ( verb == "blocked" && w.size() >= 3 && w[1].text == "by" ) ) && w.size() >= 2 )
+		{
+			// tags A, B; blocked by A, B; cancels A, B (M288): names, commas or spaces between
+			Strings names = m_settings.Get( verb, Strings() ).AsStrings();
+			for ( size_t k = verb == "blocked" ? 2 : 1; k < w.size(); ++k )
+			{
+				for ( const std::string& one : Split( Replace( w[k].text, ",", " " ), " " ) )
+				{
+					if ( one.empty() == false )
+					{
+						names.push_back( one );
+					}
+				}
+			}
+			m_settings[verb] = names;
+		}
+		else if ( verb == "uses" && w.size() >= 2 && IsValidInt( w[1].text ) && ToInt( w[1].text ) > 0 &&
+				  ( w.size() == 2 || ( w.size() == 4 && w[2].text == "refill" && w[3].text == "ground" ) ||
+					( w.size() == 5 && w[2].text == "refill" && w[3].text == "after" && Number( w[4], value ) && value > 0.0 ) ) )
+		{
+			m_settings["uses"] = ToInt( w[1].text );
+			m_settings["refill"] = w.size() == 4 ? Value( "ground" ) : Value( w.size() == 5 ? value : 0.0 );
+		}
+		else
+		{
+			Fail( number, verb == "until"							? std::string( "until EXPRESSION" )
+						  : verb == "uses"							? std::string( "uses N, uses N refill ground, or uses N refill after S" )
+						  : verb == "tags" || verb == "cancels"	? verb + " NAME, NAME ..."
+						  : verb == "blocked"						? std::string( "blocked by NAME, NAME ... (a tag, a motion or a status)" )
+																	: verb + " S: S seconds" );
+		}
+	}
+
+	// find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first] [in sight];
+	// grab, the same, what it finds held while its step lasts.
+	bool Find( const std::vector<Token>& w, int number, Dict& statement )
+	{
+		const std::string verb = w[0].text;
+		const char* usage = verb == "find" ? "find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first] [in sight], SHAPE a node's path, "
+											 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit"
+										   : "grab SHAPE [players] [bodies] [max N] [turned facing|look|none] [at POINT] [players first], SHAPE a node's path, "
+											 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit";
+		size_t i = 1;
+		Dict shape;
+		double a = 0.0, b = 0.0;
+		if ( w.size() >= 3 && w[1].text == "sphere" && Number( w[2], a ) && a > 0.0 )
+		{
+			shape["kind"] = "sphere";
+			shape["radius"] = a;
+			i = 3;
+		}
+		else if ( w.size() >= 3 && w[1].text == "box" && ValueOf( w[2] ).type() == Value::Type::Vec3 )
+		{
+			shape["kind"] = "box";
+			shape["size"] = ValueOf( w[2] );
+			i = 3;
+		}
+		else if ( w.size() >= 4 && w[1].text == "capsule" && Number( w[2], a ) && Number( w[3], b ) && a > 0.0 && b >= 2.0 * a )
+		{
+			shape["kind"] = "capsule";
+			shape["radius"] = a;
+			shape["height"] = b;
+			i = 4;
+		}
+		else if ( w.size() >= 2 && w[1].quoted == false && w[1].text != "sphere" && w[1].text != "box" && w[1].text != "capsule" )
+		{
+			shape["kind"] = "node";
+			shape["path"] = w[1].text;
+			i = 2;
+		}
+		else
+		{
+			Fail( number, usage );
+			return false;
+		}
+		bool players = false, bodies = false, ok = true;
+		for ( ; i < w.size() && ok; )
+		{
+			const std::string word = w[i].text;
+			if ( word == "in" && i + 1 < w.size() && w[i + 1].text == "sight" )
+			{
+				statement["sight"] = true; // (M292: what the level does not hide from its place)
+				i += 2;
+			}
+			else if ( word == "players" && i + 1 < w.size() && w[i + 1].text == "first" )
+			{
+				statement["first"] = true; // (M290: players before bodies, whatever is nearer)
+				i += 2;
+			}
+			else if ( word == "players" || word == "bodies" )
+			{
+				( word == "players" ? players : bodies ) = true;
+				i += 1;
+			}
+			else if ( word == "self" )
+			{
+				statement["self"] = true;
+				i += 1;
+			}
+			else if ( word == "max" && i + 1 < w.size() && IsValidInt( w[i + 1].text ) && ToInt( w[i + 1].text ) >= 1 && ToInt( w[i + 1].text ) <= 16 )
+			{
+				statement["most"] = ToInt( w[i + 1].text );
+				i += 2;
+			}
+			else if ( ( word == "turned" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "none" ) ) ||
+					  ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "world" ) ) )
+			{
+				// turned facing (the default), look (with the pitch) or none; "along" the older word
+				statement["frame"] = w[i + 1].text == "none" ? std::string( "world" ) : w[i + 1].text;
+				i += 2;
+			}
+			else if ( word == "at" && i + 1 < w.size() && ValueOf( w[i + 1] ).type() == Value::Type::Vec3 )
+			{
+				// at (x, y, z): moved from where it is placed, in the player's frame (metres right, up and
+				// ahead)
+				shape["at"] = ValueOf( w[i + 1] );
+				i += 2;
+			}
+			else if ( word == "at" && i + 2 < w.size() && w[i + 1].text == "look" )
+			{
+				statement["point"] = "look " + w[i + 2].text; // (M290: along the look, the level stops it)
+				i += 3;
+			}
+			else if ( word == "at" && i + 1 < w.size() && ( w[i + 1].text == "hit" || w[i + 1].text == "target" ) )
+			{
+				statement["point"] = std::string( "hit" ); // (where the cast holds)
+				i += 2;
+			}
+			else if ( word == "at" && i + 1 < w.size() && w[i + 1].quoted == false )
+			{
+				shape["at_node"] = w[i + 1].text; // (a marker drawn in the scene: its place)
+				i += 2;
+			}
+			else
+			{
+				ok = false;
+			}
+		}
+		if ( ok == false )
+		{
+			Fail( number, usage );
+			return false;
+		}
+		if ( verb == "grab" && ( statement.Get( "self", false ).AsBool() || statement.Get( "most", 1 ).AsInt() > 8 ) )
+		{
+			Fail( number, "a grab holds 8 at most, and not the player itself" );
+			return false;
+		}
+		statement["kind"] = "find";
+		statement["grab"] = verb == "grab";
+		if ( verb == "grab" && statement.Has( "most" ) == false )
+		{
+			statement["most"] = 8;
+		}
+		statement["shape"] = shape;
+		statement["who"] = players == bodies ? "all" : players ? "players" : "bodies";
+		statement["statements"] = List();
+		return true;
+	}
+
+	// cast SHAPE range R [speed V] [holds level|bodies|players ...] [along look|facing]; SHAPE: ray, sphere
+	// R, or a node's path (one convex shape, around its origin)
+	bool Cast( const std::vector<Token>& w, int number, Dict& statement )
+	{
+		const char* usage = "cast SHAPE range R [speed V] [holds level bodies players] [along look|facing], SHAPE ray, sphere R, or a node's path";
+		size_t i = 1;
+		Dict shape;
+		double a = 0.0;
+		if ( w.size() >= 2 && w[1].text == "ray" )
+		{
+			shape["kind"] = "ray";
+			i = 2;
+		}
+		else if ( w.size() >= 3 && w[1].text == "sphere" && Number( w[2], a ) && a > 0.0 )
+		{
+			shape["kind"] = "sphere";
+			shape["radius"] = a;
+			i = 3;
+		}
+		else if ( w.size() >= 2 && w[1].quoted == false && w[1].text != "range" )
+		{
+			shape["kind"] = "node";
+			shape["path"] = w[1].text;
+			i = 2;
+		}
+		else
+		{
+			Fail( number, usage );
+			return false;
+		}
+		Strings holds;
+		bool ok = true;
+		for ( ; i < w.size() && ok; )
+		{
+			const std::string word = w[i].text;
+			if ( ( word == "range" || word == "speed" ) && i + 1 < w.size() && Number( w[i + 1], a ) && a >= 0.0 )
+			{
+				statement[word] = a;
+				i += 2;
+			}
+			else if ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "look" || w[i + 1].text == "facing" ) )
+			{
+				statement["along"] = w[i + 1].text;
+				i += 2;
+			}
+			else if ( word == "holds" )
+			{
+				i += 1;
+				for ( ; i < w.size() && ( w[i].text == "level" || w[i].text == "bodies" || w[i].text == "players" ); ++i )
+				{
+					holds.push_back( w[i].text );
+				}
+				ok = holds.empty() == false;
+			}
+			else
+			{
+				ok = false;
+			}
+		}
+		if ( ok == false || statement.Has( "range" ) == false )
+		{
+			Fail( number, usage );
+			return false;
+		}
+		statement["kind"] = "cast";
+		statement["shape"] = shape;
+		statement["holds"] = holds;
+		statement["statements"] = List();
+		return true;
+	}
+
+	// The lines under a find, a grab or a cast: what happens to each thing it found (or holds).
+	void Inside( const std::vector<Node>& lines, Dict& find, bool castBlock )
+	{
+		std::vector<Frame> frames;
+		InsideLines( lines, find, castBlock, frames );
+	}
+
+	void InsideLines( const std::vector<Node>& lines, Dict& find, bool castBlock, std::vector<Frame>& frames )
+	{
+		List inside = find["statements"].AsList();
+		const bool grabbing = find.Get( "grab", false ).AsBool();
+		const Node* lastIf = nullptr;
+		for ( const Node& node : lines )
+		{
+			const Node* previous = lastIf;
+			lastIf = nullptr;
+			const int number = node.line.number;
+			const std::string line = Resolved( m_l.tree, node.line.code, true );
+			const std::vector<Token> w = SplitLine( line );
+			const std::string verb = w[0].text;
+			Dict statement;
+			statement["line"] = number;
+			const std::string placed = verb == "move" && w.size() > 1 && w[1].text == "for" ? std::string( "move for" ) : verb;
+			const std::string misplaced = Misplaced( placed, castBlock ? kInCast : grabbing ? kInGrab : kInFind, false );
+			if ( misplaced.empty() == false )
+			{
+				Fail( number, misplaced );
+				continue;
+			}
+			statement["verb"] = placed;
+			// (M290) An if under a find: decided for each thing it found.
+			if ( verb == "if" || verb == "else" )
+			{
+				if ( castBlock )
+				{
+					Fail( number, "an if is not in a cast" );
+					continue;
+				}
+				if ( verb == "if" )
+				{
+					if ( w.size() < 2 )
+					{
+						Fail( number, "if EXPRESSION" );
+						continue;
+					}
+					frames.push_back( { RestFrom( line, w[1] ), false } );
+					InsideLines( node.under, find, castBlock, frames );
+					frames.pop_back();
+					lastIf = &node;
+					continue;
+				}
+				if ( w.size() != 1 || previous == nullptr )
+				{
+					Fail( number, "an else comes right after an if's lines, as far in as the if" );
+					continue;
+				}
+				const std::string condition = Resolved( m_l.tree, previous->line.code, true );
+				frames.push_back( { RestFrom( condition, SplitLine( condition )[1] ), true } );
+				InsideLines( node.under, find, castBlock, frames );
+				frames.pop_back();
+				continue;
+			}
+			if ( node.under.empty() == false )
+			{
+				Fail( node.under[0].line.number, "nothing goes under \"" + verb + "\": only an if and an else have lines under them here" );
+			}
+			statement["only"] = Conjunction( frames );
+			if ( verb == "change" )
+			{
+				// (Of the motion's owner, once for each thing found: a count of what was hit.)
+				if ( w.size() < 4 )
+				{
+					Fail( number, "change FIELD = VALUE, += or -=" );
+					continue;
+				}
+				statement["kind"] = "change";
+				statement["text"] = RestFrom( line, w[1] );
+			}
+			else if ( verb == "apply" && w.size() >= 4 && w[2].text == "for" )
+			{
+				// (On each player found, M288; on the player a cast holds, M290. "on target" says so.)
+				statement["kind"] = "apply";
+				statement["text"] = w[1].text;
+				std::string seconds = RestFrom( line, w[3] );
+				if ( w.size() >= 6 && w[w.size() - 2].text == "on" )
+				{
+					if ( w[w.size() - 1].text != "target" )
+					{
+						Fail( number, "apply STATUS for S [on target]: in a find or a cast, on what it found or holds" );
+						continue;
+					}
+					seconds = Strip( seconds.substr( 0, seconds.rfind( " on " ) ) );
+				}
+				statement["value"] = seconds;
+			}
+			else if ( verb == "emit" && w.size() == 2 )
+			{
+				if ( castBlock && inside.size() > 0 )
+				{
+					bool emitted = false;
+					for ( size_t k = 0; k < inside.size(); ++k )
+					{
+						emitted = emitted || inside[k].AsDict().Get( "kind", "" ).AsString() == "emit";
+					}
+					if ( emitted )
+					{
+						Fail( number, "a cast says one event when it takes hold" );
+						continue;
+					}
+				}
+				statement["kind"] = "emit";
+				statement["text"] = w[1].text;
+			}
+			else
+			{
+				Dict part;
+				std::string why;
+				if ( ParsePart( w, part, why ) == false )
+				{
+					Fail( number, why );
+					continue;
+				}
+				Dict props = part["properties"].AsDict();
+				if ( ( verb == "impulse" || verb == "throw" || verb == "force" ) && props.Has( "target" ) == false )
+				{
+					props["target"] = castBlock ? 1 : 3; // (what it holds, or found, unless it says)
+				}
+				ResolveTarget( props, castBlock == false, castBlock );
+				statement["kind"] = "part";
+				statement["part"] = part;
+			}
+			inside.push_back( statement );
+		}
+	}
+
+	void Finish()
+	{
+		if ( m_bad )
+		{
+			return;
+		}
+		const int line = m_block.line.number;
+		if ( m_settings.Get( "owner", "player" ).AsString() == "item" )
+		{
+			// An item's motion (on item) happens in one tick: what it may have is checked as a whole,
+			// since "on item" may come after its first lines.
+			const std::string once = "an item's motion (on item) happens in one tick, on an event said at it: ";
+			if ( m_steps.size() > 1 )
+			{
+				m_l.Fail( int( m_steps[1].AsDict().Get( "line", line ).AsInt() ), once + "no wait or timeout" );
+				return;
+			}
+			for ( const char* setting : { "cooldown", "uses", "lasts", "until", "conditions" } )
+			{
+				if ( m_settings.Has( setting ) )
+				{
+					m_l.Fail( line, once + "no " + ( std::string( setting ) == "conditions" ? std::string( "if on its first line (an if block is fine)" ) : std::string( setting ) ) );
+					return;
+				}
+			}
+			List list = m_steps[0].AsDict().Get( "statements", List() ).AsList();
+			for ( size_t k = 0; k < list.size(); ++k )
+			{
+				Dict statement = list[k].AsDict();
+				const std::string misplaced = Misplaced( statement.Get( "verb", "" ).AsString(), kInStep, true );
+				if ( misplaced.empty() == false )
+				{
+					m_l.Fail( int( statement.Get( "line", line ).AsInt() ), misplaced );
+					return;
+				}
+			}
+		}
+		else
+		{
+			for ( size_t s = 0; s < m_steps.size(); ++s )
+			{
+				List list = m_steps[s].AsDict().Get( "statements", List() ).AsList();
+				for ( size_t k = 0; k < list.size(); ++k )
+				{
+					Dict statement = list[k].AsDict();
+					if ( statement.Get( "verb", "" ).AsString() == "remove" )
+					{
+						m_l.Fail( int( statement.Get( "line", line ).AsInt() ), Misplaced( "remove", kInStep, false ) );
+						return;
+					}
+				}
+			}
+		}
+		Rule made;
+		made.line = line;
+		made.type = "motion";
+		made.properties = m_settings;
+		made.properties["steps"] = m_steps;
+		m_l.out.push_back( made );
+	}
+};
+
+// A reaction block (react on EVENT [if EXPRESSION] | react while EXPRESSION): one CbReaction for each
+// action under it, with the block's settings and the scopes it is under.
+class ReactionLowering
+{
+public:
+	ReactionLowering( const Lowering& lowering, const Node& block )
+		: m_l( lowering )
+		, m_block( block )
+	{
+	}
+
+	void Lower()
+	{
+		if ( Head() == false )
+		{
+			return;
+		}
+		std::vector<const Node*> scopes;
+		Lines( m_block.under, scopes );
+		if ( m_actions == 0 )
+		{
+			m_l.Fail( m_block.line.number, "the reaction does nothing: give it an action (sound, create, play, set, call, shake, flash)" );
+		}
+	}
+
+private:
+	const Lowering& m_l;
+	const Node& m_block;
+	Dict m_head;
+	struct Is
+	{
+		std::string subject;
+		std::string what;
+	};
+	std::vector<Is> m_is;
+	std::vector<const Node*> m_settings; // cooldown, server only
+	bool m_begun = false;
+	int m_actions = 0;
+
+	bool Head()
+	{
+		const int head = m_block.line.number;
+		const std::string& code = m_block.line.code;
+		const std::vector<Word> w = WordsOf( code );
+		std::string condition;
+		const bool on = w.size() >= 3 && w[1].text == "on";
+		if ( on )
+		{
+			if ( w.size() > 3 && ( w[3].text != "if" || w.size() < 5 ) )
+			{
+				m_l.Fail( head, "react on EVENT [if EXPRESSION]" );
+				return false;
+			}
+			condition = From( code, w, 4 );
+		}
+		else if ( w.size() >= 3 && w[1].text == "while" )
+		{
+			condition = From( code, w, 2 );
+		}
+		else
+		{
+			m_l.Fail( head, "react on EVENT [if EXPRESSION], or react while EXPRESSION" );
+			return false;
+		}
+		// "actor is player and ...": what its subject must be.
+		for ( ;; )
+		{
+			const std::vector<Word> c = WordsOf( condition );
+			if ( c.size() < 3 || c[1].text != "is" )
+			{
+				break;
+			}
+			m_is.push_back( Is{ c[0].text, c[2].text } );
+			if ( c.size() == 3 )
+			{
+				condition.clear();
+				break;
+			}
+			if ( c[3].text != "and" || c.size() < 5 )
+			{
+				m_l.Fail( head, "after " + c[0].text + " is " + c[2].text + ": and EXPRESSION" );
+				return false;
+			}
+			condition = From( condition, c, 4 );
+		}
+		if ( on == false && condition.empty() )
+		{
+			m_l.Fail( head, "react while EXPRESSION" );
+			return false;
+		}
+		m_head["when"] = on ? kReactionOnEvent : kReactionWhile;
+		if ( on )
+		{
+			m_head["event"] = w[2].text;
+		}
+		if ( condition.empty() == false )
+		{
+			m_head["conditions"] = Strings{ Strip( EngineExpression( m_l.tree, condition, false ) ) };
+		}
+		return true;
+	}
+
+	void Lines( const std::vector<Node>& lines, std::vector<const Node*>& scopes )
+	{
+		for ( const Node& node : lines )
+		{
+			const int number = node.line.number;
+			const std::vector<Word> v = WordsOf( node.line.code );
+			const std::string verb = v[0].text;
+			if ( verb == "cooldown" || verb == "server" )
+			{
+				Dict scratch;
+				std::string why;
+				if ( m_begun || scopes.empty() == false )
+				{
+					m_l.Fail( number, "\"" + verb + "\" is the reaction's: before its scopes and actions" );
+				}
+				else if ( Into( node, scratch, why ) == false )
+				{
+					m_l.Fail( number, why );
+				}
+				else
+				{
+					m_settings.push_back( &node );
+				}
+				continue;
+			}
+			m_begun = true;
+			if ( verb == "as" || verb == "at" || verb == "after" || verb == "chance" )
+			{
+				bool twice = false;
+				for ( const Node* s : scopes )
+				{
+					if ( WordsOf( s->line.code )[0].text == verb )
+					{
+						m_l.Fail( number, "an " + verb + " under an " + verb + " (line " + std::to_string( s->line.number ) + "): one holds at a time" );
+						twice = true;
+					}
+				}
+				Dict scratch;
+				std::string why;
+				if ( Into( node, scratch, why ) == false )
+				{
+					m_l.Fail( number, why );
+					m_actions += 1; // (what is under it is not read: it is not a reaction that does nothing)
+					continue;
+				}
+				if ( node.under.empty() )
+				{
+					m_l.Fail( number, node.line.code + ": nothing is under it (indent the lines it is for)" );
+					continue;
+				}
+				if ( twice )
+				{
+					m_actions += 1;
+					continue;
+				}
+				scopes.push_back( &node );
+				Lines( node.under, scopes );
+				scopes.pop_back();
+				continue;
+			}
+			if ( node.under.empty() == false )
+			{
+				m_l.Fail( node.under[0].line.number, "nothing goes under \"" + verb + "\": only as, at, after and chance have lines under them" );
+			}
+			Action( node, scopes );
+		}
+	}
+
+	// A setting of the block (cooldown S, server only) or a scope (as, at, after, chance) into the
+	// properties of the actions under it. False, with why, when it cannot be read.
+	static bool Into( const Node& node, Dict& current, std::string& why )
+	{
+		const std::vector<Token> w = SplitLine( node.line.code );
+		const std::string verb = w[0].text;
+		double value = 0.0;
+		if ( verb == "server" )
+		{
+			if ( w.size() != 2 || w[1].text != "only" )
+			{
+				why = "server only: it waits for the server's cue (a press of the viewer's is not guessed)";
+				return false;
+			}
+			current["wait_for_server"] = true;
+			return true;
+		}
+		if ( verb == "as" )
+		{
+			if ( w.size() != 2 )
+			{
+				why = "as holder, actor, target, me, local, world or a path: one word";
+				return false;
+			}
+			current["subject"] = EnginePath( w[1].text );
+			return true;
+		}
+		if ( verb == "cooldown" || verb == "after" || verb == "chance" )
+		{
+			if ( w.size() != 2 || Number( w[1], value ) == false )
+			{
+				why = verb + " S: a number";
+				return false;
+			}
+			current[verb == "after" ? "delay" : verb] = value;
+			return true;
+		}
+		// at point | end | beam [from PATH] | follow | here | PATH, then [offset X Y Z]
+		std::vector<Token> at = w;
+		for ( size_t k = 1; k < at.size(); ++k )
+		{
+			const std::string& word = at[k].text;
+			const bool place = k == 1 && word != "point" && word != "end" && word != "beam" && word != "follow";
+			if ( place || ( k > 1 && at[k - 1].text == "from" ) )
+			{
+				at[k].text = EnginePath( word );
+			}
+		}
+		size_t next = 0;
+		current.Erase( "place_node" );
+		current.Erase( "offset" );
+		if ( at.size() == 2 && at[1].text == "here" )
+		{
+			current["place"] = 0; // where the sheet's node is (under its parent)
+			return true;
+		}
+		if ( at.size() < 2 )
+		{
+			why = "at point, end, beam from PATH, follow or a path";
+			return false;
+		}
+		if ( ParseAt( at, 1, at.size(), current, next, why ) == false || next != at.size() )
+		{
+			why = why.empty() ? std::string( "at PLACE, then: from PATH, offset X Y Z" ) : why;
+			return false;
+		}
+		return true;
+	}
+
+	// A reaction's options after its own words: name and value pairs, each a property.
+	bool Options( const std::vector<Token>& w, const std::string& line, size_t from, Dict& into, const std::string& verb,
+				  const std::vector<std::pair<const char*, const char*>>& names, int number )
+	{
+		for ( size_t i = from; i < w.size(); i += 2 )
+		{
+			const std::string name = w[i].text;
+			if ( name == "volume_by" && i + 1 < w.size() )
+			{
+				into["volume_expression"] = RestFrom( line, w[i + 1] );
+				return true;
+			}
+			const char* property = nullptr;
+			for ( const auto& [word, prop] : names )
+			{
+				property = name == word ? prop : property;
+			}
+			double value = 0.0;
+			if ( property == nullptr || i + 1 >= w.size() )
+			{
+				m_l.Fail( number, "\"" + name + "\" is not something " + verb + " takes" );
+				return false;
+			}
+			const std::string key = property;
+			if ( key == "bus" || key == "animation_off" || key == "scene_parent" )
+			{
+				into[key] = key == "scene_parent" ? Value( EnginePath( w[i + 1].text ) ) : Value( w[i + 1].text ); // (words, not numbers)
+			}
+			else if ( Number( w[i + 1], value ) )
+			{
+				into[key] = value;
+			}
+			else
+			{
+				m_l.Fail( number, name + " wants a number, not \"" + w[i + 1].text + "\"" );
+				return false;
+			}
+		}
+		return true;
+	}
+
+	void Action( const Node& node, const std::vector<const Node*>& scopes )
+	{
+		const int number = node.line.number;
+		const std::string& code = node.line.code;
+		const std::vector<Token> w = SplitLine( code );
+		const std::string verb = w[0].text;
+		m_actions += 1; // (one it has, read or not: the reaction is not one that does nothing)
+		// What it is under: the block's settings, then its scopes, outermost first.
+		Dict current;
+		std::string subject;
+		for ( const Node* s : scopes )
+		{
+			const std::vector<Word> sw = WordsOf( s->line.code );
+			subject = sw[0].text == "as" ? sw[1].text : subject;
+		}
+		bool ok = true;
+		for ( const Is& one : m_is )
+		{
+			if ( one.subject != subject )
+			{
+				m_l.Fail( number, "\"" + one.subject + " is " + one.what + "\" asks what its subject is: this line must be under as " + one.subject );
+				ok = false;
+			}
+		}
+		if ( ok == false )
+		{
+			return;
+		}
+		for ( const Is& one : m_is )
+		{
+			const bool kind = one.what == "any" || one.what == "player" || one.what == "prop" || one.what == "static" || one.what == "ragdoll" || one.what == "item";
+			current[kind ? "subject_kind" : "subject_template"] = one.what;
+		}
+		std::string unused;
+		for ( const Node* s : m_settings )
+		{
+			Into( *s, current, unused );
+		}
+		for ( const Node* s : scopes )
+		{
+			Into( *s, current, unused );
+		}
+		Dict p;
+		double value = 0.0;
+		if ( verb == "sound" )
+		{
+			if ( w.size() < 2 )
+			{
+				m_l.Fail( number, "sound NAME [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPRESSION]" );
+				return;
+			}
+			p["sound"] = SoundPath( w[1].text );
+			const std::vector<Word> words = WordsOf( code );
+			const std::string rest = EngineExpression( m_l.tree, From( code, words, 2 ), false );
+			if ( Options( SplitLine( rest ), rest, 0, p, verb,
+						  { { "volume", "volume_db" }, { "pitch", "pitch_scale" }, { "jitter", "pitch_jitter" }, { "range", "max_distance" }, { "bus", "bus" } },
+						  number ) == false )
+			{
+				return;
+			}
+		}
+		else if ( verb == "create" )
+		{
+			if ( w.size() < 2 )
+			{
+				m_l.Fail( number, "create NAME [under PATH] [for S]" );
+				return;
+			}
+			p["scene"] = EffectPath( w[1].text );
+			if ( Options( w, code, 2, p, verb, { { "under", "scene_parent" }, { "for", "scene_lifetime" } }, number ) == false )
+			{
+				return;
+			}
+		}
+		else if ( verb == "play" )
+		{
+			if ( w.size() < 3 )
+			{
+				m_l.Fail( number, "play PATH ANIMATION [off ANIMATION]" );
+				return;
+			}
+			p["animation_player"] = EnginePath( w[1].text );
+			p["animation"] = w[2].text;
+			if ( Options( w, code, 3, p, verb, { { "off", "animation_off" } }, number ) == false )
+			{
+				return;
+			}
+		}
+		else if ( verb == "set" )
+		{
+			if ( w.size() < 4 )
+			{
+				m_l.Fail( number, "set PATH PROPERTY VALUE [blend S], or set PATH PROPERTY = EXPRESSION" );
+				return;
+			}
+			p["target"] = EnginePath( w[1].text );
+			p["property"] = w[2].text;
+			if ( w[3].text == "=" && w[3].quoted == false )
+			{
+				if ( w.size() < 5 )
+				{
+					m_l.Fail( number, "set PATH PROPERTY = EXPRESSION" );
+					return;
+				}
+				const std::vector<Word> words = WordsOf( code );
+				p["value_expression"] = Strip( EngineExpression( m_l.tree, From( code, words, 4 ), false ) );
+			}
+			else
+			{
+				p["value"] = ValueOf( w[3] );
+				if ( Options( w, code, 4, p, verb, { { "blend", "blend_time" } }, number ) == false )
+				{
+					return;
+				}
+			}
+		}
+		else if ( verb == "call" )
+		{
+			if ( w.size() < 3 )
+			{
+				m_l.Fail( number, "call PATH METHOD [ARGUMENT ...]" );
+				return;
+			}
+			p["target"] = EnginePath( w[1].text );
+			p["method"] = w[2].text;
+			List args;
+			for ( size_t i = 3; i < w.size(); ++i )
+			{
+				args.push_back( ValueOf( w[i] ) );
+			}
+			p["method_args"] = args;
+		}
+		else if ( verb == "shake" )
+		{
+			if ( w.size() < 2 || Number( w[1], value ) == false )
+			{
+				m_l.Fail( number, "shake AMOUNT [for S]: 0 to 1" );
+				return;
+			}
+			p["shake"] = value;
+			if ( Options( w, code, 2, p, verb, { { "for", "shake_time" } }, number ) == false )
+			{
+				return;
+			}
+		}
+		else if ( verb == "flash" )
+		{
+			const Value color = w.size() >= 2 ? ValueOf( w[1] ) : Value();
+			if ( color.type() != Value::Type::Color )
+			{
+				m_l.Fail( number, "flash rgba(r, g, b, a) [for S]" );
+				return;
+			}
+			p["flash_color"] = color;
+			if ( Options( w, code, 2, p, verb, { { "for", "flash_time" } }, number ) == false )
+			{
+				return;
+			}
+		}
+		else
+		{
+			m_l.Fail( number, "\"" + verb + "\" is not something a reaction does: sound, create, play, set, call, shake or flash" );
+			return;
+		}
+		Dict taken = current.Duplicate();
+		taken.Merge( p, true );
+		Rule made;
+		made.line = number;
+		made.head = m_block.line.number;
+		made.properties = m_head.Duplicate();
+		made.properties.Merge( taken, true );
+		m_l.out.push_back( made );
+	}
+};
+
+// predict ACTION as CUE [if EXPRESSION]: the viewer's own press, shown as the cue the server will
+// answer with (a CbPrediction).
+void LowerPredict( const Lowering& l, const Node& block )
+{
+	const int number = block.line.number;
+	const std::vector<Word> words = WordsOf( block.line.code );
+	std::string line = block.line.code;
+	if ( words.size() > 5 && words[4].text == "if" )
+	{
+		line = line.substr( 0, words[5].start ) + EngineExpression( l.tree, From( line, words, 5 ), false );
+	}
+	const std::vector<Token> w = SplitLine( line );
+	Dict settings;
+	bool bad = false;
+	if ( w.size() < 4 || w[2].text != "as" )
+	{
+		l.Fail( number, "predict ACTION as CUE [if EXPRESSION]" );
+		bad = true;
+	}
+	else
+	{
+		settings["action"] = w[1].text;
+		settings["cue"] = w[3].text;
+		if ( w.size() >= 5 )
+		{
+			if ( w[4].text != "if" || w.size() < 6 )
+			{
+				l.Fail( number, "after the cue: if EXPRESSION" );
+				bad = true;
+			}
+			else
+			{
+				settings["conditions"] = Strings{ RestFrom( line, w[5] ) };
+			}
+		}
+	}
+	Strings changes;
+	for ( const Node& node : block.under )
+	{
+		const std::string body = Resolved( l.tree, node.line.code, false );
+		const std::vector<Token> b = SplitLine( body );
+		const std::string verb = b[0].text;
+		double seconds = 0.0;
+		if ( node.under.empty() == false )
+		{
+			l.Fail( node.under[0].line.number, "nothing goes under a prediction's lines" );
+			bad = true;
+		}
+		if ( verb == "cooldown" && b.size() == 2 && Number( b[1], seconds ) )
+		{
+			settings["cooldown"] = seconds;
+		}
+		else if ( verb == "held" && b.size() == 1 )
+		{
+			settings["while_held"] = true;
+		}
+		else if ( verb == "change" && b.size() >= 4 )
+		{
+			changes.push_back( RestFrom( body, b[1] ) );
+		}
+		else if ( verb == "stance" && ( b.size() == 2 || ( b.size() == 4 && b[2].text == "on" ) ) )
+		{
+			settings["stance"] = b[1].text;
+			if ( b.size() == 4 )
+			{
+				settings["stance_layer"] = b[3].text;
+			}
+		}
+		else
+		{
+			l.Fail( node.line.number, "a prediction takes cooldown S, held, change FIELD OP NUMBER, stance NAME [on LAYER]" );
+			bad = true;
+		}
+	}
+	if ( bad )
+	{
+		return;
+	}
+	Rule made;
+	made.line = number;
+	made.prediction = true;
+	made.type = "CbPrediction";
+	made.properties = settings;
+	if ( changes.empty() == false )
+	{
+		made.properties["changes"] = changes;
+	}
+	l.out.push_back( made );
+}
+
+// hud PATH: one control's lines (a CbFieldBinding each): show if, text, bind.
+void LowerHud( const Lowering& l, const Node& block )
+{
+	const std::vector<Word> head = WordsOf( block.line.code );
+	if ( head.size() != 2 )
+	{
+		l.Fail( block.line.number, "hud PATH: the control its lines are about" );
+		return;
+	}
+	const std::string path = head[1].text;
+	if ( block.under.empty() )
+	{
+		l.Fail( block.line.number, "hud " + path + ": nothing is under it" );
+		return;
+	}
+	for ( const Node& node : block.under )
+	{
+		const int number = node.line.number;
+		const std::vector<Word> v = WordsOf( node.line.code );
+		const std::string verb = v[0].text;
+		if ( node.under.empty() == false )
+		{
+			l.Fail( node.under[0].line.number, "nothing goes under a hud's lines" );
+		}
+		const char* usage = "a hud's lines are show if EXPRESSION, text \"FORMAT\" [into PROPERTY] [if EXPRESSION], bind PROPERTY = EXPRESSION [if EXPRESSION]";
+		if ( ( verb != "show" && verb != "text" && verb != "bind" ) || v.size() < 2 )
+		{
+			l.Fail( number, usage );
+			continue;
+		}
+		// The line after its verb, its expressions in the engine's spelling; "... if EXPRESSION": the
+		// condition, to the end of the line.
+		const std::string line = EngineExpression( l.tree, From( node.line.code, v, 1 ), false );
+		const std::vector<Token> w = SplitLine( line );
+		size_t cut = w.size();
+		for ( size_t k = 0; k < w.size(); ++k )
+		{
+			if ( w[k].quoted == false && w[k].text == "if" )
+			{
+				cut = k;
+				break;
+			}
+		}
+		Rule made;
+		made.line = number;
+		made.type = "CbFieldBinding";
+		Dict& p = made.properties;
+		if ( cut < w.size() )
+		{
+			if ( cut + 1 >= w.size() )
+			{
+				l.Fail( number, "if what? if EXPRESSION" );
+				continue;
+			}
+			p["conditions"] = Strings{ RestFrom( line, w[cut + 1] ) };
+		}
+		std::string why;
+		if ( verb == "show" )
+		{
+			if ( cut != 0 || p.Has( "conditions" ) == false )
+			{
+				why = "show if EXPRESSION";
+			}
+		}
+		else if ( verb == "text" )
+		{
+			p["hides"] = false;
+			if ( cut < 1 )
+			{
+				why = "text \"FORMAT\" [into PROPERTY] [if EXPRESSION]";
+			}
+			else
+			{
+				p["text_format"] = w[0].text;
+				if ( cut == 3 && w[1].text == "into" )
+				{
+					p["property"] = w[2].text;
+				}
+				else if ( cut != 1 )
+				{
+					why = "after the format: into PROPERTY, or if EXPRESSION";
+				}
+			}
+		}
+		else
+		{
+			p["hides"] = false;
+			if ( cut < 3 || w[1].text != "=" )
+			{
+				why = "bind PROPERTY = EXPRESSION [if EXPRESSION]";
+			}
+			else
+			{
+				p["property"] = w[0].text;
+				// (The expression, up to "if" or the end of the line.)
+				p["field"] = cut < w.size() ? Strip( line.substr( w[2].start, w[cut].start - w[2].start ) ) : RestFrom( line, w[2] );
+			}
+		}
+		if ( why.empty() == false )
+		{
+			l.Fail( number, why );
+			continue;
+		}
+		p["target"] = path;
+		l.out.push_back( made );
+	}
+}
+
+// The number a mistake is said at ("line N: ..."), for putting them in order.
+int MistakeLine( const std::string& error )
+{
+	const size_t colon = error.find( ':' );
+	return error.rfind( "line ", 0 ) == 0 && colon != std::string::npos && IsValidInt( error.substr( 5, colon - 5 ) ) ? int( ToInt( error.substr( 5, colon - 5 ) ) ) : 0;
+}
 } // namespace
 
 void SetMoveParameterNames( const Strings& names )
@@ -817,1371 +2423,49 @@ bool ParseChange( const std::string& text, Change& out, std::string* error )
 	return true;
 }
 
-// Version 0 (sheet_v1.cpp reads version 1 by lowering it to this).
-std::vector<Rule> ParseVersion0( const std::string& text, Strings& errors )
+std::vector<Rule> ParseRules( const std::string& text, Strings& errors )
 {
-	std::vector<Rule> out;
-	Building rule;
-	bool open = false;
-	auto fail = [&]( int line, const std::string& why ) {
-		errors.push_back( "line " + Num64( line ) + ": " + why );
-		rule.bad = true;
-	};
-	auto finish = [&]() {
-		if ( open == false )
-		{
-			return;
-		}
-		open = false;
-		if ( rule.bad )
-		{
-			return;
-		}
-		if ( rule.prediction == false && rule.pendingSetting != 0 )
-		{
-			errors.push_back( "line " + Num64( rule.pendingSetting ) + ": a setting after the last action does nothing (a setting is for the actions below it)" );
-			return;
-		}
-		if ( rule.motion )
-		{
-			// An item's motion (owner item) happens in one tick: what it may have is checked as a whole,
-			// since "owner item" may come after its first lines.
-			if ( rule.settings.Get( "owner", "player" ).AsString() == "item" )
-			{
-				const std::string once = "an item's motion (owner item) happens in one tick, on an event said at it: ";
-				if ( rule.steps.size() > 1 )
-				{
-					errors.push_back( "line " + Num64( rule.steps[1].AsDict().Get( "line", rule.line ).AsInt() ) + ": " + once + "no then, after or timeout" );
-					return;
-				}
-				for ( const char* setting : { "cooldown", "uses", "lasts", "until", "conditions" } )
-				{
-					if ( rule.settings.Has( setting ) )
-					{
-						errors.push_back( "line " + Num64( rule.line ) + ": " + once + "no " +
-										  ( std::string( setting ) == "conditions" ? std::string( "if on its first line (an if block is fine)" ) : std::string( setting ) ) );
-						return;
-					}
-				}
-				List list = rule.steps[0].AsDict().Get( "statements", List() ).AsList();
-				for ( size_t k = 0; k < list.size(); ++k )
-				{
-					Dict statement = list[k].AsDict();
-					const std::string misplaced = Misplaced( statement.Get( "verb", "" ).AsString(), kInStep, true );
-					if ( misplaced.empty() == false )
-					{
-						errors.push_back( "line " + Num64( statement.Get( "line", rule.line ).AsInt() ) + ": " + misplaced );
-						return;
-					}
-				}
-			}
-			else
-			{
-				for ( size_t s = 0; s < rule.steps.size(); ++s )
-				{
-					List list = rule.steps[s].AsDict().Get( "statements", List() ).AsList();
-					for ( size_t k = 0; k < list.size(); ++k )
-					{
-						Dict statement = list[k].AsDict();
-						if ( statement.Get( "verb", "" ).AsString() == "remove" )
-						{
-							errors.push_back( "line " + Num64( statement.Get( "line", rule.line ).AsInt() ) + ": " + Misplaced( "remove", kInStep, false ) );
-							return;
-						}
-					}
-				}
-			}
-			Rule made;
-			made.line = rule.line;
-			made.type = "motion";
-			made.properties = rule.settings;
-			made.properties["steps"] = rule.steps;
-			out.push_back( made );
-			return;
-		}
-		if ( rule.prediction )
-		{
-			Rule made;
-			made.line = rule.line;
-			made.prediction = true;
-			made.type = "CbPrediction";
-			made.properties = rule.settings;
-			if ( rule.changes.empty() == false )
-			{
-				made.properties["changes"] = rule.changes;
-			}
-			out.push_back( made );
-			return;
-		}
-		if ( rule.actions.empty() )
-		{
-			errors.push_back( "line " + Num64( rule.line ) + ": the rule does nothing: give it an action (sound, scene, play, set, call, shake, flash)" );
-			return;
-		}
-		for ( Rule& action : rule.actions )
-		{
-			Rule made;
-			made.line = action.line;
-			made.head = rule.line;
-			made.properties = rule.settings.Duplicate();
-			made.properties.Merge( action.properties, true );
-			out.push_back( made );
-		}
-	};
-	const std::vector<std::string> lines = Split( Replace( text, "\r", "" ), "\n" );
-	for ( size_t index = 0; index < lines.size(); ++index )
+	bool any = false;
+	for ( const std::string& line : LinesOf( text ) )
 	{
-		const int number = int( index + 1 );
-		const std::string& line = lines[index];
-		std::vector<Token> w = SplitLine( line );
-		if ( w.empty() )
+		any = any || CodeOf( line ).empty() == false;
+	}
+	if ( any == false )
+	{
+		return {};
+	}
+	if ( SheetVersion( text ) != 1 )
+	{
+		errors.push_back( "line 1: " + NotVersion1( text ) );
+		return {};
+	}
+	Strings found;
+	const Tree tree = ReadTree( text, found );
+	std::vector<Rule> out;
+	const Lowering lowering{ tree, found, out };
+	for ( const Node& block : tree.blocks )
+	{
+		const std::string verb = block.Verb();
+		if ( verb == "motion" || verb == "use" )
 		{
-			continue;
+			MotionLowering( lowering, block ).Lower();
 		}
-		const std::string verb = w[0].text;
-		// --- a HUD's line: show, text, bind (a CbFieldBinding each, on a control of the HUD)
-		if ( verb == "show" || verb == "text" || verb == "bind" )
+		else if ( verb == "react" )
 		{
-			finish();
-			// "... if <expression>": the condition, to the end of the line.
-			size_t cut = w.size();
-			for ( size_t k = 2; k < w.size(); ++k )
-			{
-				if ( w[k].quoted == false && w[k].text == "if" )
-				{
-					cut = k;
-					break;
-				}
-			}
-			Rule made;
-			made.line = number;
-			made.type = "CbFieldBinding";
-			Dict& p = made.properties;
-			if ( cut < w.size() )
-			{
-				if ( cut + 1 >= w.size() )
-				{
-					errors.push_back( "line " + Num64( number ) + ": if what? if <expression>" );
-					continue;
-				}
-				p["conditions"] = Strings{ RestFrom( line, w[cut + 1] ) };
-			}
-			std::string why;
-			if ( w.size() < 2 )
-			{
-				why = verb + " what? " +
-					  ( verb == "show"	 ? "show <node> if <expression>"
-						: verb == "text" ? "text <node> \"format\" [into <property>] [if <expression>]"
-										 : "bind <node> <property> = <expression> [if <expression>]" );
-			}
-			else if ( verb == "show" )
-			{
-				if ( cut != 2 || p.Has( "conditions" ) == false )
-				{
-					why = "show <node> if <expression>";
-				}
-			}
-			else if ( verb == "text" )
-			{
-				p["hides"] = false;
-				if ( cut < 3 )
-				{
-					why = "text <node> \"format\" [into <property>] [if <expression>]";
-				}
-				else
-				{
-					p["text_format"] = w[2].text;
-					if ( cut == 5 && w[3].text == "into" )
-					{
-						p["property"] = w[4].text;
-					}
-					else if ( cut != 3 )
-					{
-						why = "after the format: into <property>, or if <expression>";
-					}
-				}
-			}
-			else
-			{
-				p["hides"] = false;
-				if ( cut < 5 || w[3].text != "=" )
-				{
-					why = "bind <node> <property> = <expression> [if <expression>]";
-				}
-				else
-				{
-					p["property"] = w[2].text;
-					// (The expression, up to "if" or the end of the line.)
-					std::string expression = RestFrom( line, w[4] );
-					if ( cut < w.size() )
-					{
-						expression = Strip( line.substr( w[4].start, w[cut].start - w[4].start ) );
-					}
-					p["field"] = expression;
-				}
-			}
-			if ( why.empty() == false )
-			{
-				errors.push_back( "line " + Num64( number ) + ": " + why );
-				continue;
-			}
-			p["target"] = w[1].text;
-			out.push_back( made );
-			continue;
+			ReactionLowering( lowering, block ).Lower();
 		}
-		// --- a motion block: for the bake, run by the simulation (docs/sheets.md)
-		if ( verb == "motion" )
+		else if ( verb == "predict" )
 		{
-			finish();
-			rule = Building{};
-			rule.line = number;
-			rule.motion = true;
-			rule.headColumn = Column( line );
-			open = true;
-			Dict first;
-			first["statements"] = List();
-			rule.steps.push_back( first );
-			// motion NAME on use | on press ACTION | on EVENT | while EXPR | when EXPR, then [if EXPR]
-			const char* usage = "motion NAME on use, on press ACTION, on EVENT, while EXPRESSION or when EXPRESSION, then [if EXPRESSION]";
-			if ( w.size() < 3 || Contains( w[1].text, "/" ) || Contains( w[1].text, "." ) || w[1].quoted )
-			{
-				fail( number, usage );
-				continue;
-			}
-			rule.settings["name"] = w[1].text;
-			const std::string how = w[2].text;
-			size_t cut = w.size();
-			for ( size_t k = 3; k < w.size(); ++k )
-			{
-				if ( w[k].quoted == false && w[k].text == "if" )
-				{
-					cut = k;
-					break;
-				}
-			}
-			if ( how == "on" && w.size() >= 4 && w[3].text == "use" && cut == 4 )
-			{
-				rule.settings["trigger"] = "use";
-			}
-			else if ( how == "on" && w.size() >= 5 && w[3].text == "press" && cut == 5 )
-			{
-				rule.settings["trigger"] = "press";
-				rule.settings["action"] = w[4].text;
-			}
-			else if ( how == "on" && w.size() >= 5 && ( w[3].text == "release" || w[3].text == "tap" || w[3].text == "hold" ) && ( cut == 5 || cut == 6 ) )
-			{
-				// on release ACTION, on tap ACTION [S], on hold ACTION [S] (M288)
-				rule.settings["trigger"] = w[3].text;
-				rule.settings["action"] = w[4].text;
-				double seconds = 0.0;
-				if ( cut == 6 )
-				{
-					if ( w[3].text == "release" || Number( w[5], seconds ) == false || seconds <= 0.0 )
-					{
-						fail( number, "on tap ACTION [S], on hold ACTION [S]: a tap is released before S, a hold still down at S (0.25 s)" );
-						continue;
-					}
-					rule.settings["seconds"] = seconds;
-				}
-			}
-			else if ( how == "on" && cut == 4 )
-			{
-				rule.settings["trigger"] = "event";
-				rule.settings["event"] = w[3].text;
-			}
-			else if ( ( how == "while" || how == "when" ) && cut > 3 )
-			{
-				rule.settings["trigger"] = how;
-				std::string expression = Strip( line.substr( w[3].start, ( cut < w.size() ? w[cut].start : line.size() ) - w[3].start ) );
-				const size_t hash = expression.find( '#' );
-				if ( hash != std::string::npos )
-				{
-					expression = Strip( expression.substr( 0, hash ) );
-				}
-				rule.settings["expression"] = expression;
-			}
-			else
-			{
-				fail( number, usage );
-				continue;
-			}
-			if ( cut < w.size() )
-			{
-				if ( cut + 1 >= w.size() || how == "while" )
-				{
-					fail( number, how == "while" ? std::string( "a while's expression is its condition: no if" ) : std::string( "if what? if <expression>" ) );
-					continue;
-				}
-				rule.settings["conditions"] = Strings{ RestFrom( line, w[cut + 1] ) };
-			}
-			continue;
-		}
-		if ( open && rule.motion && verb != "on" && verb != "while" && verb != "predict" && verb != "use" && verb != "show" && verb != "text" &&
-			 verb != "bind" )
-		{
-			const int column = Column( line );
-			if ( column <= rule.headColumn )
-			{
-				fail( number, "a motion's lines are indented under it" );
-				continue;
-			}
-			rule.bodyColumn = rule.bodyColumn < 0 ? column : rule.bodyColumn;
-			// --- inside a find: what happens to each thing it found (an impulse, a move for, an emit)
-			if ( rule.findColumn >= 0 && column <= rule.findColumn )
-			{
-				rule.findColumn = -1;
-			}
-			if ( rule.findColumn >= 0 )
-			{
-				List inside = rule.find["statements"].AsList();
-				Dict statement;
-				statement["line"] = number;
-				const std::string placed = verb == "move" && w.size() > 1 && w[1].text == "for" ? std::string( "move for" ) : verb;
-				const bool grabbing = rule.find.Get( "grab", false ).AsBool();
-				const std::string misplaced = Misplaced( placed, rule.castBlock ? kInCast : grabbing ? kInGrab : kInFind, false );
-				if ( misplaced.empty() == false )
-				{
-					fail( number, misplaced );
-					continue;
-				}
-				statement["verb"] = placed;
-				// (M290) An if under a find: decided for each thing it found.
-				while ( rule.findFrames.empty() == false &&
-						( verb == "else" ? rule.findFrames.back().column > column : rule.findFrames.back().column >= column ) )
-				{
-					rule.findFrames.pop_back();
-				}
-				if ( verb == "if" || verb == "else" )
-				{
-					if ( rule.castBlock )
-					{
-						fail( number, "an if is not in a cast" );
-					}
-					else if ( verb == "if" && w.size() < 2 )
-					{
-						fail( number, "if <expression>" );
-					}
-					else if ( verb == "if" )
-					{
-						rule.findFrames.push_back( { column, RestFrom( line, w[1] ), false } );
-					}
-					else if ( w.size() != 1 || rule.findFrames.empty() || rule.findFrames.back().column != column || rule.findFrames.back().otherwise )
-					{
-						fail( number, "an else is under an if, as far in as it" );
-					}
-					else
-					{
-						rule.findFrames.back().otherwise = true;
-					}
-					continue;
-				}
-				{
-					std::string only;
-					for ( const auto& frame : rule.findFrames )
-					{
-						const std::string one = frame.otherwise ? "not ( " + frame.condition + " )" : "( " + frame.condition + " )";
-						only += only.empty() ? one : " and " + one;
-					}
-					statement["only"] = only;
-				}
-				if ( verb == "change" )
-				{
-					// (Of the motion's owner, once for each thing found: a count of what was hit.)
-					if ( w.size() < 4 )
-					{
-						fail( number, "change FIELD = VALUE, += or -=" );
-						continue;
-					}
-					statement["kind"] = "change";
-					statement["text"] = RestFrom( line, w[1] );
-				}
-				else if ( verb == "apply" && w.size() >= 4 && w[2].text == "for" )
-				{
-					// (On each player found, M288; on the player a cast holds, M290. "on target" says so.)
-					statement["kind"] = "apply";
-					statement["text"] = w[1].text;
-					std::string seconds = RestFrom( line, w[3] );
-					if ( w.size() >= 6 && w[w.size() - 2].text == "on" )
-					{
-						if ( w[w.size() - 1].text != "target" )
-						{
-							fail( number, "apply STATUS for S [on target]: in a find or a cast, on what it found or holds" );
-							continue;
-						}
-						seconds = Strip( seconds.substr( 0, seconds.rfind( " on " ) ) );
-					}
-					statement["value"] = seconds;
-				}
-				else if ( verb == "emit" && w.size() == 2 )
-				{
-					if ( rule.castBlock && inside.size() > 0 )
-					{
-						bool emitted = false;
-						for ( size_t k = 0; k < inside.size(); ++k )
-						{
-							emitted = emitted || inside[k].AsDict().Get( "kind", "" ).AsString() == "emit";
-						}
-						if ( emitted )
-						{
-							fail( number, "a cast says one event when it takes hold" );
-							continue;
-						}
-					}
-					statement["kind"] = "emit";
-					statement["text"] = w[1].text;
-				}
-				else
-				{
-					Dict part;
-					std::string why;
-					if ( ParsePart( w, part, why ) == false )
-					{
-						fail( number, why );
-						continue;
-					}
-					Dict props = part["properties"].AsDict();
-					if ( ( verb == "impulse" || verb == "throw" || verb == "force" ) && props.Has( "target" ) == false )
-					{
-						props["target"] = rule.castBlock ? 1 : 3; // (what it holds, or found, unless it says)
-					}
-					ResolveTarget( props, rule.castBlock == false, rule.castBlock );
-					statement["kind"] = "part";
-					statement["part"] = part;
-				}
-				inside.push_back( statement );
-				continue;
-			}
-			// The ifs this line is out of are closed (an else stays in its if).
-			while ( rule.frames.empty() == false && ( verb == "else" ? rule.frames.back().column > column : rule.frames.back().column >= column ) )
-			{
-				rule.frames.pop_back();
-			}
-			const bool top = column <= rule.bodyColumn && rule.frames.empty();
-			Dict step = rule.steps[rule.steps.size() - 1].AsDict();
-			List statements = step["statements"].AsList();
-			// What the line is under: every open if (its else: not it), as one condition.
-			auto guard = [&]() {
-				std::string all;
-				for ( const auto& frame : rule.frames )
-				{
-					const std::string one = frame.otherwise ? "not ( " + frame.condition + " )" : "( " + frame.condition + " )";
-					all += all.empty() ? one : " and " + one;
-				}
-				return all;
-			};
-			auto add = [&]( Dict statement ) {
-				statement["guard"] = guard();
-				statement["line"] = number;
-				statements.push_back( statement );
-			};
-			double value = 0.0;
-			if ( verb == "if" )
-			{
-				if ( w.size() < 2 )
-				{
-					fail( number, "if <expression>" );
-					continue;
-				}
-				rule.frames.push_back( { column, RestFrom( line, w[1] ), false } );
-				continue;
-			}
-			if ( verb == "else" )
-			{
-				if ( w.size() != 1 || rule.frames.empty() || rule.frames.back().column != column || rule.frames.back().otherwise )
-				{
-					fail( number, "an else is under an if, as far in as it" );
-					continue;
-				}
-				rule.frames.back().otherwise = true;
-				continue;
-			}
-			// --- what starts a step, or the motion's own settings: not under an if
-			const bool stepLine = verb == "then" || verb == "after" || verb == "timeout";
-			if ( verb == "every" )
-			{
-				// every S: what follows in this step, again and again while it is the step
-				double seconds = 0.0;
-				bool again = false;
-				for ( size_t k = 0; k < statements.size(); ++k )
-				{
-					again = again || statements[k].AsDict().Get( "kind", "" ).AsString() == "every";
-				}
-				if ( step.Get( "timeout", false ).AsBool() || again )
-				{
-					fail( number, Misplaced( "every", again ? kInEvery : kInTimeout, false ) );
-					continue;
-				}
-				if ( top == false || w.size() != 2 || Number( w[1], seconds ) == false || seconds <= 0.0 )
-				{
-					fail( number, "every S: as far in as the motion's first line, not under an if; what follows in its step happens every S seconds" );
-					continue;
-				}
-				Dict every;
-				every["kind"] = "every";
-				every["verb"] = "every";
-				every["seconds"] = seconds;
-				every["line"] = number;
-				every["guard"] = std::string();
-				statements.push_back( every );
-				step["statements"] = statements;
-				rule.steps[rule.steps.size() - 1] = step;
-				continue;
-			}
-			const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "item" || verb == "owner" ||
-								 verb == "tags" || verb == "blocked" || verb == "cancels";
-			if ( ( stepLine || setting ) && top == false )
-			{
-				fail( number, "\"" + verb + "\" is the motion's: as far in as its first line, not under an if" );
-				continue;
-			}
-			if ( stepLine )
-			{
-				Dict next;
-				next["statements"] = List();
-				next["line"] = number;
-				if ( verb == "timeout" )
-				{
-					if ( w.size() != 1 || step.Get( "within", 0.0 ).AsFloat() <= 0.0 || step.Get( "timeout", false ).AsBool() || step.Get( "or", false ).AsBool() )
-					{
-						fail( number, "a timeout comes right after a then when ... within S (a wait ... or S goes on: it has none)" );
-						continue;
-					}
-					next["timeout"] = true;
-				}
-				else if ( verb == "after" )
-				{
-					if ( w.size() != 2 || Number( w[1], value ) == false || value < 0.0 )
-					{
-						fail( number, "after <seconds>" );
-						continue;
-					}
-					next["after"] = value;
-				}
-				else
-				{
-					// then when EXPRESSION [within S | or S]
-					size_t end = w.size();
-					if ( w.size() >= 5 && ( w[w.size() - 2].text == "within" || w[w.size() - 2].text == "or" ) && IsValidFloat( w[w.size() - 1].text ) )
-					{
-						if ( Number( w[w.size() - 1], value ) == false || value <= 0.0 )
-						{
-							fail( number, "within <seconds>" );
-							continue;
-						}
-						next["within"] = value;
-						if ( w[w.size() - 2].text == "or" )
-						{
-							next["or"] = true; // (it goes on after S without it)
-						}
-						end = w.size() - 2;
-					}
-					if ( w.size() < 3 || w[1].text != "when" || end < 3 )
-					{
-						fail( number, "then when <expression> [within S]" );
-						continue;
-					}
-					next["wait"] = Strip( line.substr( w[2].start, w[end - 1].start + w[end - 1].text.size() - w[2].start ) );
-				}
-				step["statements"] = statements;
-				rule.steps[rule.steps.size() - 1] = step;
-				rule.steps.push_back( next );
-				continue;
-			}
-			if ( setting )
-			{
-				if ( rule.steps.size() > 1 )
-				{
-					fail( number, "\"" + verb + "\" is the motion's: before its first then or after" );
-					continue;
-				}
-				if ( verb == "until" && w.size() >= 2 )
-				{
-					Strings until = rule.settings.Get( "until", Strings() ).AsStrings();
-					until.push_back( RestFrom( line, w[1] ) );
-					rule.settings["until"] = until;
-				}
-				else if ( ( verb == "cooldown" || verb == "lasts" ) && w.size() == 2 && Number( w[1], value ) && value >= 0.0 )
-				{
-					rule.settings[verb] = value;
-				}
-				else if ( verb == "cooldown" && w.size() == 4 && w[2].text == "shared" && Number( w[1], value ) && value >= 0.0 )
-				{
-					// cooldown S shared NAME (M288): every motion naming it waits for it
-					rule.settings["cooldown"] = value;
-					rule.settings["cooldown_shared"] = w[3].text;
-				}
-				else if ( ( verb == "tags" || verb == "cancels" || ( verb == "blocked" && w.size() >= 3 && w[1].text == "by" ) ) && w.size() >= 2 )
-				{
-					// tags A, B; blocked by A, B; cancels A, B (M288): names, commas or spaces between
-					Strings names = rule.settings.Get( verb, Strings() ).AsStrings();
-					for ( size_t k = verb == "blocked" ? 2 : 1; k < w.size(); ++k )
-					{
-						for ( const std::string& one : Split( Replace( w[k].text, ",", " " ), " " ) )
-						{
-							if ( one.empty() == false )
-							{
-								names.push_back( one );
-							}
-						}
-					}
-					rule.settings[verb] = names;
-				}
-				else if ( verb == "uses" && w.size() >= 2 && IsValidInt( w[1].text ) && ToInt( w[1].text ) > 0 &&
-						  ( w.size() == 2 || ( w.size() == 4 && w[2].text == "refill" && w[3].text == "ground" ) ||
-							( w.size() == 5 && w[2].text == "refill" && w[3].text == "after" && Number( w[4], value ) && value > 0.0 ) ) )
-				{
-					rule.settings["uses"] = ToInt( w[1].text );
-					rule.settings["refill"] = w.size() == 4 ? Value( "ground" ) : Value( w.size() == 5 ? value : 0.0 );
-				}
-				else if ( verb == "item" && w.size() == 2 && ( w[1].text == "carried" || w[1].text == "hand" ) )
-				{
-					rule.settings["item"] = w[1].text;
-				}
-				else if ( verb == "owner" && w.size() == 2 && ( w[1].text == "item" || w[1].text == "player" ) )
-				{
-					rule.settings["owner"] = w[1].text;
-				}
-				else
-				{
-					fail( number, verb == "until"	 ? std::string( "until <expression>" )
-								  : verb == "uses"	 ? std::string( "uses N, uses N refill ground, or uses N refill after S" )
-								  : verb == "item"	 ? std::string( "item hand (the default: whoever has it out) or item carried (in the hand or put away)" )
-								  : verb == "owner" ? std::string( "owner item (the item runs it, lying in the world) or owner player (the default)" )
-								  : verb == "tags" || verb == "cancels" ? verb + " NAME, NAME ..."
-								  : verb == "blocked" ? std::string( "blocked by NAME, NAME ... (a tag, a motion or a status)" )
-													 : verb + " <seconds>" );
-				}
-				continue;
-			}
-			// --- statements, where they may stand (the table above): a step's own, after its every, a
-			// timeout's (an item's motion is checked as a whole when it ends)
-			Dict statement;
-			{
-				bool afterEvery = false;
-				for ( size_t k = 0; k < statements.size(); ++k )
-				{
-					afterEvery = afterEvery || statements[k].AsDict().Get( "kind", "" ).AsString() == "every";
-				}
-				const uint8_t place = step.Get( "timeout", false ).AsBool() ? kInTimeout : afterEvery ? kInEvery : kInStep;
-				const std::string placed = verb == "move" && w.size() > 1 && w[1].text == "for" ? std::string( "move for" ) : verb;
-				const bool ownerItem = rule.settings.Get( "owner", "player" ).AsString() == "item";
-				// (An item's own line, before "owner item" was said, is checked when the motion ends.)
-				const std::string misplaced = placed == "remove" ? std::string() : Misplaced( placed, place, ownerItem );
-				if ( misplaced.empty() == false )
-				{
-					fail( number, misplaced );
-					continue;
-				}
-				statement["verb"] = placed;
-			}
-			if ( verb == "find" || verb == "grab" )
-			{
-				// find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first]; SHAPE:
-				// a node's path (an Area3D, a CollisionShape3D), sphere R, box (X,Y,Z), capsule R H. POINT: (X,Y,Z), a
-				// marker, look D, hit (M290). grab: the same, what it finds held while its step lasts.
-				const char* usage = verb == "find" ? "find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at POINT] [players first] [in sight], SHAPE a node's path, "
-													 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit"
-												   : "grab SHAPE [players] [bodies] [max N] [turned facing|look|none] [at POINT] [players first], SHAPE a node's path, "
-													 "sphere R, box (X,Y,Z) or capsule R H; POINT (x, y, z), a marker, look D or hit";
-				size_t i = 1;
-				Dict shape;
-				double a = 0.0, b = 0.0;
-				if ( w.size() >= 3 && w[1].text == "sphere" && Number( w[2], a ) && a > 0.0 )
-				{
-					shape["kind"] = "sphere";
-					shape["radius"] = a;
-					i = 3;
-				}
-				else if ( w.size() >= 3 && w[1].text == "box" && ValueOf( w[2] ).type() == Value::Type::Vec3 )
-				{
-					shape["kind"] = "box";
-					shape["size"] = ValueOf( w[2] );
-					i = 3;
-				}
-				else if ( w.size() >= 4 && w[1].text == "capsule" && Number( w[2], a ) && Number( w[3], b ) && a > 0.0 && b >= 2.0 * a )
-				{
-					shape["kind"] = "capsule";
-					shape["radius"] = a;
-					shape["height"] = b;
-					i = 4;
-				}
-				else if ( w.size() >= 2 && w[1].quoted == false && w[1].text != "sphere" && w[1].text != "box" && w[1].text != "capsule" )
-				{
-					shape["kind"] = "node";
-					shape["path"] = w[1].text;
-					i = 2;
-				}
-				else
-				{
-					fail( number, usage );
-					continue;
-				}
-				bool players = false, bodies = false, ok = true;
-				for ( ; i < w.size() && ok; )
-				{
-					const std::string word = w[i].text;
-					if ( word == "in" && i + 1 < w.size() && w[i + 1].text == "sight" )
-					{
-						statement["sight"] = true; // (M292: what the level does not hide from its place)
-						i += 2;
-					}
-					else if ( word == "players" && i + 1 < w.size() && w[i + 1].text == "first" )
-					{
-						statement["first"] = true; // (M290: players before bodies, whatever is nearer)
-						i += 2;
-					}
-					else if ( word == "players" || word == "bodies" )
-					{
-						( word == "players" ? players : bodies ) = true;
-						i += 1;
-					}
-					else if ( word == "self" )
-					{
-						statement["self"] = true;
-						i += 1;
-					}
-					else if ( word == "max" && i + 1 < w.size() && IsValidInt( w[i + 1].text ) && ToInt( w[i + 1].text ) >= 1 && ToInt( w[i + 1].text ) <= 16 )
-					{
-						statement["most"] = ToInt( w[i + 1].text );
-						i += 2;
-					}
-					else if ( ( word == "turned" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "none" ) ) ||
-							  ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "world" ) ) )
-					{
-						// turned facing (the default), look (with the pitch) or none; "along" the older word
-						statement["frame"] = w[i + 1].text == "none" ? std::string( "world" ) : w[i + 1].text;
-						i += 2;
-					}
-					else if ( word == "at" && i + 1 < w.size() && ValueOf( w[i + 1] ).type() == Value::Type::Vec3 )
-					{
-						// at (x, y, z): moved from where it is placed, in the player's frame (metres right,
-						// up and ahead)
-						shape["at"] = ValueOf( w[i + 1] );
-						i += 2;
-					}
-					else if ( word == "at" && i + 2 < w.size() && w[i + 1].text == "look" )
-					{
-						statement["point"] = "look " + w[i + 2].text; // (M290: along the look, the level stops it)
-						i += 3;
-					}
-					else if ( word == "at" && i + 1 < w.size() && ( w[i + 1].text == "hit" || w[i + 1].text == "target" ) )
-					{
-						statement["point"] = std::string( "hit" ); // (where the cast holds)
-						i += 2;
-					}
-					else if ( word == "at" && i + 1 < w.size() && w[i + 1].quoted == false )
-					{
-						shape["at_node"] = w[i + 1].text; // (a marker drawn in the scene: its place)
-						i += 2;
-					}
-					else
-					{
-						ok = false;
-					}
-				}
-				if ( ok == false )
-				{
-					fail( number, usage );
-					continue;
-				}
-				if ( verb == "grab" && ( statement.Get( "self", false ).AsBool() || statement.Get( "most", 1 ).AsInt() > 8 ) )
-				{
-					fail( number, "a grab holds 8 at most, and not the player itself" );
-					continue;
-				}
-				statement["kind"] = "find";
-				statement["grab"] = verb == "grab";
-				if ( verb == "grab" && statement.Has( "most" ) == false )
-				{
-					statement["most"] = 8;
-				}
-				statement["shape"] = shape;
-				statement["who"] = players == bodies ? "all" : players ? "players" : "bodies";
-				statement["statements"] = List();
-				add( statement );
-				step["statements"] = statements;
-				rule.steps[rule.steps.size() - 1] = step;
-				rule.findColumn = column;
-				rule.find = statement;
-				rule.findFrames.clear();
-				rule.castBlock = false;
-				continue;
-			}
-			if ( verb == "cast" )
-			{
-				// cast SHAPE range R [speed V] [holds level|bodies|players ...]; SHAPE: ray, sphere R, or a
-				// node's path (one convex shape, around its origin)
-				const char* usage = "cast SHAPE range R [speed V] [holds level bodies players] [along look|facing], SHAPE ray, sphere R, or a node's path";
-				if ( rule.steps.size() > 1 || rule.frames.empty() == false || rule.cast )
-				{
-					fail( number, rule.cast ? "a motion casts once" : "a cast is thrown when the motion starts: in its first step, not under an if" );
-					continue;
-				}
-				size_t i = 1;
-				Dict shape;
-				double a = 0.0;
-				if ( w.size() >= 2 && w[1].text == "ray" )
-				{
-					shape["kind"] = "ray";
-					i = 2;
-				}
-				else if ( w.size() >= 3 && w[1].text == "sphere" && Number( w[2], a ) && a > 0.0 )
-				{
-					shape["kind"] = "sphere";
-					shape["radius"] = a;
-					i = 3;
-				}
-				else if ( w.size() >= 2 && w[1].quoted == false && w[1].text != "range" )
-				{
-					shape["kind"] = "node";
-					shape["path"] = w[1].text;
-					i = 2;
-				}
-				else
-				{
-					fail( number, usage );
-					continue;
-				}
-				Strings holds;
-				bool ok = true;
-				for ( ; i < w.size() && ok; )
-				{
-					const std::string word = w[i].text;
-					if ( ( word == "range" || word == "speed" ) && i + 1 < w.size() && Number( w[i + 1], a ) && a >= 0.0 )
-					{
-						statement[word] = a;
-						i += 2;
-					}
-					else if ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "look" || w[i + 1].text == "facing" ) )
-					{
-						statement["along"] = w[i + 1].text;
-						i += 2;
-					}
-					else if ( word == "holds" )
-					{
-						i += 1;
-						for ( ; i < w.size() && ( w[i].text == "level" || w[i].text == "bodies" || w[i].text == "players" ); ++i )
-						{
-							holds.push_back( w[i].text );
-						}
-						ok = holds.empty() == false;
-					}
-					else
-					{
-						ok = false;
-					}
-				}
-				if ( ok == false || statement.Has( "range" ) == false )
-				{
-					fail( number, usage );
-					continue;
-				}
-				statement["kind"] = "cast";
-				statement["shape"] = shape;
-				statement["holds"] = holds;
-				statement["statements"] = List();
-				add( statement );
-				step["statements"] = statements;
-				rule.steps[rule.steps.size() - 1] = step;
-				rule.findColumn = column;
-				rule.find = statement;
-				rule.castBlock = true;
-				rule.cast = true;
-				continue;
-			}
-			if ( verb == "follow" )
-			{
-				// follow PATH over S: carried along a Path3D drawn in the scene
-				double seconds = 0.0;
-				if ( w.size() != 4 || w[1].quoted || w[2].text != "over" || Number( w[3], seconds ) == false || seconds <= 0.0 )
-				{
-					fail( number, "follow PATH over S: a Path3D beside the sheet, and the seconds it takes" );
-					continue;
-				}
-				statement["kind"] = "follow";
-				statement["path"] = w[1].text;
-				statement["seconds"] = seconds;
-				add( statement );
-				step["statements"] = statements;
-				rule.steps[rule.steps.size() - 1] = step;
-				continue;
-			}
-			if ( verb == "break" )
-			{
-				// break radius R [speed S] [seconds S]: walls near the owner. A number, a name, or an
-				// expression in brackets each.
-				bool ok = w.size() >= 3;
-				auto breakStops = []( const std::string& next ) { return next == "radius" || next == "speed" || next == "seconds" || next == "at"; };
-				for ( size_t k = 1; ok && k < w.size(); )
-				{
-					const std::string word = w[k].text;
-					k += 1;
-					if ( word == "at" )
-					{
-						// at look D | hit (M290): around a point, not the owner.
-						ok = k < w.size() && ( w[k].text == "hit" || ( w[k].text == "look" && k + 1 < w.size() ) );
-						statement["point"] = ok ? ( w[k].text == "hit" ? std::string( "hit" ) : "look " + w[k + 1].text ) : std::string();
-						k += ok && w[k].text == "look" ? 2 : 1;
-						continue;
-					}
-					Amount amount;
-					ok = breakStops( word ) && TakeAmount( w, k, breakStops, amount );
-					statement[word] = amount.text; // (a number, or an expression: the bake writes it as it is)
-				}
-				if ( ok == false || statement.Has( "radius" ) == false )
-				{
-					fail( number, "break radius R [speed S] [seconds S] [at look D | hit]: the walls within R of it, their pieces flung at S, staying S seconds (0: for good)" );
-					continue;
-				}
-				statement["kind"] = "break";
-				add( statement );
-				step["statements"] = statements;
-				rule.steps[rule.steps.size() - 1] = step;
-				continue;
-			}
-			if ( verb == "remove" )
-			{
-				if ( w.size() != 2 || w[1].text != "self" )
-				{
-					fail( number, "remove self (an item's motion: the item leaves the world)" );
-					continue;
-				}
-				statement["kind"] = "remove";
-				add( statement );
-				step["statements"] = statements;
-				rule.steps[rule.steps.size() - 1] = step;
-				continue;
-			}
-			if ( verb == "change" )
-			{
-				if ( w.size() < 4 )
-				{
-					fail( number, "change FIELD = VALUE, += or -=" );
-					continue;
-				}
-				statement["kind"] = "change";
-				statement["text"] = RestFrom( line, w[1] );
-			}
-			else if ( verb == "emit" )
-			{
-				// emit EVENT [value EXPRESSION] (M287: the event's value, read when it happens)
-				if ( w.size() != 2 && ( w.size() < 4 || w[2].text != "value" ) )
-				{
-					fail( number, "emit <event> [value <number or expression>]" );
-					continue;
-				}
-				statement["kind"] = "emit";
-				statement["text"] = w[1].text;
-				if ( w.size() >= 4 )
-				{
-					statement["value"] = RestFrom( line, w[3] );
-				}
-			}
-			else if ( verb == "end" )
-			{
-				if ( w.size() != 1 )
-				{
-					fail( number, "end (alone on its line)" );
-					continue;
-				}
-				statement["kind"] = "end";
-			}
-			else if ( verb == "apply" )
-			{
-				// apply STATUS for S (M288): on the owner
-				if ( w.size() < 4 || w[2].text != "for" )
-				{
-					fail( number, "apply STATUS for S" );
-					continue;
-				}
-				statement["kind"] = "apply";
-				statement["text"] = w[1].text;
-				statement["value"] = RestFrom( line, w[3] );
-			}
-			else
-			{
-				Dict part;
-				std::string why;
-				if ( ParsePart( w, part, why ) == false )
-				{
-					fail( number, BeginsWith( why, "\"" + verb + "\" is not one of" )
-									  ? "\"" + verb +
-											"\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, owner, change, emit, end, every, find, cast, impulse, force, link, move, launch, follow, break, remove"
-									  : why );
-					continue;
-				}
-				Dict props = part["properties"].AsDict();
-				if ( ResolveTarget( props, false, false ) == false )
-				{
-					fail( number, "on target is what a find found or what a cast holds: inside one" );
-					continue;
-				}
-				statement["kind"] = "part";
-				statement["part"] = part;
-			}
-			add( statement );
-			step["statements"] = statements;
-			rule.steps[rule.steps.size() - 1] = step;
-			continue;
-		}
-		// --- an item's use: "use [if EXPRESSION]" is "motion Use on use [if EXPRESSION]", word for word
-		if ( verb == "use" )
-		{
-			finish();
-			rule = Building{};
-			rule.line = number;
-			rule.motion = true;
-			rule.headColumn = Column( line );
-			open = true;
-			Dict first;
-			first["statements"] = List();
-			rule.steps.push_back( first );
-			rule.settings["name"] = "Use";
-			rule.settings["trigger"] = "use";
-			if ( w.size() >= 2 )
-			{
-				if ( w[1].text != "if" || w.size() < 3 )
-				{
-					fail( number, "use [if <expression>]" );
-					continue;
-				}
-				rule.settings["conditions"] = Strings{ RestFrom( line, w[2] ) };
-			}
-			continue;
-		}
-		// --- a prediction: the viewer's own press, shown as the cue the server will answer with
-		if ( verb == "predict" )
-		{
-			finish();
-			rule = Building{};
-			rule.line = number;
-			rule.prediction = true;
-			open = true;
-			if ( w.size() < 4 || w[2].text != "as" )
-			{
-				fail( number, "predict <action> as <cue> [if <expression>]" );
-				continue;
-			}
-			rule.settings["action"] = w[1].text;
-			rule.settings["cue"] = w[3].text;
-			if ( w.size() >= 5 )
-			{
-				if ( w[4].text != "if" || w.size() < 6 )
-				{
-					fail( number, "after the cue: if <expression>" );
-					continue;
-				}
-				rule.settings["conditions"] = Strings{ RestFrom( line, w[5] ) };
-			}
-			continue;
-		}
-		if ( open && rule.prediction )
-		{
-			double seconds = 0.0;
-			if ( verb == "cooldown" && w.size() == 2 && Number( w[1], seconds ) )
-			{
-				rule.settings["cooldown"] = seconds;
-			}
-			else if ( verb == "held" && w.size() == 1 )
-			{
-				rule.settings["while_held"] = true;
-			}
-			else if ( verb == "change" && w.size() >= 4 )
-			{
-				rule.changes.push_back( RestFrom( line, w[1] ) );
-			}
-			else if ( verb == "stance" && ( w.size() == 2 || ( w.size() == 4 && w[2].text == "on" ) ) )
-			{
-				rule.settings["stance"] = w[1].text;
-				if ( w.size() == 4 )
-				{
-					rule.settings["stance_layer"] = w[3].text;
-				}
-			}
-			else if ( verb != "on" && verb != "while" )
-			{
-				fail( number, "a prediction takes cooldown S, held, change FIELD OP NUMBER, stance NAME [on LAYER]" );
-				continue;
-			}
-			if ( verb != "on" && verb != "while" )
-			{
-				continue;
-			}
-		}
-		// --- a new rule
-		if ( verb == "on" || verb == "while" )
-		{
-			finish();
-			rule = Building{};
-			rule.line = number;
-			open = true;
-			if ( verb == "on" )
-			{
-				if ( w.size() < 2 )
-				{
-					fail( number, "on what? on <event> [if <expression>]" );
-					continue;
-				}
-				rule.settings["when"] = kReactionOnEvent;
-				rule.settings["event"] = w[1].text;
-				if ( w.size() >= 3 )
-				{
-					if ( w[2].text != "if" || w.size() < 4 )
-					{
-						fail( number, "after the event: if <expression>" );
-						continue;
-					}
-					rule.settings["conditions"] = Strings{ RestFrom( line, w[3] ) };
-				}
-			}
-			else
-			{
-				if ( w.size() < 2 )
-				{
-					fail( number, "while what? while <expression>" );
-					continue;
-				}
-				rule.settings["when"] = kReactionWhile;
-				rule.settings["conditions"] = Strings{ RestFrom( line, w[1] ) };
-			}
-			continue;
-		}
-		if ( open == false )
-		{
-			errors.push_back( "line " + Num64( number ) + ": \"" + verb + "\" outside a rule: start one with on <event> or while <expression>" );
-			continue;
-		}
-		// --- what the rest of the line says, word by word: name value pairs after the action's own
-		auto options = [&]( size_t from, Dict& into, const std::vector<std::pair<const char*, const char*>>& names ) {
-			for ( size_t i = from; i < w.size(); i += 2 )
-			{
-				const std::string name = w[i].text;
-				if ( name == "volume_by" && i + 1 < w.size() )
-				{
-					into["volume_expression"] = RestFrom( line, w[i + 1] );
-					return true;
-				}
-				const char* property = nullptr;
-				for ( const auto& [word, prop] : names )
-				{
-					property = name == word ? prop : property;
-				}
-				double value = 0.0;
-				if ( property == nullptr || i + 1 >= w.size() )
-				{
-					fail( number, "\"" + name + "\" is not something " + verb + " takes" );
-					return false;
-				}
-				const std::string key = property;
-				if ( key == "bus" || key == "animation_off" || key == "scene_parent" )
-				{
-					into[key] = w[i + 1].text; // (words, not numbers)
-				}
-				else if ( Number( w[i + 1], value ) )
-				{
-					into[key] = value;
-				}
-				else
-				{
-					fail( number, name + " wants a number, not \"" + w[i + 1].text + "\"" );
-					return false;
-				}
-			}
-			return true;
-		};
-		double number1 = 0.0;
-		// --- settings
-		if ( verb == "subject" || verb == "kind" || verb == "template" )
-		{
-			if ( w.size() != 2 )
-			{
-				fail( number, verb + " takes one word" );
-				continue;
-			}
-			rule.current[verb == "subject" ? "subject" : verb == "kind" ? "subject_kind" : "subject_template"] = w[1].text;
-			rule.pendingSetting = number;
-			continue;
-		}
-		if ( verb == "side" )
-		{
-			const std::string side = w.size() == 2 ? w[1].text : std::string();
-			if ( side != "a" && side != "b" && side != "either" )
-			{
-				fail( number, "side a, side b or side either" );
-				continue;
-			}
-			rule.current["event_side"] = side == "a" ? 0 : side == "b" ? 1 : 2;
-			rule.pendingSetting = number;
-			continue;
-		}
-		if ( verb == "delay" || verb == "chance" || verb == "cooldown" )
-		{
-			if ( w.size() != 2 || Number( w[1], number1 ) == false )
-			{
-				fail( number, verb + " takes a number" );
-				continue;
-			}
-			rule.current[verb] = number1;
-			rule.pendingSetting = number;
-			continue;
-		}
-		if ( verb == "wait" )
-		{
-			if ( w.size() > 2 || ( w.size() == 2 && w[1].text != "off" ) )
-			{
-				fail( number, "wait, or wait off" );
-				continue;
-			}
-			rule.current["wait_for_server"] = w.size() == 1;
-			rule.pendingSetting = number;
-			continue;
-		}
-		if ( verb == "at" )
-		{
-			size_t next = 0;
-			std::string why;
-			// (A new place: what the last one said about a node or an offset goes with it.)
-			rule.current.Erase( "place_node" );
-			rule.current.Erase( "offset" );
-			if ( w.size() == 2 && w[1].text == "here" )
-			{
-				rule.current["place"] = 0; // where the sheet's node is (under its parent)
-			}
-			else if ( ParseAt( w, 1, w.size(), rule.current, next, why ) == false || next != w.size() )
-			{
-				fail( number, why.empty() ? std::string( "after where: from PATH, offset X Y Z" ) : why );
-				continue;
-			}
-			rule.pendingSetting = number;
-			continue;
-		}
-		// --- actions
-		Rule action;
-		action.line = number;
-		Dict& p = action.properties;
-		if ( verb == "sound" )
-		{
-			if ( w.size() < 2 )
-			{
-				fail( number, "sound <file>" );
-				continue;
-			}
-			p["sound"] = w[1].text;
-			if ( options( 2, p, { { "volume", "volume_db" }, { "pitch", "pitch_scale" }, { "jitter", "pitch_jitter" }, { "range", "max_distance" }, { "bus", "bus" } } ) == false )
-			{
-				continue;
-			}
-		}
-		else if ( verb == "scene" )
-		{
-			if ( w.size() < 2 )
-			{
-				fail( number, "scene <file>" );
-				continue;
-			}
-			p["scene"] = w[1].text;
-			if ( options( 2, p, { { "under", "scene_parent" }, { "life", "scene_lifetime" } } ) == false )
-			{
-				continue;
-			}
-		}
-		else if ( verb == "play" )
-		{
-			if ( w.size() < 3 )
-			{
-				fail( number, "play <animation player> <animation> [off <animation>]" );
-				continue;
-			}
-			p["animation_player"] = w[1].text;
-			p["animation"] = w[2].text;
-			if ( options( 3, p, { { "off", "animation_off" } } ) == false )
-			{
-				continue;
-			}
-		}
-		else if ( verb == "set" )
-		{
-			if ( w.size() < 4 )
-			{
-				fail( number, "set <node> <property> <value> [blend S], or set <node> <property> = <expression>" );
-				continue;
-			}
-			p["target"] = w[1].text;
-			p["property"] = w[2].text;
-			if ( w[3].text == "=" && w[3].quoted == false )
-			{
-				if ( w.size() < 5 )
-				{
-					fail( number, "set <node> <property> = <expression>" );
-					continue;
-				}
-				p["value_expression"] = RestFrom( line, w[4] );
-			}
-			else
-			{
-				p["value"] = ValueOf( w[3] );
-				if ( options( 4, p, { { "blend", "blend_time" } } ) == false )
-				{
-					continue;
-				}
-			}
-		}
-		else if ( verb == "call" )
-		{
-			if ( w.size() < 3 )
-			{
-				fail( number, "call <node> <method> [arguments]" );
-				continue;
-			}
-			p["target"] = w[1].text;
-			p["method"] = w[2].text;
-			List args;
-			for ( size_t i = 3; i < w.size(); ++i )
-			{
-				args.push_back( ValueOf( w[i] ) );
-			}
-			p["method_args"] = args;
-		}
-		else if ( verb == "shake" )
-		{
-			if ( w.size() < 2 || Number( w[1], number1 ) == false )
-			{
-				fail( number, "shake <amount 0-1> [time S]" );
-				continue;
-			}
-			p["shake"] = number1;
-			if ( options( 2, p, { { "time", "shake_time" } } ) == false )
-			{
-				continue;
-			}
-		}
-		else if ( verb == "flash" )
-		{
-			const Value color = w.size() >= 2 ? ValueOf( w[1] ) : Value();
-			if ( color.type() != Value::Type::Color )
-			{
-				fail( number, "flash rgba(r, g, b, a) [time S]" );
-				continue;
-			}
-			p["flash_color"] = color;
-			if ( options( 2, p, { { "time", "flash_time" } } ) == false )
-			{
-				continue;
-			}
+			LowerPredict( lowering, block );
 		}
 		else
 		{
-			fail( number, "\"" + verb + "\" is not a setting or an action of a rule" );
-			continue;
+			LowerHud( lowering, block );
 		}
-		// The settings read so far, as they are now: a setting below it is for the actions after it.
-		Dict taken = rule.current.Duplicate();
-		taken.Merge( action.properties, true );
-		action.properties = taken;
-		rule.pendingSetting = 0;
-		rule.actions.push_back( action );
 	}
-	finish();
+	// (In the order of their lines.)
+	std::stable_sort( found.begin(), found.end(), []( const std::string& a, const std::string& b ) { return MistakeLine( a ) < MistakeLine( b ); } );
+	errors.insert( errors.end(), found.begin(), found.end() );
 	return out;
 }
 
