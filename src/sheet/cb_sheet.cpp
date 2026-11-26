@@ -8,13 +8,15 @@
 //                               runs each sheet test (M291: sheet_test.h) on the real server,
 //                               headless; what failed as FILE:LINE: why. Exit code 1 if any did
 //
-// A motion block's nodes (a find's shape, a marker) are the scene's: only the editor and the bake,
-// which have the scene, check them.
+// A motion block's nodes (a find's shape, a marker) are the scene's: check compiles a sheet's motions
+// against the parts its owner's bake recorded (motions/*.cfg naming it, M294), as the server does.
 
+#include "sheet_parts.h"
 #include "sheet_rules.h"
 #include "sheet_test.h"
 #include "sheet_v1.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -51,6 +53,36 @@ bool Write( const std::string& path, const std::string& text )
 	return true;
 }
 
+// (M294) The motions of every owner whose parts name the sheet `path` (in `project`, as the parts file
+// names it), compiled as the server compiles them; their mistakes into `errors` ("line N: why" for
+// this sheet's lines, the owner's file for the rest).
+void MotionMistakes( const std::filesystem::path& project, const std::string& path, cb::sheet::Strings& errors )
+{
+	namespace fs = std::filesystem;
+	std::error_code ignored;
+	for ( fs::directory_iterator it( project / "motions", ignored ), end; it != end; it.increment( ignored ) )
+	{
+		std::string partsText, text, why;
+		cb::sheet::OwnerParts owner;
+		if ( it->path().extension() != ".cfg" || Read( it->path().string(), partsText ) == false || cb::sheet::ReadParts( partsText, owner, why ) == false )
+		{
+			continue;
+		}
+		const bool names = std::any_of( owner.sheets.begin(), owner.sheets.end(), [&]( const cb::sheet::OwnerParts::Sheet& s ) { return s.path == path; } );
+		if ( names == false )
+		{
+			continue;
+		}
+		auto read = [&project]( const std::string& one, std::string& out ) { return Read( ( project / one ).string(), out ); };
+		if ( cb::sheet::MotionsFromParts( owner, read, text, why ) == false )
+		{
+			const std::string own = path + " line ";
+			errors.push_back( why.rfind( own, 0 ) == 0 ? "line " + why.substr( own.size() )
+													   : "line 1: the motions of " + fs::relative( it->path(), project ).generic_string() + ": " + why );
+		}
+	}
+}
+
 int Usage()
 {
 	std::fprintf( stderr, "cb_sheet check FILE...\ncb_sheet fmt [--check] FILE...\ncb_sheet test FILE.cbtest...\n" );
@@ -65,6 +97,9 @@ int main( int argc, char** argv )
 	{
 		return Usage();
 	}
+	// (A move's values end at the next movement parameter: the simulation's names, as the editor and
+	// the server read them.)
+	cb::sheet::UseSimulationMoveParameters();
 	const std::string command = argv[1];
 	bool onlyCheck = false;
 	std::vector<std::string> files;
@@ -118,9 +153,9 @@ int main( int argc, char** argv )
 			continue;
 		}
 		// "uses res://..." (M289): from the folder above it with a project.godot.
+		namespace fs = std::filesystem;
+		fs::path project = fs::absolute( fs::path( file ) ).parent_path();
 		{
-			namespace fs = std::filesystem;
-			fs::path project = fs::absolute( fs::path( file ) ).parent_path();
 			while ( project.has_parent_path() && project != project.parent_path() && fs::exists( project / "project.godot" ) == false )
 			{
 				project = project.parent_path();
@@ -133,6 +168,12 @@ int main( int argc, char** argv )
 		{
 			cb::sheet::Strings errors;
 			cb::sheet::ParseRules( text, errors ); // (a sheet not of version 1 is said at its line 1)
+			// (M294) Its motions, as the server compiles them: against the parts its owner's bake recorded
+			// (motions/*.cfg naming it), so what only the bake said is said here too.
+			if ( errors.empty() )
+			{
+				MotionMistakes( project, fs::relative( fs::absolute( fs::path( file ) ), project ).generic_string(), errors );
+			}
 			for ( const std::string& error : errors )
 			{
 				// ("line N: why" as FILE:N: why)

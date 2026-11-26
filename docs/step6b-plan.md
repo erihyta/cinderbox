@@ -41,8 +41,8 @@ done, no stranger's bytes go through a Godot loader, and nodes no longer grow wi
 - **Authoring is Godot's editor**: a modder still makes a `CbItem` scene with meshes, materials,
   particles, a sheet, a HUD scene, and presses Publish. What a scene may contain does not shrink
   without a reason the editor says (the bake already warns what it cannot draw).
-- **The simulation's data is as it is**: `items/<kind>.cfg` (with the parts a sheet names, step 6.5's
-  M294: no `motions/<kind>.cfg` any more), the ozz
+- **The simulation's data is as it is**: `items/<kind>.cfg`, `motions/<owner>.cfg` (since step 6.5's
+  M294 the parts of the scene a sheet's motions name, not motions: the server compiles the sheets), the ozz
   skeletons and clips, a character's graph. They move into the cooked item unchanged; the server
   reads them as it does today (it already never uses Godot for them).
 - **Sheets are text** (step 6, D4): the item carries the source; every reader compiles it.
@@ -119,7 +119,7 @@ chunk*  (kind u32, size u64, hash 32 bytes, bytes): each chunk's size and hash a
 
 | Chunk kind | Holds | Today |
 |---|---|---|
-| `simcfg` | `items/<kind>.cfg` (with its sheets' parts, M294), a pack's `graph.cfg` / `anim.cfg`, a character's files | the same files in the zip |
+| `simcfg` | `items/<kind>.cfg`, `motions/<owner>.cfg` (its sheets' parts, M294), a pack's `graph.cfg` / `anim.cfg`, a character's files | the same files in the zip |
 | `ozz` | a skeleton or a clip, ozz's own archive | the same |
 | `sheet` | a sheet's text, by its `res://` path (a `uses` is found by it) | the same |
 | `mesh` | vertex arrays (positions, normals, tangents, UVs, colours, bones, weights) and indices, per surface; an AABB | `Mesh` resources inside `.scn` |

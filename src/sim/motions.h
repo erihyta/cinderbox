@@ -7,8 +7,9 @@
 // commands. That is too late for movement: a dash has to start on the tick of the press, in the
 // player's own prediction. So a motion is not a rule that runs somewhere: it is data every
 // simulation runs, the way a character's state machine is (anim_graph.h). It is authored in Godot
-// (a rules sheet's motion blocks), baked to text (motions/<set>.cfg in the mod's item), read by the server, sent
-// to every client in the schema, and compiled against it. The input is what a client already
+// (a rules sheet's motion blocks), compiled to text by the server from the mod's sheets (and the parts
+// of the scene they name, motions/<set>.cfg in the mod's item: M294), sent to every client in the
+// schema, and compiled against it. The input is what a client already
 // simulates ahead, so a motion is predicted and rolled back like walking is.
 //
 // A motion is a trigger and what it does.

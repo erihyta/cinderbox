@@ -18,7 +18,7 @@ struct LookItem
 	std::map<std::string, float> properties; // the CbItem's properties ("gun.damage" = 25)
 	std::string pack;						 // the animation pack it brings while it is held ("gun.pistol_hold"), or none
 	std::string holster;					 // the socket it hangs in while it is put away ("Hip"), or none
-	bool motions = false;					 // its sheets' motion blocks: a set named like the kind (motions/<kind>.cfg)
+	bool motions = false;					 // its sheets' motion blocks: a set named like the kind (motions/<kind>.cfg: their parts, M294)
 	std::string useKey; // its own key ("H"): uses the first one carried, wherever it is; or none
 	// Its own fields (CbItem.fields): a field of each copy, with what a new copy starts with.
 	struct Field

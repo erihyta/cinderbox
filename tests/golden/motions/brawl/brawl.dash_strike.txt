@@ -1,0 +1,18 @@
+cinderbox_motions	3
+motion	Use
+when	event	brawl.dash_strike.used
+if	( brawl.cd_dash <= 0 )
+tags	attack
+blocked	guard	pulled
+change	brawl.cd_dash	=	3
+emit	brawl.dash_strike.started
+impulse	self	16	move	horizontal
+param	friction	0	0.25
+motion	Hit
+when	event	brawl.dash_strike.used
+if	( brawl.cd_dash <= 0 )
+duration	0.05
+probe	4	0
+probe_frame	facing
+hold_emit	brawl.dash_strike.hit
+impulse	hit	10	facing	none

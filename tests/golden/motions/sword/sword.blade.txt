@@ -1,0 +1,34 @@
+cinderbox_motions	3
+motion	Swing
+when	event	sword.blade.used
+cooldown	0.4
+tags	attack
+blocked	block	stunned
+emit	sword.swing
+step	0	0.5	sword.strike
+find	all	0	2	look
+shape	0	0.6	0.19999999	2.5	-0.6	0.19999999	2.5	0.6	1.8	2.5	-0.6	1.8	2.5	0.6	0.19999999	0.099999905	-0.6	0.19999999	0.099999905	0.6	1.8	0.099999905	-0.6	1.8	0.099999905
+emit	sword.hit
+impulse	found	6	facing	none
+endfind
+timeout
+find	all	0	2	look
+shape	0	0.6	0.19999999	2.5	-0.6	0.19999999	2.5	0.6	1.8	2.5	-0.6	1.8	2.5	0.6	0.19999999	0.099999905	-0.6	0.19999999	0.099999905	0.6	1.8	0.099999905	-0.6	1.8	0.099999905
+emit	sword.hit
+impulse	found	6	facing	none
+endfind
+step	0	1	sword.done
+motion	Block
+when	while
+if	( held.use2 ) and ( sword.blade )
+tags	block
+blocked	attack	stunned
+param	walk_speed	2
+param	sprint_speed	2
+param	jump_speed	0
+motion	Reeling
+when	while
+if	( stunned ) and ( carried.sword.blade )
+param	walk_speed	1
+param	sprint_speed	1
+param	jump_speed	0

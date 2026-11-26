@@ -88,10 +88,10 @@ After:
 
 | Who | Does |
 |---|---|
-| The bake (editor, publish) | writes the parts a sheet names into `items/<kind>.cfg`: each shape (sphere, box, capsule, hull points), marker (origin and forward), path (its samples), by its node path. Data only, no logic |
+| The bake (editor, publish) | writes the parts a sheet names (as built: into `motions/<owner>.cfg`, M294): each shape (sphere, box, capsule, hull points), marker (origin and forward), path (its samples), by its node path. Data only, no logic |
 | The server | compiles each item's sheet against its parts (`BakeSheetMotion` with a `Scene` read from those lines) and sends the motion text in the schema, as today |
 | `cb_sheet test`, `cb_sheet check` | do the same, so a sheet that was edited and not baked is what they run and check |
-| The item | carries the sheet and its parts; no `motions/` folder |
+| The item | carries the sheet and its parts; no motions compiled elsewhere |
 
 - `CbItem`'s `use_conditions`, `use_changes`, `use_cooldown` and `use_emits` go (no shipped scene
   sets them; the sheet's `use` block says it).
@@ -132,7 +132,7 @@ agreeing, as in M287 and M289.
 - brawl's `cd_*` timers go; the HUD lines read the motions' cooldowns.
 - The dash strike in one motion; the pistol's and rifle's numbers once; the prediction's mark
   cooldown from `mark.seconds`.
-- The fist, bat and sword without their copied `timeout` lines, as F3 decides.
+- (The fist, bat and sword keep their copied `timeout` lines: F3. The owner tests the other way soon.)
 - Units everywhere; `let` where a phrase repeats (the frag's falloff, the telekinesis's point).
 - Comments say what and why, not milestone numbers.
 - `docs/sheets.md` follows: the new words, no example that is refused.
@@ -142,7 +142,7 @@ agreeing, as in M287 and M289.
 | # | Milestone | Done when |
 |---|---|---|
 | **M293** (**done**, 2026-11-26: as built, below the table) | **One front end** ([§3.1](#31-the-front-end-m293)) | every shipped, check and starter sheet lowers to the same rules (golden files unchanged, CI's re-bake unchanged); the 23 sheet tests pass; `LowerVersion1`, `ParseVersion0`, version 0 and `convert` deleted; errors with columns; a `let` named like a word of the language is refused |
-| **M294** | **The server compiles the sheet** ([§3.2](#32-the-server-compiles-the-sheet-m294)) | no mod has a `motions/` folder; the server, `cb_sheet test` and `cb_sheet check` compile sheets against baked parts; `CbItem.use_*` gone; the tests and the bots pass |
+| **M294** (**done**, 2026-11-26: as built, below the table) | **The server compiles the sheet** ([§3.2](#32-the-server-compiles-the-sheet-m294)) | no mod has a `motions/` folder; the server, `cb_sheet test` and `cb_sheet check` compile sheets against baked parts; `CbItem.use_*` gone; the tests and the bots pass |
 | **M295** | **Limits** ([§3.3](#33-limits-m295)) | `active` reads any motion; no tag dropped; `every` without a cap; reference hashes refreshed, every compiler agreeing |
 | **M296** | **The language, made regular** ([§3.4](#34-the-language-made-regular-m296)) | each change has a `.cbtest` or a golden file; `sheets.md` updated |
 | **M297** | **Shipped sheets on the new words** ([§3.5](#35-shipped-sheets-on-the-new-words-m297)) | no `cd_*` field in brawl; no number written twice in the guns; a playtest by hand of the kit, the sword, the bat and the guns |
@@ -156,6 +156,18 @@ agreeing, as in M287 and M289.
 | Deleted | `LowerVersion1` and its text helpers, `ParseVersion0` (1,366 lines), version 0, `cb_sheet convert`, the Sheet screen's Convert, `tools/reactions_to_rules.py` (it wrote version 0). The longest function is now 235 lines; the sheet compiler about 1,000 lines shorter |
 | Mistakes | said in version 1's words (`wait for`, `on item`, `create`), in the order of their lines; new ones: a let named like a word of the language, a line under a line that has none (`emit` with lines under it) |
 | Errors with columns | **not yet**: a mistake still names its line. Moved to M296, with the Sheet screen underlining the word |
+
+**M294 as built** (2026-11-26):
+
+| Planned | Built |
+|---|---|
+| The bake records the parts a sheet names | `sheet_parts.h`: the editor's bake wraps the scene in a `RecordingScene`; every marker, path and shape a sheet's motions asked for is written, with the sheets' paths and an item's kind and use, as a parts file. The editor and the server bake through one function (`BakeOwnerMotions`) |
+| Parts in `items/<kind>.cfg`; no `motions/` folder | **reconsidered**: the parts file stays at `motions/<owner>.cfg` (one per motion set and per item with motions). Moving it bought nothing: the export filters, the game's pack check and the server's readers already know that folder. What changed is what the file holds: parts, not motions (`cinderbox_parts 1`; a file of motions is refused: "baked before M294, bake it again") |
+| The server compiles | `GameServer::Start` compiles each set from its parts and the mod's sheets (`MotionsFromParts`); the motion text stays what the server sends in the schema ([§5](#5-reconsidered-and-dropped)) |
+| Proved the same | `tests/golden/motions`: every mod's motions as the editor baked them before M294, recorded first; the server's compile matches all 17 byte for byte (`cb_tests motions_golden`). The 195 tests pass; a server on the published items compiles every set |
+| `cb_sheet test` and `check` | `test` runs the sheet as it is (an edit with no bake is what it tests); `check` compiles a sheet's motions against the parts naming it, so a node the scene lacks (`along down`) is said there |
+| `CbItem.use_*` | gone, with the scene interface's item questions (the bake is given the kind and the use) |
+| Found on the way | the published items left out `motion_sets/` (its scenes are editor-only), and with it the sets' sheets the server now reads: the export excludes only `motion_sets/*.tscn`, and the game's pack check allows `motion_sets/` (sheets are plain data there as anywhere). A sheet's motion blocks now count as the server's in an item (`ItemServerParts`): only its looks (react, predict, hud) are left out |
 
 **Order, and why.** M293 first: every later change is made once, on the tree, not in a text
 rewrite that is about to go. M294 next: it decides what an item carries, which 6b builds on. M295
@@ -177,11 +189,11 @@ when the words it uses exist.
 
 | # | Question | Options | Leaning |
 |---|---|---|---|
-| F1 | Version 0 and the converter | delete / keep | **delete**: refused where content comes in since M292; no stranger has a sheet; the redesign may break mods |
-| F2 | The word for riding along with a place | `attached` / `riding` / `follow` | **`attached`** (the engines' word; `follow` is already a motion's word for a path) |
-| F3 | The fist, bat and sword when the clip's markers never come (the review's D-1) | (a) `wait for X or S` everywhere: a swing also waits out its recovery; (b) keep the copies; (c) a word to end early | **(a)**, with `fist.cbtest` updated |
-| F4 | `inventory.start` (the review's D-3) | the item's / the game mode's | **the game mode's**, in M297 |
-| F5 | `item.ruled` | a param / derived from a sheet with a use motion | **derived**, in M296 |
+| F1 | Version 0 and the converter | delete / keep | **decided (M293, on its leaning): deleted**: refused where content comes in since M292; no stranger has a sheet; the redesign may break mods |
+| F2 | The word for riding along with a place | `attached` / `riding` / `follow` | **decided (the owner, 2026-11-26): `attached`** (the engines' word; `follow` is already a motion's word for a path) |
+| F3 | The fist, bat and sword when the clip's markers never come (the review's D-1) | (a) `wait for X or S` everywhere: a swing also waits out its recovery; (b) keep the copies; (c) a word to end early | **decided (the owner, 2026-11-26): (b), keep the copies for now**; the owner tests (a) soon ([ROADMAP, to try](../ROADMAP.md#to-try-the-owners-experiments)) |
+| F4 | `inventory.start` (the review's D-3) | the item's / the game mode's | **decided (the owner, 2026-11-26): the item's, as it is**; the game mode's is an experiment for later ([ROADMAP, to try](../ROADMAP.md#to-try-the-owners-experiments)) |
+| F5 | `item.ruled` | a param / derived from a sheet with a use motion | **decided (the owner, 2026-11-26): derived**, in M296 |
 
 ## 7. Risks
 

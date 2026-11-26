@@ -1,0 +1,9 @@
+cinderbox_motions	3
+motion	Throwing
+when	event	grenade.shell.used
+cooldown	0.7
+duration	0.7
+step	0	0.3	grenade.release
+goon
+emit	grenade.thrown
+launch_carried	grenade.shell	17	look	3	0.8	4

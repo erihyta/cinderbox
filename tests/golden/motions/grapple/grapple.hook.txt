@@ -1,0 +1,18 @@
+cinderbox_motions	3
+motion	Throw
+when	event	grapple.hook.used
+if	( not linked )
+until	( grapple.hook.used or pressed.jump )
+duration	2
+emit	grapple.fired
+probe	40	80
+hold_emit	grapple.hooked
+link	hit	0	4	0
+force	self	to	accel	160	15	0.1	0
+param	air_control	0.6
+param	gravity	0
+param	airborne	1
+motion	Throwing
+when	event	grapple.hook.used
+if	( not linked )
+duration	0.45

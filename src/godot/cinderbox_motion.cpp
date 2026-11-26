@@ -1,6 +1,9 @@
 #include "cinderbox_motion.h"
 
 #include "sheet_motions.h"
+#include "sheet_parts.h"
+
+#include <algorithm>
 
 #include "cue/cue_info.h"
 
@@ -26,7 +29,7 @@ struct Info
 	const char* detail;
 };
 
-const Info kSetInfo = { "", "A mod's motions: the motion blocks of the rules sheets under it, baked to motions/<set_name>.cfg for the server.",
+const Info kSetInfo = { "", "A mod's motions: the motion blocks of the rules sheets under it, which the server compiles; the parts of the scene they name are baked to motions/<set_name>.cfg.",
 						"[b]set_name[/b]: what the server mod asks for: declare.Motions( \"dash.moves\" ).\n"
 						"[b]Baking[/b]: saving the scene, the Bake button, and publishing the mod. A bake that changes "
 						"nothing writes nothing.\n"
@@ -53,7 +56,7 @@ Callable CbMotionSet::get_bake_button()
 	return Callable( this, "bake_to_project" );
 }
 
-std::string CbMotionSet::Bake( String& error ) const
+std::string CbMotionSet::Bake( String& error, std::string* parts ) const
 {
 	String name = m_name.strip_edges();
 	if ( name.is_empty() || name.contains( "/" ) || name.contains( " " ) || name.contains( "\\" ) || MotionTextPlain( name ) == false )
@@ -61,12 +64,12 @@ std::string CbMotionSet::Bake( String& error ) const
 		error = "set_name must be one word (dash.moves): the server mod asks for the set by it";
 		return std::string();
 	}
-	// The motion blocks of its sheets (a CbRules under it, holding a .cbsheet). (The header's words are those of
-	// the files baked before M268, when the motion nodes baked here too: unchanged, so no published
-	// set's file changes.)
-	std::string text = "cinderbox_motions\t3\n# Baked from the CbMotion nodes of a CbMotionSet. Edit the scene and bake again.\n";
+	// The motion blocks of its sheets (a CbRules under it, holding a .cbsheet), as the server compiles
+	// them; and what they name of the scene (M294: the mod carries that and its sheets).
+	std::string text = "cinderbox_motions\t3\n";
 	std::vector<std::string> names;
-	if ( BakeSheetMotions( this, String(), text, names, error ) == false )
+	sheet::OwnerParts recorded;
+	if ( BakeSheetMotions( this, String(), 0, text, names, &recorded, error ) == false )
 	{
 		return std::string();
 	}
@@ -75,6 +78,13 @@ std::string CbMotionSet::Bake( String& error ) const
 	{
 		error = vformat( "%d motions: a server runs at most %d, all its mods' sets together", count, kMotionLimit );
 		return std::string();
+	}
+	// (No parts when a sheet with motions is kept inside the scene: the server reads sheets from files.)
+	const bool files = std::all_of( recorded.sheets.begin(), recorded.sheets.end(), []( const sheet::OwnerParts::Sheet& s ) { return s.path.empty() == false; } );
+	if ( parts != nullptr && files )
+	{
+		*parts = sheet::WriteParts( recorded, "The parts of the motion set " + std::string( name.utf8().get_data() ) +
+												  "'s scene its motions name, and its sheets (M294): the server compiles the sheets. Edit the scene and bake again." );
 	}
 	return text;
 }
@@ -94,7 +104,8 @@ Dictionary CbMotionSet::bake() const
 {
 	Dictionary result;
 	String error;
-	std::string text = Bake( error );
+	std::string parts;
+	std::string text = Bake( error, &parts );
 	// (How many: its lines that start one.)
 	int motions = 0;
 	for ( size_t at = text.find( "\nmotion\t" ); at != std::string::npos; at = text.find( "\nmotion\t", at + 1 ) )
@@ -102,6 +113,7 @@ Dictionary CbMotionSet::bake() const
 		motions += 1;
 	}
 	result["text"] = String::utf8( text.c_str() );
+	result["parts"] = String::utf8( parts.c_str() );
 	result["error"] = text.empty() ? error : String();
 	result["motions"] = motions;
 	return result;
@@ -115,9 +127,15 @@ void CbMotionSet::bake_to_project()
 		UtilityFunctions::push_error( "Motions bake failed: ", baked["error"] );
 		return;
 	}
+	if ( String( baked["parts"] ).is_empty() )
+	{
+		UtilityFunctions::push_error( "Motions bake: a sheet with motions is kept inside the scene: save it as a .cbsheet file (the server compiles its motions from the file)" );
+		return;
+	}
 	DirAccess::make_dir_recursive_absolute( "res://motions" );
 	String path = "res://motions/" + m_name.strip_edges() + ".cfg";
-	PackedByteArray bytes = String( baked["text"] ).to_utf8_buffer();
+	// (What the mod carries: its motions' parts, M294; the server compiles the motions from its sheets.)
+	PackedByteArray bytes = String( baked["parts"] ).to_utf8_buffer();
 	// A bake that changes nothing touches nothing: it runs on every save and every publish.
 	if ( FileAccess::file_exists( path ) && FileAccess::get_file_as_bytes( path ) == bytes )
 	{

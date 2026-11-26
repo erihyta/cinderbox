@@ -2,6 +2,7 @@
 
 #include "cue_rules.h"
 #include "sheet_bake.h"
+#include "sheet_parts.h"
 #include "sheet_rules.h"
 
 #include <godot_cpp/classes/area3d.hpp>
@@ -97,31 +98,6 @@ public:
 		: m_from( from )
 		, m_root( root )
 	{
-	}
-
-	bool IsItem() const override
-	{
-		return m_root != nullptr && m_root->get( "use_conditions" ).get_type() == Variant::PACKED_STRING_ARRAY;
-	}
-	int ItemUse() const override
-	{
-		return m_root != nullptr ? int( m_root->get( "use" ) ) : 0;
-	}
-	sheet::Strings UseConditions() const override
-	{
-		return Strings( m_root->get( "use_conditions" ) );
-	}
-	sheet::Strings UseChanges() const override
-	{
-		return Strings( m_root->get( "use_changes" ) );
-	}
-	double UseCooldown() const override
-	{
-		return double( m_root->get( "use_cooldown" ) );
-	}
-	std::string UseEmits() const override
-	{
-		return Std( String( m_root->get( "use_emits" ) ) );
 	}
 
 	bool Place( const std::string& path, const char* what, sheet::Float3& zAxis, sheet::Float3& origin, std::string& why ) const override
@@ -262,67 +238,40 @@ public:
 	}
 
 private:
-	static sheet::Strings Strings( const PackedStringArray& all )
-	{
-		sheet::Strings out;
-		for ( int64_t i = 0; i < all.size(); ++i )
-		{
-			out.push_back( Std( all[i] ) );
-		}
-		return out;
-	}
-
 	const Node* m_from;
 	const Node* m_root;
 };
 
-bool BakeSheetMotions( const Node* node, const String& kind, std::string& lines, std::vector<std::string>& names, String& error )
+bool BakeSheetMotions( const Node* node, const String& kind, int use, std::string& lines, std::vector<std::string>& names, sheet::OwnerParts* parts,
+					   String& error )
 {
-	TypedArray<Node> sheets = node->find_children( "*", "CbRules", true, false );
-	for ( int64_t s = 0; s < sheets.size(); ++s )
+	// Every sheet under it, each with the scene its paths start in (the node its CbRules is under);
+	// the sheet compiler bakes them as the server will (sheet_parts.h, M294), recording their parts.
+	TypedArray<Node> holders = node->find_children( "*", "CbRules", true, false );
+	std::vector<GodotScene> scenes;
+	scenes.reserve( size_t( holders.size() ) );
+	std::vector<sheet::SheetSource> sources;
+	for ( int64_t s = 0; s < holders.size(); ++s )
 	{
-		const CbRules* holder = Object::cast_to<CbRules>( sheets[s] );
+		const CbRules* holder = Object::cast_to<CbRules>( holders[s] );
 		if ( holder == nullptr || holder->get_sheet().is_null() )
 		{
 			continue;
 		}
-		String file = holder->SheetName();
-		sheet::Strings problems;
-		const String text = holder->SheetText();
-		const std::vector<sheet::Rule> rules = sheet::ParseRules( Std( text ), problems );
-		// A sheet with motion blocks bakes only without a mistake: one it could not read would be a
-		// motion silently left out.
-		const bool hasMotions = text.begins_with( "motion " ) || text.contains( "\nmotion " ) || text.contains( "\nmotion\t" );
-		if ( hasMotions && problems.empty() == false )
-		{
-			error = file + " " + String::utf8( problems[0].c_str() );
-			return false;
-		}
-		const Node* from = Object::cast_to<Node>( sheets[s] )->get_parent();
-		const GodotScene scene( from, node );
-		for ( const sheet::Rule& rule : rules )
-		{
-			if ( rule.type != "motion" )
-			{
-				continue;
-			}
-			std::string why;
-			std::string baked = sheet::BakeSheetMotion( rule.properties, Std( kind ), scene, why );
-			if ( baked.empty() )
-			{
-				// (A statement's mistake says its line; the rest are the motion's first line's.)
-				error = file + ( why.rfind( "line ", 0 ) == 0 ? " " + String::utf8( why.c_str() ) : " line " + String::num_int64( rule.line ) + ": " + String::utf8( why.c_str() ) );
-				return false;
-			}
-			const std::string name = rule.properties.Get( "name", "" ).AsString();
-			if ( std::find( names.begin(), names.end(), name ) != names.end() )
-			{
-				error = file + " line " + String::num_int64( rule.line ) + ": there is a motion named " + String( name.c_str() ) + " already";
-				return false;
-			}
-			names.push_back( name );
-			lines += baked;
-		}
+		const String path = holder->get_sheet()->get_path();
+		scenes.emplace_back( Object::cast_to<Node>( holders[s] )->get_parent(), node );
+		sheet::SheetSource source;
+		source.name = Std( holder->SheetName() );
+		source.path = path.begins_with( "res://" ) && path.ends_with( ".cbsheet" ) ? Std( path.substr( 6 ) ) : std::string();
+		source.text = Std( holder->SheetText() );
+		source.scene = &scenes.back();
+		sources.push_back( source );
+	}
+	std::string why;
+	if ( sheet::BakeOwnerMotions( sources, Std( kind ), use, lines, names, parts, why ) == false )
+	{
+		error = String::utf8( why.c_str() );
+		return false;
 	}
 	return true;
 }

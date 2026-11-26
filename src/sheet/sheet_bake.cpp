@@ -474,7 +474,7 @@ bool FindShapeLines( const Dict& shape, const Scene& scene, bool own, std::strin
 
 } // namespace
 
-std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene& scene, std::string& error )
+std::string BakeSheetMotion( const Dict& p, const std::string& kind, int use, const Scene& scene, std::string& error )
 {
 	auto fail = [&]( const std::string& why ) {
 		error = why;
@@ -588,9 +588,8 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 	{
 		return fail( "an item's motion (on item) starts on an event said at it: on expired, or on EVENT" );
 	}
-	// The item's own "When used" fields (its CbItem's use_conditions, use_changes, use_cooldown,
-	// use_emits) join its motion named Use, as they join a use made of nodes.
-	const bool itemUse = trigger == "use" && name == "Use" && scene.IsItem();
+	// An item's motion named Use (its use). (Until M294 its CbItem's "When used" fields joined it.)
+	const bool itemUse = trigger == "use" && name == "Use" && kind.empty() == false;
 	if ( trigger == "use" )
 	{
 		if ( kind.empty() )
@@ -599,7 +598,7 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 		}
 		// An item used while its key is held (use: a press, and while held) is in use while it is held:
 		// its use motions are on for as long, as a use made of nodes is.
-		if ( scene.IsItem() && scene.ItemUse() == kItemUseHold )
+		if ( use == kItemUseHold )
 		{
 			text += "when\twhile\n";
 			conditions.push_back( "using." + kind );
@@ -607,11 +606,6 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 		else
 		{
 			text += "when\tevent\t" + kind + ".used\n";
-		}
-		if ( itemUse )
-		{
-			const Strings own = scene.UseConditions();
-			conditions.insert( conditions.end(), own.begin(), own.end() );
 		}
 	}
 	else if ( trigger == "press" )
@@ -688,7 +682,7 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 	{
 		text += "until\t" + any + "\n";
 	}
-	const double cooldown = p.Has( "cooldown" ) ? p.Get( "cooldown", 0.0 ).AsFloat() : itemUse ? scene.UseCooldown() : 0.0;
+	const double cooldown = p.Get( "cooldown", 0.0 ).AsFloat();
 	if ( cooldown > 0.0 )
 	{
 		text += "cooldown\t" + Num( cooldown ) + "\n";
@@ -1015,37 +1009,12 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 				text += "endfind\n";
 			}
 		}
-		if ( s == 0 && itemUse )
+		if ( s == 0 && itemUse && guard.empty() == false )
 		{
-			// The item's own changes and event, after the first step's (as a use of nodes has them).
-			if ( guard.empty() == false )
-			{
-				text += "guard\n";
-				guard.clear();
-			}
-			for ( const std::string& raw : scene.UseChanges() )
-			{
-				if ( Strip( raw ).empty() )
-				{
-					continue;
-				}
-				Change change;
-				std::string why;
-				if ( ParseChange( raw, change, &why ) == false || Plain( change.field ) == false )
-				{
-					return fail( "use_changes \"" + raw + "\": " + why );
-				}
-				text += "change\t" + change.field + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) + "\t" + Num( change.value ) + "\n";
-			}
-			const std::string emits = Strip( scene.UseEmits() );
-			if ( emits.empty() == false )
-			{
-				if ( Plain( emits ) == false || Contains( emits, " " ) )
-				{
-					return fail( "use_emits names one event" );
-				}
-				text += "emit\t" + emits + "\n";
-			}
+			// (Where the item's own "When used" changes and event came until M294: the guard ends first,
+			// as it did, so an item's use bakes as it did.)
+			text += "guard\n";
+			guard.clear();
 		}
 	}
 

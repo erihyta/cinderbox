@@ -390,7 +390,7 @@ there is to say:
 | its sheet's `field ... on item` lines | **its own state**, a field of every copy (`field gun.rounds int on item = 12`): a new copy starts with the value, and keeps its own from then on (simulation state: predicted, rolled back, in a joiner's snapshot). The value's type is the field's (a whole number an Int, a decimal a Float, true / false a Bool). Server mods read and write it (`ctx.Get` / `ctx.Set` on the item); looks read the one in a player's hand as `hand.<field>` |
 | `animation_pack` | the pack it brings: its layers the character has while it is held (`gun.pistol_hold`), and its [overlay](characters.md#animation-packs) while it is carried at all (the boots' dash pose): a `CbAnimPack` scene of the same project |
 | `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
-| its sheet's `use` rule and motion blocks, and its When used rules | [what using it does](motions.md#what-an-item-does): the boots' dash, the hook's line and rope |
+| its sheet's `use` rule and motion blocks (the server compiles them, M294) | [what using it does](motions.md#what-an-item-does): the boots' dash, the hook's line and rope |
 | `use_key` | its own key (`H`): uses the first one carried, wherever it is (the action `<kind>.use`); the player's own wins |
 
 What it looks and sounds like when it is used is in the scene too, on cues that do not name the

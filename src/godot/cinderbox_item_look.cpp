@@ -3,6 +3,7 @@
 #include "anim_graph.h"
 #include "anim_set.h"
 #include "sheet_motions.h"
+#include "sheet_parts.h"
 #include "cinderbox_skeleton.h"
 #include "joint_math.h"
 #include "cue_director.h"
@@ -123,20 +124,6 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_stack", "value" ), &CbItem::set_stack );
 	ClassDB::bind_method( D_METHOD( "get_stack" ), &CbItem::get_stack );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "stack", PROPERTY_HINT_RANGE, "1,99,1" ), "set_stack", "get_stack" );
-	ADD_GROUP( "When used", "use_" );
-	ClassDB::bind_method( D_METHOD( "set_use_conditions", "value" ), &CbItem::set_use_conditions );
-	ClassDB::bind_method( D_METHOD( "get_use_conditions" ), &CbItem::get_use_conditions );
-	ClassDB::bind_method( D_METHOD( "set_use_changes", "value" ), &CbItem::set_use_changes );
-	ClassDB::bind_method( D_METHOD( "get_use_changes" ), &CbItem::get_use_changes );
-	ClassDB::bind_method( D_METHOD( "set_use_cooldown", "value" ), &CbItem::set_use_cooldown );
-	ClassDB::bind_method( D_METHOD( "get_use_cooldown" ), &CbItem::get_use_cooldown );
-	ClassDB::bind_method( D_METHOD( "set_use_emits", "value" ), &CbItem::set_use_emits );
-	ClassDB::bind_method( D_METHOD( "get_use_emits" ), &CbItem::get_use_emits );
-	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "use_conditions" ), "set_use_conditions", "get_use_conditions" );
-	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "use_changes" ), "set_use_changes", "get_use_changes" );
-	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "use_cooldown", PROPERTY_HINT_RANGE, "0,60,0.01,or_greater,suffix:s" ), "set_use_cooldown",
-				  "get_use_cooldown" );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "use_emits", PROPERTY_HINT_PLACEHOLDER_TEXT, "dash.started" ), "set_use_emits", "get_use_emits" );
 	ADD_GROUP( "Hands", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "carry_grip", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_carry_grip",
 				  "get_carry_grip" );
@@ -1330,27 +1317,40 @@ Dictionary CbItem::bake() const
 Dictionary CbItem::bake_motions() const
 {
 	String error;
-	std::string text = BakeMotions( error );
+	std::string parts;
+	std::string text = BakeMotions( error, &parts );
 	Dictionary out;
 	out["text"] = String::utf8( text.c_str() );
+	out["parts"] = String::utf8( parts.c_str() );
 	out["error"] = error;
 	return out;
 }
 
-std::string CbItem::BakeMotions( String& error ) const
+std::string CbItem::BakeMotions( String& error, std::string* parts ) const
 {
-	// The motion blocks of its rules sheets (its use, a block "on use", takes the When used fields).
-	// (The header's words are those of the files baked before M268, when the motion nodes under an
-	// item baked here too: unchanged, so no published item's file changes.)
-	String kind = m_kind.strip_edges();
-	std::string text = "cinderbox_motions\t3\n# Baked from the CbMotion nodes of the CbItem " + std::string( kind.utf8().get_data() ) +
-					   ". Edit the item's scene and bake again.\n";
+	// The motion blocks of its rules sheets, as the server compiles them; and what they name of the
+	// scene (M294: the item carries that and its sheets, not the motions).
+	const String kind = m_kind.strip_edges();
+	const std::string name = kind.utf8().get_data();
+	std::string text = "cinderbox_motions\t3\n";
 	std::vector<std::string> names;
-	if ( BakeSheetMotions( this, kind, text, names, error ) == false )
+	sheet::OwnerParts recorded;
+	if ( BakeSheetMotions( this, kind, m_use, text, names, &recorded, error ) == false )
 	{
 		return std::string();
 	}
-	return names.empty() ? std::string() : text;
+	if ( names.empty() )
+	{
+		return std::string();
+	}
+	// (No parts when a sheet with motions is kept inside the scene: the server reads sheets from files.)
+	const bool files = std::all_of( recorded.sheets.begin(), recorded.sheets.end(), []( const sheet::OwnerParts::Sheet& s ) { return s.path.empty() == false; } );
+	if ( parts != nullptr && files )
+	{
+		*parts = sheet::WriteParts( recorded, "The parts of the item " + name + "'s scene its motions name, and its sheets (M294): the server compiles "
+														   "the sheets. Edit the item's scene and bake again." );
+	}
+	return text;
 }
 
 void CbItem::bake_to_project()
@@ -1388,20 +1388,28 @@ void CbItem::bake_to_project()
 void CbItem::BakeMotionsToProject() const
 {
 	// (After the item itself: a failed bake of the item wrote nothing, and its motions failed with it.)
+	// What the item carries is its motions' parts (M294), the server compiles the motions.
 	String error;
-	std::string text = BakeMotions( error );
+	std::string parts;
+	std::string text = BakeMotions( error, &parts );
 	String path = "res://motions/" + m_kind.strip_edges() + ".cfg";
 	if ( text.empty() )
 	{
 		// None any more: the file an earlier bake of this item left goes (never a CbMotionSet's).
-		if ( error.is_empty() && FileAccess::file_exists( path ) && FileAccess::get_file_as_string( path ).contains( "of the CbItem " ) )
+		const String was = FileAccess::file_exists( path ) ? FileAccess::get_file_as_string( path ) : String();
+		if ( error.is_empty() && ( was.contains( "of the CbItem " ) || was.contains( "\nkind\t" + m_kind.strip_edges() + "\n" ) ) )
 		{
 			DirAccess::remove_absolute( path );
 		}
 		return;
 	}
+	if ( parts.empty() )
+	{
+		UtilityFunctions::push_error( "Item bake: a sheet with motions is kept inside the scene: save it as a .cbsheet file (the server compiles its motions from the file)" );
+		return;
+	}
 	DirAccess::make_dir_recursive_absolute( "res://motions" );
-	PackedByteArray bytes = String::utf8( text.c_str() ).to_utf8_buffer();
+	PackedByteArray bytes = String::utf8( parts.c_str() ).to_utf8_buffer();
 	if ( FileAccess::file_exists( path ) && FileAccess::get_file_as_bytes( path ) == bytes )
 	{
 		return;

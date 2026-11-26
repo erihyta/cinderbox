@@ -1,6 +1,6 @@
 add_library(cb_server_core STATIC game_server.cpp crowd_bench.cpp mod_api.cpp character_item.cpp hit_test.cpp navigation.cpp sha256.cpp worker_pool.cpp)
 target_include_directories(cb_server_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(cb_server_core PUBLIC cb_net cb_anim cb_capture PRIVATE cb_sheet miniz Recast Detour)
+target_link_libraries(cb_server_core PUBLIC cb_net cb_anim cb_capture PRIVATE cb_sheet cb_sheet_bake miniz Recast Detour)
 cb_target_warnings(cb_server_core)
 
 # Sheet tests (M291: .cbtest files): a script played on the real server with the compiled mods.

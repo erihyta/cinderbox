@@ -1,0 +1,21 @@
+cinderbox_motions	3
+motion	Throwing
+when	event	frag.grenade.used
+cooldown	0.7
+duration	0.7
+step	0	0.3	frag.release
+goon
+emit	frag.thrown
+launch_carried	frag.grenade	15	look	3	0.8	2.5
+motion	Blast
+when	event	frag.grenade.expired
+owner	item
+emit	frag.blast
+break	frag.break_radius	frag.push	frag.rubble_seconds
+find	bodies	0	16	facing	sight
+shape	8	0	0	0
+impulse_momentum	found	(distance < frag.radius) * 6 * frag.push * (1 - distance / frag.radius)	away	none
+cap	30
+impulse_momentum	found	(distance < frag.radius) * 6 * 0.35 * frag.push * (1 - distance / frag.radius)	up	none
+cap	12
+endfind
