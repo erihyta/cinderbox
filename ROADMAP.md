@@ -415,6 +415,10 @@ use
 
 ### 6b. Cooked items
 
+**The plan (2026-11-26): [docs/step6b-plan.md](docs/step6b-plan.md)**: the item format, the reader,
+the cooker, drawing, effects, reactions on parts, HUDs, delivery, eight milestones (M293 to M300)
+and the owner's decisions it needs (E1 to E12).
+
 **Decided (2026-11-17).** Mod content stops being Godot packs. One cooker makes each item from what
 Godot imported; the game reads it with Cinderbox's own reader and draws it through the
 RenderingServer. Godot's editor and its node trees are the modders' authoring tool only. The base
