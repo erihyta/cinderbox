@@ -1,8 +1,8 @@
 #pragma once
 
-// Version 1 of the sheet language (M285; docs/sheets.md, docs/step6-plan.md §6): one spelling, its
-// first line "cbsheet 1". A sheet without it is version 0 (the spelling before M285), read until no
-// sheet ships it.
+// The sheet format (docs/sheets.md): version 1, its first line "cbsheet 1". Version 0 (the spelling
+// before M285) is not read since M293 (step 6.5): every sheet was converted in M285, and M292
+// refused it where content comes in.
 //
 //   cbsheet 1
 //
@@ -20,10 +20,7 @@
 //   hud Line                                (one control's lines)
 //       text "READY" if brawl.cd_dash <= 0
 //
-// Version 1 says what version 0 said, in other words: the parser reads it by lowering it, line for
-// line, to version 0 (LowerVersion1), so both mean exactly the same, and a sheet converted from
-// version 0 (ConvertToVersion1) is checked to parse to what it parsed to. What version 1 says that
-// version 0 cannot (step 6's later words) is the compiler's to learn as the engine does.
+// The compiler reads a sheet as a tree (sheet_tree.h) and lowers it into rules (sheet_rules.h).
 
 #include "sheet_rules.h"
 
@@ -37,25 +34,9 @@ namespace cb::sheet
 // The version a sheet's first line says ("cbsheet N"): 0 without one, -1 when it names one this
 // compiler does not read.
 int SheetVersion( const std::string& text );
-// (M292) What is said of a sheet that is not version 1 where shipped content comes in (the server
-// reading a mod's sheets, publishing, cb_sheet check, the editor's Sheet screen); empty for a
-// version 1 sheet, or one with nothing in it. Version 0 stays the compiler's own form, what version
-// 1 is lowered to (sheet_rules.h): no file is it.
+// What is said of a sheet that is not version 1 (the server reading a mod's sheets, publishing,
+// cb_sheet check, the editor's Sheet screen); empty for a version 1 sheet, or one with nothing in it.
 std::string NotVersion1( const std::string& text );
-
-// Version 1 as version 0: the text, and for each of its lines (from 1) the version 1 line it came
-// from. Mistakes of version 1's own ("line N: why", N its own) in `errors`.
-struct Lowered
-{
-	std::string text;
-	std::vector<int> lineOf; // [k]: the source line of lowered line k + 1
-};
-Lowered LowerVersion1( const std::string& text, Strings& errors );
-
-// Version 0 as version 1, comments kept: false, with why, when a line has no version 1 spelling
-// yet, or the converted sheet would not parse to what the original did (it never writes one that
-// means something else).
-bool ConvertToVersion1( const std::string& version0, std::string& version1, std::string& why );
 
 // A version 1 sheet in the one style: indented with tabs (four columns each), no spaces at the ends
 // of lines, at most one blank line in a row, one newline at the end. False, with why, when the
@@ -118,10 +99,12 @@ std::vector<Declaration> ReadDeclarations( const std::string& text, Strings& err
 //       ...
 //
 //   let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look     a word for some words, wherever
-//   find hitbox max 1                                                it stands (not in quotes)
+//   find hitbox max 1                                                it stands (not in quotes); a
+//                                                                    word of the language is no let's name
 //
 // A sheet uses one other at most, which uses none. A block's head is its first line (a motion's:
-// "motion NAME"). A line of the used sheet is said as "in PATH line N" at the uses line.
+// "motion NAME"). A line of the used sheet is said as "in PATH line N" at the uses line, and its
+// rules' lines are kFromUsed + its own.
 
 // How a sheet a "uses" line names is read, by its res:// path: each host's (the editor's files, a
 // workshop item's, the command line's folder). None: "uses" is a mistake.
@@ -129,16 +112,6 @@ using SheetLoader = std::function<bool( const std::string& path, std::string& te
 void SetSheetLoader( SheetLoader loader );
 const SheetLoader& TheSheetLoader();
 
-// The sheet with what it uses in it: the text, and for each of its lines (from 1) the line of the
-// sheet it came from (kFromUsed + the used sheet's line, for one of the used sheet's).
 inline constexpr int kFromUsed = 100000;
-struct Composed
-{
-	std::string text;
-	std::vector<int> lineOf;
-	std::string used; // its path ("": it uses none)
-	int usesLine = 0;
-};
-Composed ComposeSheet( const std::string& text, Strings& errors );
 
 } // namespace cb::sheet

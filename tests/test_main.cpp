@@ -1869,9 +1869,9 @@ void TestSheetsGolden()
 	CHECK( sheets.size() >= 40 && differ == 0 && missing == 0 );
 }
 
-// Version 1 of the sheets (M285: sheet_v1.h): every shipped sheet is version 1, in the one style;
-// version 0 converts to it meaning the same (each shipped sheet lowered to version 0 and converted
-// back); and version 1's own mistakes say their line.
+// Version 1 of the sheets (M285: sheet_v1.h): every shipped sheet is version 1, in the one style,
+// and compiles with no mistake (M293: read as a tree, sheet_tree.h); version 0 is not read; and the
+// mistakes say their line.
 void TestSheetsVersion1()
 {
 	namespace fs = std::filesystem;
@@ -1882,7 +1882,7 @@ void TestSheetsVersion1()
 		text << in.rdbuf();
 		return text.str();
 	};
-	int sheets = 0, version1 = 0, styled = 0, roundTrips = 0;
+	int sheets = 0, version1 = 0, styled = 0, clean = 0;
 	std::error_code error;
 	for ( fs::recursive_directory_iterator it( root, fs::directory_options::skip_permission_denied, error ), end; it != end; it.increment( error ) )
 	{
@@ -1892,8 +1892,9 @@ void TestSheetsVersion1()
 			it.disable_recursion_pending();
 			continue;
 		}
-		// (The check of mistakes is version 0's on purpose: version 0 is read until none ships.)
-		if ( it->is_regular_file() == false || it->path().extension() != ".cbsheet" || name == "check_rules_bad.cbsheet" || name == "rifle.cbsheet" )
+		// (The sheets of mistakes have them on purpose.)
+		if ( it->is_regular_file() == false || it->path().extension() != ".cbsheet" || name == "check_rules_bad.cbsheet" || name == "every_mistake.cbsheet" ||
+			 name == "rifle.cbsheet" )
 		{
 			continue;
 		}
@@ -1930,37 +1931,22 @@ void TestSheetsVersion1()
 				return out.empty() == false;
 			} );
 		}
-		const sheet::Lowered lowered = sheet::LowerVersion1( sheet::ComposeSheet( text, errors ).text, errors );
-		std::string again;
-		if ( errors.empty() && sheet::ConvertToVersion1( lowered.text, again, why ) && sheet::Meaning( again ) == sheet::Meaning( text ) )
+		sheet::ParseRules( text, errors );
+		if ( errors.empty() )
 		{
-			++roundTrips;
+			++clean;
 		}
 		else
 		{
-			std::printf( "    %s: lowered and converted back: %s\n", fs::relative( it->path(), root ).generic_string().c_str(), why.c_str() );
+			std::printf( "    %s: %s\n", fs::relative( it->path(), root ).generic_string().c_str(), errors.front().c_str() );
 		}
 	}
-	std::printf( "    %d sheets: %d version 1, %d in the one style, %d back from version 0 the same\n", sheets, version1, styled, roundTrips );
-	CHECK( sheets >= 40 && version1 == sheets && styled == sheets && roundTrips == sheets );
+	std::printf( "    %d sheets: %d version 1, %d in the one style, %d with no mistake\n", sheets, version1, styled, clean );
+	CHECK( sheets >= 40 && version1 == sheets && styled == sheets && clean == sheets );
 
-	// A version 0 rule whose settings hold for the actions below them, as scopes.
-	const std::string v0 = "# a gun\non item.use if is_local and ?gun.ammo\n    subject ^^\n    scene res://vfx/flash.tscn under Muzzle life 0.3\n"
-						   "    at Muzzle\n    sound res://assets/sfx/shot.wav volume -5\n    sound res://other/far.ogg\n"
-						   "motion Throw on use if not motion.Dry and $other:combat.health > 0\n    item carried\n"
-						   "    then when x.release within 0.3\n    emit x.thrown\n    timeout\n    emit x.thrown\n"
-						   "show Line if combat.health > 0\ntext Line \"HP\" if ^^:combat.dead\n";
-	std::string v1, why;
-	const bool converted = sheet::ConvertToVersion1( v0, v1, why );
-	const std::string expected = "cbsheet 1\n\n# a gun\nreact on item.use if local and known gun.ammo\n\tas holder\n\t\tcreate flash under Muzzle for 0.3\n"
-								 "\t\tat Muzzle\n\t\t\tsound shot volume -5\n\t\t\tsound res://other/far.ogg\n"
-								 "motion Throw on use if not active Dry and combat.health of target > 0\n\tfor carrier\n"
-								 "\twait for x.release within 0.3\n\temit x.thrown\n\ttimeout\n\temit x.thrown\nhud Line\n\tshow if combat.health > 0\n\ttext \"HP\" if combat.dead of holder\n";
-	if ( v1 != expected )
-	{
-		std::printf( "    converted:\n%s    (%s)\n", v1.c_str(), why.c_str() );
-	}
-	CHECK( converted && v1 == expected );
+	// Version 0 (the spelling before M285) is not read (M293).
+	sheet::Strings old;
+	CHECK( sheet::ParseRules( "on item.use\n    sound res://x.wav\n", old ).empty() && old.size() == 1 && old[0].find( "no longer read" ) != std::string::npos );
 
 	// Version 1's mistakes, at their lines.
 	auto errorsOf = []( const std::string& text ) {
@@ -1980,15 +1966,34 @@ void TestSheetsVersion1()
 	};
 	const sheet::Strings bad = errorsOf( "cbsheet 1\non x\n\tsound a\nreact on y\n\tat Muzzle\nreact on z if actor is player\n\tsound b\n"
 										 "motion M on use\n\twait for a or 0.3\n\temit b\n\twait 1\nreact on w\n\tas holder\n\t\tsound c volume loud\n" );
-	CHECK( says( bad, "2", "react on" ) );					 // a version 0 rule
+	CHECK( says( bad, "2", "react on" ) );					 // version 0's way to start a reaction
 	CHECK( says( bad, "5", "nothing is under it" ) );		 // a scope with no lines
 	CHECK( says( bad, "7", "must be under as actor" ) );	 // what its subject is, with no subject
 	CHECK( says( bad, "9", "last wait" ) == false );		 // (a wait ... or S may stand anywhere since M287)
-	CHECK( says( bad, "14", "volume wants a number" ) );	 // version 0's mistake, at version 1's line
+	CHECK( says( bad, "14", "volume wants a number" ) );	 // an option's mistake, at its line
 	CHECK( says( errorsOf( "cbsheet 2\n" ), "1", "version 1" ) ); // a later version
-	// What it means: the same as version 0's spelling of it.
-	CHECK( sheet::Meaning( "cbsheet 1\nreact on a if actor is prop and local\n\tcooldown 0.1\n\tas actor\n\t\tat point\n\t\t\tshake 0.2 for 0.1\n" ) ==
-		   sheet::Meaning( "on a if is_local\n    subject $at\n    kind prop\n    cooldown 0.1\n    at point\n    shake 0.2 time 0.1\n" ) );
+	CHECK( says( errorsOf( "cbsheet 1\nlet up = 5\n" ), "2", "a word of the language" ) ); // (M293: "along up" would have become a marker)
+	CHECK( says( errorsOf( "cbsheet 1\nmotion M on use\n\temit a\n\t\temit b\n" ), "4", "nothing goes under \"emit\"" ) );
+	// What a reaction is, from its block's settings and the scopes it is under.
+	sheet::Strings fine;
+	const std::vector<sheet::Rule> shake =
+		sheet::ParseRules( "cbsheet 1\nreact on a if actor is prop and local\n\tcooldown 0.1\n\tas actor\n\t\tat point\n\t\t\tshake 0.2 for 0.1\n", fine );
+	CHECK( fine.empty() && shake.size() == 1 &&
+		   sheet::DumpMeaning( shake, fine ) ==
+			   sheet::DumpMeaning( { sheet::Rule{ 0, 0, false, "CbReaction", [] {
+										 sheet::Dict p;
+										 p["when"] = 0;
+										 p["event"] = "a";
+										 p["conditions"] = sheet::Strings{ "is_local" };
+										 p["subject_kind"] = "prop";
+										 p["cooldown"] = 0.1;
+										 p["subject"] = "$at";
+										 p["place"] = 1;
+										 p["shake"] = 0.2;
+										 p["shake_time"] = 0.1;
+										 return p;
+									 }() } },
+								   fine ) );
 	sheet::Strings none;
 	const std::vector<sheet::Rule> rules = sheet::ParseRules( "cbsheet 1\n\n# a\nreact on a\n\tsound b\n\tsound c\n", none );
 	CHECK( none.empty() && rules.size() == 2 && rules[0].line == 5 && rules[1].line == 6 && rules[0].head == 4 );

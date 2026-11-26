@@ -4,8 +4,6 @@
 //   cb_sheet fmt [--check] FILE...
 //                               writes each version 1 sheet in the one style (--check: says which
 //                               are not, and changes nothing)
-//   cb_sheet convert FILE...    writes each version 0 sheet as version 1, in place; one that would
-//                               mean something else is not written, and says where
 //   cb_sheet test FILE.cbtest...
 //                               runs each sheet test (M291: sheet_test.h) on the real server,
 //                               headless; what failed as FILE:LINE: why. Exit code 1 if any did
@@ -55,7 +53,7 @@ bool Write( const std::string& path, const std::string& text )
 
 int Usage()
 {
-	std::fprintf( stderr, "cb_sheet check FILE...\ncb_sheet fmt [--check] FILE...\ncb_sheet convert FILE...\ncb_sheet test FILE.cbtest...\n" );
+	std::fprintf( stderr, "cb_sheet check FILE...\ncb_sheet fmt [--check] FILE...\ncb_sheet test FILE.cbtest...\n" );
 	return 2;
 }
 
@@ -82,7 +80,7 @@ int main( int argc, char** argv )
 			files.push_back( arg );
 		}
 	}
-	if ( command != "check" && command != "fmt" && command != "convert" && command != "test" )
+	if ( command != "check" && command != "fmt" && command != "test" )
 	{
 		return Usage();
 	}
@@ -134,11 +132,7 @@ int main( int argc, char** argv )
 		if ( command == "check" )
 		{
 			cb::sheet::Strings errors;
-			if ( const std::string why = cb::sheet::NotVersion1( text ); why.empty() == false )
-			{
-				errors.push_back( "line 1: " + why );
-			}
-			cb::sheet::ParseRules( text, errors );
+			cb::sheet::ParseRules( text, errors ); // (a sheet not of version 1 is said at its line 1)
 			for ( const std::string& error : errors )
 			{
 				// ("line N: why" as FILE:N: why)
@@ -152,7 +146,7 @@ int main( int argc, char** argv )
 		}
 		std::string out;
 		std::string why;
-		const bool ok = command == "fmt" ? cb::sheet::FormatVersion1( text, out, why ) : cb::sheet::ConvertToVersion1( text, out, why );
+		const bool ok = cb::sheet::FormatVersion1( text, out, why );
 		if ( ok == false )
 		{
 			std::printf( "%s: %s\n", file.c_str(), why.c_str() );
@@ -174,7 +168,7 @@ int main( int argc, char** argv )
 			++failed;
 			continue;
 		}
-		std::printf( "%s: %s\n", file.c_str(), command == "fmt" ? "formatted" : "converted to version 1" );
+		std::printf( "%s: formatted\n", file.c_str() );
 	}
 	return failed == 0 ? 0 : 1;
 }

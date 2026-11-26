@@ -4,7 +4,7 @@ extends SceneTree
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_motion_blocks.gd
 ##
 ## A motion block in a sheet under a CbMotionSet, or under a CbItem, bakes into a motions file of
-## version 3: steps (then when, after, a timeout), guards (if, else: as conditions written into the
+## version 3: steps (wait for, wait S, a timeout), guards (if, else: as conditions written into the
 ## file), ends, a move's seconds, an edge (when). The reactions
 ## of the same sheet are still made into nodes; the motion blocks are not. A block that cannot run
 ## refuses the bake and says its file and line. Exit code 0 when everything held.
@@ -38,9 +38,10 @@ func _set_with(file: String) -> CbMotionSet:
 	return set
 
 
+## A check's sheet: its version line, then the lines a check writes (so they start at line 2).
 func _scratch(text: String) -> void:
 	_scratch_sheet = CbSheet.new()
-	_scratch_sheet.text = text
+	_scratch_sheet.text = text if text.begins_with("cbsheet") else "cbsheet 1\n" + text
 
 
 func _refused(what: String, text: String, says: String) -> void:
@@ -90,8 +91,8 @@ func _run() -> void:
 	set.queue_free()
 
 	# Under an item: its use, and who may run the others (whoever has it out, or carries it).
-	_scratch("motion Smash on use\n\temit hammer.smash\n\tthen when grounded\n\temit hammer.landed\n" +
-		"motion Glow when speed > 5\n\titem carried\n\temit hammer.fast\n" +
+	_scratch("motion Smash on use\n\temit hammer.smash\n\twait for grounded\n\temit hammer.landed\n" +
+		"motion Glow when speed > 5\n\tfor carrier\n\temit hammer.fast\n" +
 		"motion Spin on press spin\n\temit hammer.spin\n")
 	var item := CbItem.new()
 	item.name = "Hammer"
@@ -104,7 +105,7 @@ func _run() -> void:
 	var item_text := String(motions["text"])
 	_check("an item's sheet bakes with it", item_text.begins_with("cinderbox_motions\t3\n"), String(motions["error"]))
 	_check("on use: the item's use", item_text.contains("motion\tSmash\nwhen\tevent\ttest.hammer.used\nemit\thammer.smash\nstep\t0\t0\tgrounded\n"))
-	_check("item carried: whoever has it", item_text.contains("motion\tGlow\nwhen\tedge\tspeed > 5\nif\t( carried.test.hammer )\n"))
+	_check("for carrier: whoever has it", item_text.contains("motion\tGlow\nwhen\tedge\tspeed > 5\nif\t( carried.test.hammer )\n"))
 	_check("by default: whoever has it out", item_text.contains("motion\tSpin\nwhen\tpress\tspin\nif\t( test.hammer )\n"))
 	item.free()
 
@@ -177,12 +178,12 @@ func _run() -> void:
 	_check("a blade drawn in the scene, around its own origin, at once",
 		cast_text.contains("motion\tSwipe\nwhen\tpress\tswipe\nprobe\t3\t0\nprobe_shape\t0\t1\t-0.05\t0.05\t-1\t-0.05\t0.05\t"))
 	casts.free()
-	_refused("a cast in a later step", "motion A on press a\n\tafter 1\n\tcast ray range 5\n\t\timpulse 1\n", "line 3: a cast is thrown when the motion starts")
-	_refused("a cast under an if", "motion A on press a\n\tif grounded\n\t\tcast ray range 5\n", "line 3: a cast is thrown when the motion starts")
-	_refused("two casts", "motion A on press a\n\tcast ray range 5\n\tcast ray range 5\n", "line 3: a motion casts once")
-	_refused("an impulse beside a cast", "motion A on press a\n\timpulse 3\n\tcast ray range 5\n", "line 2: with a cast")
-	_refused("two events when it holds", "motion A on press a\n\tcast ray range 5\n\t\temit x\n\t\temit y\n", "line 4: a cast says one event")
-	_refused("a cast with no range", "motion A on press a\n\tcast ray\n", "line 2: cast SHAPE range R")
+	_refused("a cast in a later step", "motion A on press a\n\twait 1\n\tcast ray range 5\n\t\timpulse 1\n", "line 4: a cast is thrown when the motion starts")
+	_refused("a cast under an if", "motion A on press a\n\tif grounded\n\t\tcast ray range 5\n", "line 4: a cast is thrown when the motion starts")
+	_refused("two casts", "motion A on press a\n\tcast ray range 5\n\tcast ray range 5\n", "line 4: a motion casts once")
+	_refused("an impulse beside a cast", "motion A on press a\n\timpulse 3\n\tcast ray range 5\n", "line 3: with a cast")
+	_refused("two events when it holds", "motion A on press a\n\tcast ray range 5\n\t\temit x\n\t\temit y\n", "line 5: a cast says one event")
+	_refused("a cast with no range", "motion A on press a\n\tcast ray\n", "line 3: cast SHAPE range R")
 
 	# Numbers that are expressions. (A curve was drawn in a CbCurve beside the sheet until M268: a sheet
 	# has none now.)
@@ -195,7 +196,7 @@ func _run() -> void:
 	_check("an expression where an impulse's speed is, and a force's strength",
 		amount_text.contains("impulse\tfound\t9 * wave.power\taway\tnone\n") and amount_text.contains("force\tself\tup\taccel\t2 * dash.power\t0\t0\t0\n"), amount_text)
 	amounts.free()
-	_refused("a curve", "motion A on press a\n\timpulse curve(Falloff, 1) along up\n", "line 1: curve(Falloff, ...): a sheet has no curves")
+	_refused("a curve", "motion A on press a\n\timpulse curve(Falloff, 1) along up\n", "line 2: curve(Falloff, ...): a sheet has no curves")
 
 	# Markers and paths drawn in the scene: a muzzle tilted 30 degrees up, an arc 4 m ahead.
 	_scratch("motion Shoot on press shoot\n\tlaunch new test.ball speed (2 * power.x) along Muzzle from Muzzle\n" +
@@ -237,12 +238,12 @@ func _run() -> void:
 		arc_words[4] == "0" and absf(float(arc_words[97]) - 4.0) < 0.01 and absf(float(arc_words[96])) < 0.01, arc_line.substr(0, 120))
 	_check("written up front, and followed", drawn_text.contains("motion\tLeap\npath\tArc\t") and drawn_text.contains("follow\tArc\t1\n"))
 	drawn.free()
-	_refused("along a marker that is not there", "motion A on press a\n\timpulse 3 along Nope\n", "line 2: along Nope: no Node3D")
-	_refused("a path that is not there", "motion A on press a\n\tlasts 1\n\tfollow Nope over 1\n", "line 1: follow Nope: no Path3D")
-	_refused("a turn of one number", "motion A on press a\n\timpulse 3 along look turn (90)\n", "line 2: turn (yaw, pitch)")
+	_refused("along a marker that is not there", "motion A on press a\n\timpulse 3 along Nope\n", "line 3: along Nope: no Node3D")
+	_refused("a path that is not there", "motion A on press a\n\tlasts 1\n\tfollow Nope over 1\n", "line 2: follow Nope: no Path3D")
+	_refused("a turn of one number", "motion A on press a\n\timpulse 3 along look turn (90)\n", "line 3: turn (yaw, pitch)")
 
 	# An item's own motion: on its expiry, where it lies; walls broken, itself removed.
-	_scratch("motion Blast on expired\n\towner item\n\temit bomb.boom\n\tbreak radius bomb.radius speed 12\n\tfind sphere 4 bodies\n" +
+	_scratch("motion Blast on expired\n\ton item\n\temit bomb.boom\n\tbreak radius bomb.radius speed 12\n\tfind sphere 4 bodies\n" +
 		"\t\timpulse 10 along away\n\tremove self\n")
 	var bomb := CbItem.new()
 	bomb.name = "Bomb"
@@ -253,12 +254,12 @@ func _run() -> void:
 	bomb.add_child(bomb_rules)
 	var bomb_baked: Dictionary = bomb.bake_motions()
 	var bomb_text := String(bomb_baked["text"])
-	_check("an item's own motion: on its expiry, owner item, no one's hand asked",
+	_check("an item's own motion: on its expiry, on item, no one's hand asked",
 		bomb_text.contains("motion\tBlast\nwhen\tevent\ttest.bomb.expired\nowner\titem\nemit\tbomb.boom\nbreak\tbomb.radius\t12\t0\n" +
 		"find\tbodies\t0\t16\tfacing\nshape\t4\t0\t0\t0\nimpulse\tfound\t10\taway\tnone\nendfind\nremove\n"), bomb_text + String(bomb_baked["error"]))
 	bomb.free()
-	_refused("owner item in a motion set", "motion A on expired\n\towner item\n\temit x\n", "line 1: owner item is for an item's sheet")
-	_refused("a break with no radius", "motion A on press a\n\tbreak speed 3\n", "line 2: break radius R")
+	_refused("on item in a motion set", "motion A on expired\n\ton item\n\temit x\n", "line 2: on item is for an item's sheet")
+	_refused("a break with no radius", "motion A on press a\n\tbreak speed 3\n", "line 3: break radius R")
 
 	# A repeat (every), and an impulse of momentum.
 	_scratch("motion Flame on press flame\n\tlasts 1\n\temit flame.on\n\tevery 0.1\n\tfind sphere 3 players\n\t\timpulse 0.6 along away\n" +
@@ -269,8 +270,8 @@ func _run() -> void:
 	_check("every: what follows repeats; an impulse of momentum", flame_text.contains("emit\tflame.on\nevery\t0.1\nfind\tplayers\t0\t16\tfacing\n" +
 		"shape\t3\t0\t0\t0\nimpulse\tfound\t0.6\taway\tnone\nendfind\nimpulse_momentum\tself\t400\tup\tnone\n"), flame_text + String(flame_baked["error"]))
 	flame.free()
-	_refused("every under an if", "motion A on press a\n\tif grounded\n\t\tevery 1\n", "line 3: every S")
-	_refused("an impulse of a kind there is not", "motion A on press a\n\timpulse 3 along up kind mass\n", "line 2: kind velocity or momentum")
+	_refused("every under an if", "motion A on press a\n\tif grounded\n\t\tevery 1\n", "line 4: \"every\" is the motion's")
+	_refused("an impulse of a kind there is not", "motion A on press a\n\timpulse 3 along up kind mass\n", "line 3: kind velocity or momentum")
 
 	# The SDK's starter sheet (a new mod's motions) bakes, its name filled in.
 	var starter := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://").path_join("../sdk/starters/motion_set.cbsheet"))
@@ -283,25 +284,25 @@ func _run() -> void:
 	demo.free()
 
 	# What refuses the bake, with its file and line.
-	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
+	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 3: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n",
-		"line 3: \"force\" cannot stand in a find: there a line is change, emit, impulse, throw, if, else, move for or apply")
-	_refused("a move inside a find with no seconds", "motion A on press a\n\tfind sphere 2\n\t\tmove walk_speed 0\n", "line 3: \"move\" cannot stand in a find")
+		"line 4: \"force\" cannot stand in a find: there a line is change, emit, impulse, throw, if, else, move for or apply")
+	_refused("a move inside a find with no seconds", "motion A on press a\n\tfind sphere 2\n\t\tmove walk_speed 0\n", "line 4: \"move\" cannot stand in a find")
 	_refused("away outside a find", "motion A on press a\n\timpulse 3 along away\n", "what a find found")
-	_refused("a timeout's lasting statement", "motion A on press a\n\tthen when grounded within 1\n\ttimeout\n\tmove friction 0\n",
-		"line 4: \"move\" cannot stand in a timeout")
+	_refused("a timeout's lasting statement", "motion A on press a\n\twait for grounded within 1\n\ttimeout\n\tmove friction 0\n",
+		"line 5: \"move\" cannot stand in a timeout")
 
 	_run_regular()
 	_run_amounts()
-	_refused("a line not indented under its motion", "motion A on press a\nemit x\n", "line 2: a motion's lines are indented")
-	_refused("an else with no if", "motion A on press a\n\telse\n", "line 2: an else is under an if")
-	_refused("a setting under an if", "motion A on press a\n\tif x\n\t\tcooldown 1\n", "line 3: \"cooldown\" is the motion's")
-	_refused("a setting after a step", "motion A on press a\n\tthen when grounded\n\tcooldown 1\n", "line 3: \"cooldown\" is the motion's: before")
-	_refused("a while with steps", "motion A while flying\n\tafter 1\n\temit x\n", "a while motion has no steps")
-	_refused("on use in a motion set", "motion A on use\n\temit x\n", "line 1: on use is for an item's sheet")
-	_refused("two motions of one name", "motion A on press a\n\temit x\nmotion A on press b\n\temit y\n", "line 3: there is a motion named A already")
-	_refused("a line no motion has", "motion A on press a\n\tfly 3\n", "line 2: \"fly\" is not a line of a motion")
-	_refused("a timeout of nothing", "motion A on press a\n\temit x\n\ttimeout\n", "line 3: a timeout comes right after")
+	_refused("a line not indented under its motion", "motion A on press a\nemit x\n", "line 3: \"emit\" starts no block")
+	_refused("an else with no if", "motion A on press a\n\telse\n", "line 3: an else comes right after an if's lines")
+	_refused("a setting under an if", "motion A on press a\n\tif x\n\t\tcooldown 1\n", "line 4: \"cooldown\" is the motion's")
+	_refused("a setting after a step", "motion A on press a\n\twait for grounded\n\tcooldown 1\n", "line 4: \"cooldown\" is the motion's: before")
+	_refused("a while with steps", "motion A while flying\n\twait 1\n\temit x\n", "a while motion has no steps")
+	_refused("on use in a motion set", "motion A on use\n\temit x\n", "line 2: on use is for an item's sheet")
+	_refused("two motions of one name", "motion A on press a\n\temit x\nmotion A on press b\n\temit y\n", "line 4: there is a motion named A already")
+	_refused("a line no motion has", "motion A on press a\n\tfly 3\n", "line 3: \"fly\" is not a line of a motion")
+	_refused("a timeout of nothing", "motion A on press a\n\temit x\n\ttimeout\n", "line 4: a timeout comes right after")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SCRATCH))
 
 	print("check_motion_blocks: %s" % ("all held" if _failures == 0 else "%d FAILED" % _failures))
@@ -355,7 +356,7 @@ func _run_regular() -> void:
 		"motion B on press b\n\tcast ray range 5\n\t\timpulse 4 on target along up\n")
 	_check("on target: what a find found, what a cast holds", targets.contains("impulse\tfound\t3\tup\tnone\nendfind\n") and
 		targets.contains("probe\t5\t0\nimpulse\thit\t4\tup\tnone\n"), targets)
-	_refused("on target outside a find or a cast", "motion A on press a\n\timpulse 3 on target along up\n", "line 2: on target is what a find found")
+	_refused("on target outside a find or a cast", "motion A on press a\n\timpulse 3 on target along up\n", "line 3: on target is what a find found")
 
 	# One spelling per direction: along world (x, y, z); a find's shape turned facing, look or none.
 	var down := _set_bake("motion A on press a\n\timpulse 9 along world (0, -1, 0)\nmotion B on press b\n\timpulse 9 along world direction (0, -1, 0)\n")
@@ -374,20 +375,20 @@ func _run_regular() -> void:
 
 	# Where a line may stand: one table, one way of saying no.
 	_refused("a launch in a find", "motion A on press a\n\tfind sphere 2\n\t\tlaunch carried\n",
-		"line 3: \"launch\" cannot stand in a find: there a line is change, emit, impulse, throw, if, else, move for or apply")
-	_refused("a link in a find", "motion A on press a\n\tfind sphere 2\n\t\tlink length 2\n", "line 3: \"link\" cannot stand in a find")
+		"line 4: \"launch\" cannot stand in a find: there a line is change, emit, impulse, throw, if, else, move for or apply")
+	_refused("a link in a find", "motion A on press a\n\tfind sphere 2\n\t\tlink length 2\n", "line 4: \"link\" cannot stand in a find")
 	_refused("a change in a cast", "motion A on press a\n\tcast ray range 3\n\t\tchange t.x = 1\n",
-		"line 3: \"change\" cannot stand in a cast: there a line is emit, impulse, throw, move for, apply, move, force or link")
-	_refused("a force after an every", "motion A on press a\n\tlasts 1\n\tevery 0.5\n\tforce 3 along up\n", "line 4: \"force\" cannot stand after an every")
-	_refused("a second every in a step", "motion A on press a\n\tlasts 1\n\tevery 0.5\n\temit x\n\tevery 0.2\n", "line 5: \"every\" cannot stand after an every")
-	_refused("an every in a timeout", "motion A on press a\n\tthen when grounded within 1\n\ttimeout\n\tevery 0.5\n", "line 4: \"every\" cannot stand in a timeout")
-	_refused("remove in a player's motion", "motion A on press a\n\tremove self\n", "line 2: \"remove\" is an item's motion's (owner item)")
-	var lasting := _item_bake("motion Boom on expired\n\towner item\n\tforce 3 along up\n", "test.bomb")
-	_check("a force in an item's motion: it happens in one tick", lasting.contains("line 3: \"force\" cannot stand in an item's motion (it happens in one tick)"), lasting)
-	var waits := _item_bake("motion Boom on expired\n\towner item\n\tafter 1\n\temit x\n", "test.bomb")
-	_check("a step in an item's motion", waits.contains("happens in one tick, on an event said at it: no then, after or timeout"), waits)
-	var before := _item_bake("motion Boom on expired\n\tremove self\n\towner item\n", "test.bomb")
-	_check("remove before owner item is said: fine", before.contains("owner\titem\nremove\n"), before)
+		"line 4: \"change\" cannot stand in a cast: there a line is emit, impulse, throw, move for, apply, move, force or link")
+	_refused("a force after an every", "motion A on press a\n\tlasts 1\n\tevery 0.5\n\tforce 3 along up\n", "line 5: \"force\" cannot stand after an every")
+	_refused("a second every in a step", "motion A on press a\n\tlasts 1\n\tevery 0.5\n\temit x\n\tevery 0.2\n", "line 6: \"every\" cannot stand after an every")
+	_refused("an every in a timeout", "motion A on press a\n\twait for grounded within 1\n\ttimeout\n\tevery 0.5\n", "line 5: \"every\" cannot stand in a timeout")
+	_refused("remove in a player's motion", "motion A on press a\n\tremove self\n", "line 3: \"remove\" is an item's motion's (on item)")
+	var lasting := _item_bake("motion Boom on expired\n\ton item\n\tforce 3 along up\n", "test.bomb")
+	_check("a force in an item's motion: it happens in one tick", lasting.contains("line 4: \"force\" cannot stand in an item's motion (it happens in one tick)"), lasting)
+	var waits := _item_bake("motion Boom on expired\n\ton item\n\twait 1\n\temit x\n", "test.bomb")
+	_check("a step in an item's motion", waits.contains("happens in one tick, on an event said at it: no wait or timeout"), waits)
+	var before := _item_bake("motion Boom on expired\n\tremove self\n\ton item\n", "test.bomb")
+	_check("remove before on item is said: fine", before.contains("owner\titem\nremove\n"), before)
 
 
 # Every amount may be an expression (M214): the words up to the next option word, written in the
@@ -408,5 +409,5 @@ func _run_amounts() -> void:
 	_check("a move a find gives: its value an expression", given.contains("param\twalk_speed\tdistance\t1\n"), given)
 	var walls := _set_bake("motion A on press a\n\tbreak radius 2 * t.r speed 10\n")
 	_check("a break's numbers of several words", walls.contains("break\t2 * t.r\t10\t0\n"), walls)
-	_refused("a move's seconds from an expression", "motion A on press a\n\tmove for t.x walk_speed 1\n", "line 2: move for S: its seconds are a number")
-	_refused("a move of a parameter there is not", "motion A on press a\n\tlasts 1\n\tmove fly_power 3\n", "line 3: move: \"fly_power\" is not a movement parameter")
+	_refused("a move's seconds from an expression", "motion A on press a\n\tmove for t.x walk_speed 1\n", "line 3: move for S: its seconds are a number")
+	_refused("a move of a parameter there is not", "motion A on press a\n\tlasts 1\n\tmove fly_power 3\n", "line 4: move: \"fly_power\" is not a movement parameter")

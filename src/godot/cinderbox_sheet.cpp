@@ -54,13 +54,6 @@ void CbSheetEditorPlugin::_enter_tree()
 	format->set_tooltip_text( "Write the sheet in the one style (cb_sheet fmt): indented with tabs, no spaces at the ends of lines, at most one blank line in a row" );
 	format->connect( "pressed", callable_mp( this, &CbSheetEditorPlugin::on_format ) );
 	bar->add_child( format );
-	auto* convert = memnew( Button );
-	convert->set_text( "Convert" );
-	convert->set_tooltip_text( "Write this sheet of version 0 as version 1 (cb_sheet convert): the game reads version 1 only" );
-	convert->connect( "pressed", callable_mp( this, &CbSheetEditorPlugin::on_convert ) );
-	convert->hide();
-	bar->add_child( convert );
-	m_convert = convert;
 	m_status = memnew( Label );
 	m_status->set_h_size_flags( Control::SIZE_EXPAND_FILL );
 	m_status->set_text_overrun_behavior( TextServer::OVERRUN_TRIM_ELLIPSIS );
@@ -80,7 +73,6 @@ void CbSheetEditorPlugin::_exit_tree()
 		m_screen = nullptr;
 		m_tabs = nullptr;
 		m_status = nullptr;
-		m_convert = nullptr;
 	}
 }
 
@@ -192,9 +184,8 @@ void CbSheetEditorPlugin::Status()
 		m_status->set_text( String() );
 		return;
 	}
-	// Version 0 (M292): the game reads it no more; Convert writes it as version 1.
+	// Not version 1 (M292): the game reads it no more (M293: nothing converts version 0).
 	const std::string old = sheet::NotVersion1( Utf8( m_open[size_t( tab )].edit->get_text() ) );
-	m_convert->set_visible( old.empty() == false && sheet::SheetVersion( Utf8( m_open[size_t( tab )].edit->get_text() ) ) == 0 );
 	if ( old.empty() == false )
 	{
 		m_status->set_text( String::utf8( old.c_str() ) );
@@ -230,24 +221,6 @@ void CbSheetEditorPlugin::on_format()
 		return;
 	}
 	Replace( edit, String::utf8( formatted.c_str() ) );
-}
-
-void CbSheetEditorPlugin::on_convert()
-{
-	const int64_t tab = m_tabs != nullptr ? m_tabs->get_current_tab() : -1;
-	if ( tab < 0 || size_t( tab ) >= m_open.size() )
-	{
-		return;
-	}
-	CodeEdit* edit = m_open[size_t( tab )].edit;
-	std::string converted, why;
-	if ( sheet::ConvertToVersion1( Utf8( edit->get_text() ), converted, why ) == false )
-	{
-		m_status->set_text( "Not converted: " + String::utf8( why.c_str() ) );
-		m_status->add_theme_color_override( "font_color", Color( 1.0f, 0.45f, 0.45f ) );
-		return;
-	}
-	Replace( edit, String::utf8( converted.c_str() ) );
 }
 
 void CbSheetEditorPlugin::Replace( CodeEdit* edit, const String& text )

@@ -128,6 +128,7 @@ replace motion Fire when using.gun.rifle and gun.rounds > 0 and not gun.reloadin
 - **`let NAME = WORDS`**: NAME stands for the words wherever it is a word of a line (not in quotes or
   a comment). The fist's box is written once: `let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned
   look max 1`, then `find hitbox`. Words that are an expression: put them in brackets yourself.
+  A word of the language is no let's name (M293: `let up = 5` would make `along up` a marker named 5).
 
 ### Statuses
 
@@ -157,12 +158,15 @@ The same [expression language](looks.md#expressions) everywhere: a condition, a 
 A HUD line's format (`"{brawl.cd_dash}s"`) is read as written: inside quotes, version 0's signs
 (`?name`, `$other:name`) for now.
 
-**The compiler** (M283): `src/sheet`, plain C++ with no Godot types: one parser of every block of a
-sheet (`sheet_rules.h`; version 1 read by lowering it to version 0, line for line: `sheet_v1.h`)
-and the bake of its motion blocks (`sheet_bake.h`, the scene it is in answering for the nodes a
-line names). The editor, the bake and the names check use it; the server, the cooker and the tests
-can. Every shipped sheet's parse is a golden file (`tests/golden/sheets`, the `sheets_golden` test),
-and every mod's committed bakes are checked to be what its sheets bake to now (the Godot checks).
+**The compiler** (M283, M293): `src/sheet`, plain C++ with no Godot types. A sheet is read as a
+tree (`sheet_tree.h`: what is indented under a line is under it; what it uses composed in; lets
+and units resolved), and the tree is lowered into the rules the engine runs (`sheet_rules.h`);
+the bake writes a motion block for the simulation (`sheet_bake.h`, the scene it is in answering
+for the nodes a line names). The editor, the bake and the names check use it; the server, the
+cooker and the tests can. Every sheet's rules are a golden file (`tests/golden/sheets`, the
+`sheets_golden` test; `tests/sheets/every_word.cbsheet` holds every word, `every_mistake.cbsheet`
+the mistakes), and every mod's committed bakes are checked to be what its sheets bake to now
+(the Godot checks).
 
 **The file** (M284): a sheet is a `.cbsheet` file, a `CbSheet` resource (the extension's own loader
 and saver: the file is the text, whole), held by a `CbRules` node in the scene (`sheet`). It opens in
@@ -191,7 +195,9 @@ motion NAME TRIGGER [if EXPRESSION]
   An item has one motion named `Use`; its `CbItem`'s *When used* fields join it.
 - A sheet's other blocks (`react`, `predict`, `hud`) are the viewer's; the first word keeps the
   two apart.
-- Indenting counts: an `if`'s lines, a `find`'s and a `cast`'s are further in. A tab is four spaces.
+- Indenting counts: an `if`'s lines (and an `else`'s), a `find`'s, a `grab`'s and a `cast`'s are
+  further in; nothing else has lines under it (M293: a line further in under an `emit` is a mistake,
+  not a line of its own). A tab is four spaces.
 - In an **item's sheet** a motion is for whoever has the item out (`for carrier`: whoever carries
   it); in a **motion set** (`CbMotionSet`), everyone's.
 
@@ -577,13 +583,10 @@ Each line becomes a `CbFieldBinding` on the control.
 
 ## Version 0
 
-A sheet without the `cbsheet 1` line is version 0, the spelling before M285. **The game reads
-version 1 only** (M292): a mod's sheet of version 0 is a mistake the server says (and does not
-start), publishing refuses it, `cb_sheet check` says it, and the Sheet screen offers **Convert**.
-`cb_sheet convert` (and Convert) writes it as version 1, comments kept, and writes nothing if the
-result would mean anything else (each action's settings, compared); every shipped sheet was
-converted so. Version 0 stays the compiler's own form: version 1 is lowered to it (`sheet_v1.h`),
-and its reader is tested as such.
+A sheet without the `cbsheet 1` line is version 0, the spelling before M285. **It is not read**
+(since M293): a sheet of version 0 is a mistake at its line 1 wherever a sheet is read (the
+server, publishing, `cb_sheet check`, the Sheet screen). Every shipped sheet was converted in M285;
+the converter went with version 0's reader. An old sheet is rewritten by hand, with this table:
 
 | Version 0 | Version 1 |
 |---|---|
@@ -604,7 +607,7 @@ and its reader is tested as such.
 | `?name`, `$other:name`, `^^:name`, `is_local`, `motion.NAME` | `known name`, `name of target`, `name of holder`, `local`, `active NAME` |
 | `^^/Head`, `$at/RightHand`, `$local@pickup.target` | `holder/Head`, `actor/RightHand`, `local@pickup.target` |
 
-Not in version 1 yet (no shipped sheet says them): `side`, `wait off`, `at here`.
+Not in version 1 (no shipped sheet said them): `side`, `wait off`. (`at here` is read.)
 
 ## Tools
 
@@ -612,13 +615,12 @@ Not in version 1 yet (no shipped sheet says them): `side`, `wait off`, `at here`
 |---|---|
 | `cb_sheet check FILE...` | reads each sheet, its mistakes as `FILE:LINE: why`; exit code 1 if any. A motion's nodes (a find's shape) are the scene's: the editor and the bake check those |
 | `cb_sheet fmt [--check] FILE...` | writes each version 1 sheet in the one style: tabs, no spaces at the ends of lines, one blank line at most; what it means is checked to stay the same |
-| `cb_sheet convert FILE...` | version 0 to version 1, in place |
 | `cb_sheet test FILE.cbtest...` | (M291) runs each [sheet test](#tests) on the real server, headless; what failed as `FILE:LINE: why`; exit code 1 if any did |
 | the editor's Sheet screen | colours, names offered, mistakes on their lines as you type, and above the sheet how many and the first (M291); **Format** (as `cb_sheet fmt`, one undo) ([looks.md](looks.md#rules-sheets)) |
 | VS Code | `tools/vscode-cbsheet`: colours for `.cbsheet` and `.cbtest`, and the `$cb_sheet` problem matcher for `cb_sheet check` and `cb_sheet test` (its README says how to install it) |
 
 `cb_sheet` is built with the tests (`bin/cb_sheet`). `cb_tests sheets_version1` checks that every
-shipped sheet is version 1, in the one style, and converts back to itself from version 0.
+shipped sheet is version 1, in the one style, with no mistake.
 
 ## Tests
 

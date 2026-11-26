@@ -1,0 +1,48 @@
+error "line 6: field NAME int|float|bool|timer [on player|world|item] [shared|private] [= VALUE] (shared and private for a player's field)"
+error "line 8: cov.twice is declared at line 7 already"
+error "line 9: param NAME NUMBER [UNIT]: a number of the item (gun.damage 25)"
+error "line 10: let NAME = WORDS"
+error "line 11: \"up\" is a word of the language: a let needs a name of its own"
+error "line 13: motion NAME on use, on press ACTION, on release ACTION, on tap ACTION [S], on hold ACTION [S], on EVENT, while EXPRESSION or when EXPRESSION, then [if EXPRESSION]"
+error "line 16: motion NAME on use, on press ACTION, on release ACTION, on tap ACTION [S], on hold ACTION [S], on EVENT, while EXPRESSION or when EXPRESSION, then [if EXPRESSION]"
+error "line 20: \"0.4 m\" is a distance (m); cooldown takes a time (s)"
+error "line 25: \"force\" cannot stand in a find: there a line is change, emit, impulse, throw, if, else, move for or apply"
+error "line 26: \"launch\" cannot stand in a find: there a line is change, emit, impulse, throw, if, else, move for or apply"
+error "line 27: every S: S seconds (more than 0); what follows in its step happens every S seconds"
+error "line 33: \"cooldown\" is the motion's: as far in as its first line, not under an if"
+error "line 35: \"lasts\" is the motion's: before its first wait"
+error "line 39: a timeout comes right after a wait for ... within S (a wait for ... or S goes on: it has none)"
+error "line 43: an else comes right after an if's lines, as far in as the if"
+error "line 44: if EXPRESSION"
+error "line 50: an item's motion (on item) happens in one tick, on an event said at it: no wait or timeout"
+error "line 54: \"jump\" is not something a reaction does: sound, create, play, set, call, shake or flash"
+error "line 57: as holder: nothing is under it (indent the lines it is for)"
+error "line 62: \"cooldown\" is the reaction's: before its scopes and actions"
+error "line 64: react on EVENT [if EXPRESSION], or react while EXPRESSION"
+error "line 68: \"actor is prop\" asks what its subject is: this line must be under as actor"
+error "line 70: hud PATH: the control its lines are about"
+error "line 74: a hud's lines are show if EXPRESSION, text \"FORMAT\" [into PROPERTY] [if EXPRESSION], bind PROPERTY = EXPRESSION [if EXPRESSION]"
+error "line 76: a hud's lines are show if EXPRESSION, text \"FORMAT\" [into PROPERTY] [if EXPRESSION], bind PROPERTY = EXPRESSION [if EXPRESSION]"
+error "line 78: predict ACTION as CUE [if EXPRESSION]"
+error "line 81: \"whatever\" starts no block: a sheet's blocks are motion, use, react, predict and hud"
+rule motion line 19 head 0
+  name: text "Units"
+  trigger: text "use"
+  cooldown: float 0.4
+  steps: list
+    - dict
+        statements: list
+          - dict
+              verb: text "emit"
+              kind: text "emit"
+              text: text "cov.hit"
+              guard: text ""
+              line: int 21
+rule CbReaction line 58 head 56
+  when: int 0
+  event: text "cov.hit"
+  sound: text "res://assets/sfx/ricochet.wav"
+rule CbReaction line 61 head 60
+  when: int 0
+  event: text "cov.hit"
+  sound: text "res://assets/sfx/ricochet.wav"

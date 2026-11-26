@@ -1,19 +1,26 @@
-error "line 3: sound <file>"
-error "line 4: on what? on <event> [if <expression>]"
-error "line 6: \"jump\" is not a setting or an action of a rule"
-error "line 12: predict <action> as <cue> [if <expression>]"
-error "line 15: a setting after the last action does nothing (a setting is for the actions below it)"
-error "line 16: show <node> if <expression>"
-error "line 17: bind <node> <property> = <expression> [if <expression>]"
-rule CbReaction line 9 head 8
+error "line 4: sound NAME [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPRESSION]"
+error "line 5: react on EVENT [if EXPRESSION], or react while EXPRESSION"
+error "line 7: \"jump\" is not something a reaction does: sound, create, play, set, call, shake or flash"
+error "line 8: \"set\" starts no block: a sheet's blocks are motion, use, react, predict and hud"
+error "line 13: predict ACTION as CUE [if EXPRESSION]"
+error "line 16: \"cooldown\" is the reaction's: before its scopes and actions"
+error "line 18: a hud's lines are show if EXPRESSION, text \"FORMAT\" [into PROPERTY] [if EXPRESSION], bind PROPERTY = EXPRESSION [if EXPRESSION]"
+error "line 19: bind PROPERTY = EXPRESSION [if EXPRESSION]"
+rule CbReaction line 10 head 9
   when: int 0
   event: text "melee.hit"
   target: text "../Outside"
   property: text "visible"
   value: bool false
-rule CbReaction line 11 head 10
+rule CbReaction line 12 head 11
   when: int 0
   event: text "test.fine"
+  target: text "Timer"
+  method: text "hide"
+  method_args: list
+rule CbReaction line 15 head 14
+  when: int 0
+  event: text "test.late"
   target: text "Timer"
   method: text "hide"
   method_args: list

@@ -465,15 +465,8 @@ PackedStringArray Problems( const Node* node )
 	// A rules sheet: each rule is read as the node it becomes, at its line of the file.
 	if ( const auto* rules = Object::cast_to<CbRules>( node ) )
 	{
+		// (A sheet not of version 1 is said at its line 1: M293.)
 		String file = rules->SheetName();
-		{
-			const CharString utf8 = rules->SheetText().utf8();
-			const std::string why = sheet::NotVersion1( std::string( utf8.get_data(), size_t( utf8.length() ) ) );
-			if ( why.empty() == false )
-			{
-				out.push_back( file + " line 1: " + String::utf8( why.c_str() ) );
-			}
-		}
 		for ( const auto& [line, why] : SheetProblems( rules->SheetText() ) )
 		{
 			out.push_back( file + " line " + String::num_int64( line ) + ": " + why );
@@ -554,7 +547,7 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 				Dictionary step = steps[s];
 				if ( step.has( "wait" ) )
 				{
-					check( int( step.get( "line", rule.line ) ), Holds::Expressions, PackedStringArray( { String( step["wait"] ) } ), "then when" );
+					check( int( step.get( "line", rule.line ) ), Holds::Expressions, PackedStringArray( { String( step["wait"] ) } ), "wait for" );
 				}
 				Array statements = step.get( "statements", Array() );
 				for ( int64_t i = 0; i < statements.size(); ++i )
@@ -621,13 +614,13 @@ namespace
 {
 
 // The words of a sheet: what starts a rule, its settings, its actions, and the words they take.
-const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "text", "bind", "if", "and", "or", "not", "as", "subject",
-									"side", "kind", "template", "delay", "chance", "cooldown", "wait", "at", "here", "point", "end",
-									"beam", "follow", "from", "offset", "sound", "scene", "play", "set", "call", "shake", "flash",
-									"volume", "pitch", "jitter", "range", "bus", "volume_by", "under", "life", "off", "blend", "time",
+const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "text", "bind", "if", "and", "or", "not", "as",
+									"kind", "chance", "cooldown", "wait", "at", "here", "point", "end",
+									"beam", "follow", "from", "offset", "sound", "play", "set", "call", "shake", "flash",
+									"volume", "pitch", "jitter", "range", "bus", "volume_by", "under", "off", "blend", "time",
 									"held", "change", "stance", "emit", "impulse", "force", "move", "launch", "replace", "along",
 									"direction", "top", "ramp", "react", "for", "new", "carried", "speed", "lift", "ahead", "seconds",
-									"into", "motion", "when", "then", "after", "within", "timeout", "else", "lasts", "until", "uses",
+									"into", "motion", "when", "after", "within", "timeout", "else", "lasts", "until", "uses",
 									"refill", "ground", "item", "hand", "press", "find", "found", "away", "players", "bodies", "self", "max",
 									"sphere", "box", "capsule", "cast", "ray", "range", "holds", "level", "link", "length", "reel", "alone",
 								"target", "turned", "none", "every", "break", "radius", "remove", "owner", "player", "turn", "momentum",

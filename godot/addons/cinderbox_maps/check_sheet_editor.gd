@@ -16,10 +16,13 @@ func _check(what: String, ok: bool, detail = "") -> void:
 func _initialize() -> void:
 	var names := CbNames.new()
 	_check("the project has a names file", names.is_known())
-	var problems: Dictionary = names.sheet_problems("on brawl.jab.hitt\n    sound res://x.wav\n\non\n")
-	_check("a name nobody declares, at its line, with the closest", problems.has(1) and String(problems[1]).contains("brawl.jab.hit?"), problems)
-	_check("a line that cannot be read, at its line", problems.has(4) and String(problems[4]).contains("on what"), problems)
-	_check("a good sheet says nothing", names.sheet_problems("on brawl.jab.hit\n    sound res://x.wav\n").is_empty())
+	var problems: Dictionary = names.sheet_problems("cbsheet 1\nreact on brawl.jab.hitt\n\tsound res://x.wav\n\nreact on\n")
+	_check("a name nobody declares, at its line, with the closest", problems.has(2) and String(problems[2]).contains("brawl.jab.hit?"), problems)
+	_check("a line that cannot be read, at its line", problems.has(5) and String(problems[5]).contains("react on EVENT"), problems)
+	_check("a good sheet says nothing", names.sheet_problems("cbsheet 1\nreact on brawl.jab.hit\n\tsound res://x.wav\n").is_empty())
+	# Version 0 (the spelling before M285) is not read (M293).
+	var old: Dictionary = names.sheet_problems("on brawl.jab.hit\n    sound res://x.wav\n")
+	_check("version 0: said at its first line", old.has(1) and String(old[1]).contains("no longer read"), old)
 	var offered: PackedStringArray = names.complete("brawl.cd")
 	_check("names offered: brawl.cd -> brawl.cd_dash ...", offered.has("brawl.cd_dash") and offered.has("brawl.cd_slam"), offered)
 	_check("... carried.<kind> too", names.complete("carried.brawl.d").has("carried.brawl.dash_strike"))

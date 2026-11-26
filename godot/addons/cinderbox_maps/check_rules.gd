@@ -76,17 +76,17 @@ func _check_sheet_file() -> void:
 		== FileAccess.get_file_as_string("res://addons/cinderbox_maps/check_rules_good.cbsheet"))
 	var path := "user://check_rules_saved.cbsheet"
 	var made := CbSheet.new()
-	made.text = "# saved\nwhile melee.hot\n    set Barrel visible false\n"
+	made.text = "cbsheet 1\n# saved\nreact while melee.hot\n\tset Barrel visible false\n"
 	_check("a CbSheet saves as a .cbsheet", ResourceSaver.save(made, path) == OK)
 	_check("... which is its text, nothing more", FileAccess.get_file_as_string(path) == made.text)
 	var again := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE) as CbSheet
 	_check("... and loads back the same", again != null and again.text == made.text)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	var edited := CbSheet.new()
-	edited.text = "on test.a\n    call Barrel hide\non test.b\n    call Timer hide\n"
+	edited.text = "cbsheet 1\nreact on test.a\n\tcall Barrel hide\nreact on test.b\n\tcall Timer hide\n"
 	_bad.sheet = edited
 	_check("another sheet: its rules, at once (2)", _bad.get_reaction_count() == 2 and _bad.get_problems().is_empty())
-	edited.text += "on test.c\n    call Barrel show\n"
+	edited.text += "react on test.c\n\tcall Barrel show\n"
 	_check("its text changed (typed in the Sheet screen): built again (3)", _bad.get_reaction_count() == 3)
 	_bad.sheet = null
 	_check("no sheet: nothing, and a warning to give it one", _bad.get_reaction_count() == 0
@@ -145,8 +145,8 @@ func _process(_delta: float) -> bool:
 		for p in problems:
 			lines.append(int(p.get_slice(":", 0).get_slice(" ", 1)))
 		lines.sort()
-		_check("its mistakes, each at its line (3, 4, 6, 9, 12, 15, 16, 17)", lines == [3, 4, 6, 9, 12, 15, 16, 17])
-		_check("the rule without one still works", _bad.get_reaction_count() == 1)
+		_check("its mistakes, each at its line (4, 5, 7, 8, 10, 13, 16, 18, 19)", lines == [4, 5, 7, 8, 10, 13, 16, 18, 19])
+		_check("the lines without one still work (12, 15)", _bad.get_reaction_count() == 2)
 		_timer.visible = true
 		_world.cue("test.fine", _item, null, {})
 		_check("... and acts", not _timer.visible)

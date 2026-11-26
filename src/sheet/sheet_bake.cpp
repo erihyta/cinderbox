@@ -582,11 +582,11 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 	const bool ownerItem = p.Get( "owner", "player" ).AsString() == "item";
 	if ( ownerItem && kind.empty() )
 	{
-		return fail( "owner item is for an item's sheet" );
+		return fail( "on item is for an item's sheet" );
 	}
 	if ( ownerItem && trigger != "event" )
 	{
-		return fail( "an item's motion (owner item) starts on an event said at it: on expired, or on EVENT" );
+		return fail( "an item's motion (on item) starts on an event said at it: on expired, or on EVENT" );
 	}
 	// The item's own "When used" fields (its CbItem's use_conditions, use_changes, use_cooldown,
 	// use_emits) join its motion named Use, as they join a use made of nodes.
@@ -756,7 +756,7 @@ std::string BakeSheetMotion( const Dict& p, const std::string& kind, const Scene
 			const std::string wait = Strip( step.Get( "wait", "" ).AsString() );
 			if ( Plain( wait ) == false )
 			{
-				return fail( "then when \"" + wait + "\" cannot have a tab or a #" );
+				return fail( "wait for \"" + wait + "\" cannot have a tab or a #" );
 			}
 			text += "step\t" + Num( step.Get( "after", 0.0 ).AsFloat() ) + "\t" + Num( step.Get( "within", 0.0 ).AsFloat() ) +
 					( wait.empty() ? std::string() : "\t" + wait ) + "\n";
