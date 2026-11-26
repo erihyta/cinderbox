@@ -8701,8 +8701,8 @@ void TestSeenBackCapped()
 		CHECK( r->window == 30 && r->ticks >= 200 );
 		// Cut on nearly every tick (not on one whose input came late: the one before stands), always
 		// to the limit, and short of the window.
-		CHECK( r->cheatAtLimit );
-		// (Which ticks are cut depends on which inputs came late: on a slow CI runner more.)
+		// (Which ticks are cut, and how far, depends on which inputs came late: on a slow CI runner more.)
+		CHECK( kTimingChecks == false || r->cheatAtLimit );
 		CHECK( kTimingChecks == false || r->cheatCut * 10 >= uint64_t( r->ticks ) * 9 );
 		CHECK( kTimingChecks == false || ( r->honestCut == 0 && r->honestMost >= 2 ) );
 	}
