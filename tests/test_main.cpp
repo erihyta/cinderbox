@@ -1978,22 +1978,20 @@ void TestSheetsVersion1()
 	sheet::Strings fine;
 	const std::vector<sheet::Rule> shake =
 		sheet::ParseRules( "cbsheet 1\nreact on a if actor is prop and local\n\tcooldown 0.1\n\tas actor\n\t\tat point\n\t\t\tshake 0.2 for 0.1\n", fine );
-	CHECK( fine.empty() && shake.size() == 1 &&
-		   sheet::DumpMeaning( shake, fine ) ==
-			   sheet::DumpMeaning( { sheet::Rule{ 0, 0, false, "CbReaction", [] {
-										 sheet::Dict p;
-										 p["when"] = 0;
-										 p["event"] = "a";
-										 p["conditions"] = sheet::Strings{ "is_local" };
-										 p["subject_kind"] = "prop";
-										 p["cooldown"] = 0.1;
-										 p["subject"] = "$at";
-										 p["place"] = 1;
-										 p["shake"] = 0.2;
-										 p["shake_time"] = 0.1;
-										 return p;
-									 }() } },
-								   fine ) );
+	std::vector<sheet::Rule> expected( 1 );
+	{
+		sheet::Dict& p = expected[0].properties;
+		p["when"] = 0;
+		p["event"] = "a";
+		p["conditions"] = sheet::Strings{ "is_local" };
+		p["subject_kind"] = "prop";
+		p["cooldown"] = 0.1;
+		p["subject"] = "$at";
+		p["place"] = 1;
+		p["shake"] = 0.2;
+		p["shake_time"] = 0.1;
+	}
+	CHECK( fine.empty() && shake.size() == 1 && sheet::DumpMeaning( shake, fine ) == sheet::DumpMeaning( expected, fine ) );
 	sheet::Strings none;
 	const std::vector<sheet::Rule> rules = sheet::ParseRules( "cbsheet 1\n\n# a\nreact on a\n\tsound b\n\tsound c\n", none );
 	CHECK( none.empty() && rules.size() == 2 && rules[0].line == 5 && rules[1].line == 6 && rules[0].head == 4 );
