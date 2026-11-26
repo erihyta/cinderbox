@@ -8,6 +8,10 @@ field brawl.cd_dash timer
 event brawl.dash_strike.started
 event brawl.dash_strike.hit
 param inventory.start 1
+# How it meets the other skills: its tag, and what it waits out (the guard's tag, the telekinesis's status).
+tag attack
+tag guard
+status pulled
 
 use if brawl.cd_dash <= 0
 	tags attack

@@ -75,6 +75,7 @@ struct Declaration
 		Action,
 		Param,
 		Status, // (M288) a timed flag on a player: stunned
+		Tag, // (M296) a name motions carry (tags NAME) and are blocked by or cancel: attack
 	};
 	Kind kind = Kind::Field;
 	int line = 0;

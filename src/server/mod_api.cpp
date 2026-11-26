@@ -110,6 +110,8 @@ void Declarations::DeclareSheet( const std::string& path, const std::string& tex
 			case sheet::Declaration::Kind::Status:
 				Status( d.name );
 				break;
+			case sheet::Declaration::Kind::Tag:
+				break; // (the motions': their sheet's compiler checks the names)
 		}
 		for ( size_t e = before; e < m_errors.size(); ++e )
 		{

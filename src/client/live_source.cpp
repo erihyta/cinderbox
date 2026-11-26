@@ -101,6 +101,7 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		}
 		f.frame.resetGeneration = client.ResetGeneration();
 		f.frame.localNetId = sim.Globals().playerNetIds[client.Slot()];
+		f.localClock = sim.EntityMotionClock( f.frame.localNetId ); // (its HUD's: M296)
 		if ( RollbackSession* session = client.Session() )
 		{
 			rollback = session->GetStats();

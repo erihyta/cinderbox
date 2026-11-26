@@ -36,7 +36,7 @@ react on landed if actor is player
 # BouncyTrail
 react on spawned if actor is bouncy_ball
 	as actor
-		at follow
+		at actor attached
 			create bouncy_trail for 25
 
 # Footstep

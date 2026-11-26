@@ -551,6 +551,9 @@ void MotionsOnAt( const MotionState& state, uint32_t tick, std::vector<uint16_t>
 // The same as others see them: the first kMotionsOnShown.
 MotionsOn ShownMotionsOn( const MotionState& state, uint32_t tick );
 
+// A player's motion clock at `tick` (M296: MotionClock, sim/types.h).
+void MotionClockAt( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MotionClock& out );
+
 // Every set of a schema. A set that does not compile is left out; motions past kMaxMotions too.
 // Null when there are none.
 std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::string& warnings );

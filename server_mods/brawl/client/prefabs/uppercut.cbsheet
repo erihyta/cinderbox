@@ -7,6 +7,10 @@ field brawl.cd_upper timer
 event brawl.uppercut.started
 event brawl.uppercut.hit
 param inventory.start 1
+# How it meets the other skills: its tag, and what it waits out (the guard's tag, the telekinesis's status).
+tag attack
+tag guard
+status pulled
 
 motion Rise on use if not linked and brawl.cd_upper <= 0 and grounded
 	tags attack

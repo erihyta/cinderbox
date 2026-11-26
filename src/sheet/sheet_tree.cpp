@@ -237,7 +237,7 @@ bool IsLanguageWord( const std::string& word )
 		"radius", "players", "bodies", "max", "turned", "facing", "look", "none", "sight", "in", "first", "range", "holds", "level", "length", "reel",
 		"alone", "over", "offset", "beam", "point", "under", "off", "blend", "volume", "pitch", "jitter", "bus", "volume_by", "owner", "target", "found",
 		"hit", "up", "to", "away", "world", "nothing", "vertical", "horizontal", "all", "velocity", "momentum", "acceleration", "sphere", "box", "capsule",
-		"ray", "me", "actor", "local",
+		"ray", "me", "actor", "local", "attached", "steer", "strength", "down", "per", "second", "tag",
 		// expressions
 		"not", "and", "is", "known", "active", "ready", "remaining", "of", "first_person", "grounded", "linked", "distance", "reach", "time", "player",
 		"prop", "true", "false" };
@@ -443,7 +443,7 @@ std::vector<std::string> LinesOf( const std::string& text )
 
 bool IsDeclaration( const std::string& verb )
 {
-	return verb == "field" || verb == "event" || verb == "action" || verb == "param" || verb == "status";
+	return verb == "field" || verb == "event" || verb == "action" || verb == "param" || verb == "status" || verb == "tag";
 }
 
 std::string Source::Mistake( int line, const std::string& why ) const
@@ -564,6 +564,16 @@ std::vector<Declaration> DeclarationsOf( const Source& source, Strings& errors )
 {
 	std::vector<Declaration> out;
 	std::map<std::string, size_t> seen; // name -> its declaration
+	// (M296) The params first: a field may start at one ("field gun.rounds int on item = gun.capacity").
+	std::map<std::string, double> params;
+	for ( const auto& [line, number] : source.lines )
+	{
+		const std::vector<Word> w = WordsOf( CodeOf( WithoutUnits( line, []( const std::string& ) {} ) ) );
+		if ( Column( line ) == 0 && w.size() == 3 && w[0].text == "param" && IsValidFloat( w[2].text ) )
+		{
+			params[w[1].text] = ToFloat( w[2].text );
+		}
+	}
 	for ( const auto& [line, number] : source.lines )
 	{
 		if ( Blank( line ) || Column( line ) > 0 )
@@ -613,8 +623,9 @@ std::vector<Declaration> DeclarationsOf( const Source& source, Strings& errors )
 				else if ( word == "=" && i + 1 < w.size() )
 				{
 					const std::string& v = w[i + 1].text;
-					ok = v == "true" || v == "false" || IsValidFloat( v );
-					d.value = v == "true" ? 1.0 : v == "false" ? 0.0 : ok ? ToFloat( v ) : 0.0;
+					const auto param = params.find( v ); // (M296: a param's number)
+					ok = v == "true" || v == "false" || IsValidFloat( v ) || param != params.end();
+					d.value = v == "true" ? 1.0 : v == "false" ? 0.0 : param != params.end() ? param->second : ok ? ToFloat( v ) : 0.0;
 					i += 2;
 				}
 				else
@@ -625,7 +636,7 @@ std::vector<Declaration> DeclarationsOf( const Source& source, Strings& errors )
 			ok = ok && ( d.shared && d.privately ) == false && ( d.on == "player" || ( d.on == "item" && d.privately == false ) || ( d.shared == false && d.privately == false ) );
 			if ( ok == false )
 			{
-				fail( "field NAME int|float|bool|timer [on player|world|item] [shared|private] [= VALUE] (shared and private for a player's field)" );
+				fail( "field NAME int|float|bool|timer [on player|world|item] [shared|private] [= VALUE or a param] (shared and private for a player's field)" );
 				continue;
 			}
 			if ( d.type == "timer" && d.privately )
@@ -650,6 +661,17 @@ std::vector<Declaration> DeclarationsOf( const Source& source, Strings& errors )
 			if ( ok == false || w.size() != 2 )
 			{
 				fail( "status NAME" );
+				continue;
+			}
+		}
+		else if ( verb == "tag" )
+		{
+			// (M296) What a motion's tags, blocked by and cancels may name, besides its sheet's motions and
+			// statuses: a tag carried in another sheet is declared in each that names it.
+			d.kind = Declaration::Kind::Tag;
+			if ( ok == false || w.size() != 2 )
+			{
+				fail( "tag NAME" );
 				continue;
 			}
 		}
@@ -713,6 +735,14 @@ Tree ReadTree( const std::string& text, Strings& errors )
 		{
 			tree.itemFields.insert( d.name );
 		}
+		if ( d.kind == Declaration::Kind::Tag )
+		{
+			tree.tags.insert( d.name );
+		}
+		if ( d.kind == Declaration::Kind::Status )
+		{
+			tree.statuses.insert( d.name );
+		}
 	}
 	std::vector<std::pair<std::string, int>> lines = source.lines;
 	ApplyLets( lines, source, errors );
@@ -755,6 +785,11 @@ Tree ReadTree( const std::string& text, Strings& errors )
 		else if ( verb == "motion" || verb == "use" || verb == "react" || verb == "predict" || verb == "hud" )
 		{
 			tree.blocks.push_back( BlockOf( read, i, end ) );
+			const std::vector<Word> w = WordsOf( head.code );
+			if ( verb == "motion" && w.size() >= 2 )
+			{
+				tree.motions.insert( w[1].text );
+			}
 		}
 		else if ( verb == "cbsheet" )
 		{

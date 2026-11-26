@@ -6,6 +6,9 @@ cbsheet 1
 # Its names (the sword mod's C++ finds them) and its numbers.
 # Parried, a swinger reels (M288): a status the sword mod applies, its slow this sheet's.
 status stunned
+# Its motions' tags: a swing and a block wait each other out.
+tag attack
+tag block
 event sword.swing
 event sword.strike
 event sword.done
@@ -14,7 +17,6 @@ event sword.blocked
 event sword.parried
 action use2 key MouseRight
 param inventory.start 1
-param item.ruled 1
 param pickup.hold_seconds 0.5 s
 
 # A swing, on the left mouse button: the pack plays it (sword.swing), and at the clip's

@@ -39,7 +39,8 @@ motion Fire on use if gun.ammo > 0 and not gun.reloading
 
 react on item.use
 	as holder
-		create muzzle_flash under Muzzle for 0.3
+		at Muzzle attached
+			create muzzle_flash for 0.3
 		at Muzzle
 			sound gunshot volume -5 jitter 0.06 range 70
 
@@ -87,10 +88,12 @@ param gun.reload_seconds 1.5 s
 
 | Line | Is |
 |---|---|
-| `field NAME int\|float\|bool\|timer [on player\|world\|item] [shared\|private] [= VALUE]` | (`timer`, M287: a float that counts down to 0 by itself, a second a second, in every simulation: a player's, the world's, or an item's (while it is carried or lies in the world); `change brawl.cd_dash = 3` and it is a cooldown the HUD shows. `on item`: **in the sheet's motions the name is the item's own field**, read in their conditions and changed by their lines, a find's too: the copy in the hand, or the first carried for a motion `for carrier`; a look reads the one in the hand as `hand.FIELD`. An item's field may be `shared`: every player is sent it, the bat's heat.) | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
+| `field NAME int\|float\|bool\|timer [on player\|world\|item] [shared\|private] [= VALUE]` (VALUE a number, `true`, `false`, or a param of the sheet: `= gun.capacity`, M296) | (`timer`, M287: a float that counts down to 0 by itself, a second a second, in every simulation: a player's, the world's, or an item's (while it is carried or lies in the world); `change brawl.cd_dash = 3` and it is a cooldown the HUD shows. `on item`: **in the sheet's motions the name is the item's own field**, read in their conditions and changed by their lines, a find's too: the copy in the hand, or the first carried for a motion `for carrier`; a look reads the one in the hand as `hand.FIELD`. An item's field may be `shared`: every player is sent it, the bat's heat.) | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
 | `event NAME [everyone]` | an event, the same way |
 | `action NAME [key KEY]` | an action, its key as Godot names keys (`R`, `F`, `1`, `MouseLeft`) |
-| `param NAME NUMBER [UNIT]` | a number of the item whose scene holds the sheet: baked into `items/<kind>.cfg` as its property, which server mods read (`ctx.ItemProperty`; was the `CbItem`'s `properties`). **In the sheet it is its number**: `gun.ammo < gun.magazine` reads `gun.ammo < 12` |
+| `param NAME NUMBER [UNIT]` | a number of the item whose scene holds the sheet: baked into `items/<kind>.cfg` as its property, which server mods read (`ctx.ItemProperty`; was the `CbItem`'s `properties`). **In the sheet it is its number**: `gun.rounds < gun.capacity` reads `gun.rounds < 12`; a field may start at it (the guns' magazine is said once) |
+| `status NAME` | a timed flag on a player ([Statuses](#statuses)) |
+| `tag NAME` | a name motions carry (`tags attack`) and are `blocked by` or `cancel` (M296). **Every name in `tags`, `blocked by` and `cancels` is one the sheet knows**: a tag it declares, a motion of its own, or (for `blocked by`) a status it declares; anything else is a mistake at its line. A tag carried in another sheet (the fist waits out the guard's `guard`) is declared in each that names it; tags, statuses and motions share their names |
 
 - **The editor knows a sheet's own names** as you type, with no server build; the names file
   (`cinderbox_names.cfg`, the server's build) brings the rest, the sheets' of every mod among them.
@@ -227,8 +230,8 @@ As far in as the motion's first line, not under an `if`, before its first `wait`
 | `lasts S` | it ends S seconds after it starts |
 | `until EXPRESSION` | it ends when this holds (several lines: any) |
 | `cooldown S shared NAME` | its cooldown, and every motion that names the same shares it: one starting starts the others' (M288) |
-| `tags NAME, ...` | what kind of thing it is, for others to block or cancel (`attack`, `guard`, `punch`) |
-| `blocked by NAME, ...` | it does not start while a motion of one of these tags is on, or a motion of that name, or the player has that status (`blocked by guard, stunned`) |
+| `tags NAME, ...` | what kind of thing it is, for others to block or cancel (`attack`, `guard`, `punch`): tags the sheet declares (`tag attack`) |
+| `blocked by NAME, ...` | it does not start while a motion of one of these tags is on, or a motion of that name, or the player has that status (`blocked by guard, stunned`); each a tag or status the sheet declares, or one of its motions |
 | `cancels NAME, ...` | starting, it ends the motions of these tags (or names) that are on (a parry ends an attack) |
 | `for holder` / `for carrier` | in an item's sheet: whoever has it out (the default), or whoever carries it |
 | `on item` | the item runs it, while it lies in the world ([an item's motion](#an-items-motion)); without it the player does |
@@ -295,7 +298,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 
 | Line | Does |
 |---|---|
-| `change FIELD = VALUE` / `+= VALUE` / `-= VALUE` | a field of the owner (in a find: once for each thing found) |
+| `change FIELD = VALUE` / `+= VALUE` / `-= VALUE` | a field of the owner (in a find: once for each thing found). In a `while` motion it goes on every tick: its `+=` and `-=` are a rate, and the line says so, `change flight.fuel -= 30 per second` (M296: until then per second without saying it) |
 | `emit EVENT [value VALUE]` | a mod event, at the owner: for looks, state machines and a mod's C++ (`event.value` in a look; M287: the value, a number or an expression, read when it happens; not yet in a find). In a find, A is the player and B what it found, at it |
 | `impulse VALUE [kind velocity\|momentum] [top S] [on WHO] [along DIRECTION] [replace nothing\|vertical\|horizontal\|all]` | a change of velocity (m/s whatever it weighs, to 200), or of momentum (`kind momentum`: N·s, to 100000, shared out by what the target weighs). `top` (M292): the change of velocity at most S m/s (momentum on something light). `replace`: that part of the velocity is cleared first |
 | `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | an item into the world: a new one of a kind, or the one carried (in a hand first, else the lowest slot's), with the player's own velocity; `seconds` until it is removed (0: it stays); `from` a marker's place instead of `ahead` of where the look starts |
@@ -309,7 +312,8 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 
 | Line | Does |
 |---|---|
-| `force VALUE [kind acceleration\|force\|velocity] [top S] [ramp S] [react] [on WHO] [along DIRECTION]` | every tick: m/s² (`acceleration`, the default), newtons (`force`), or toward the speed `top` (`velocity`); `top` caps the other two; `ramp` seconds to full strength; `react`: the other end is pushed back |
+| `force VALUE [kind acceleration\|force] [top S] [ramp S] [react] [on WHO] [along DIRECTION]` | every tick: m/s² (`acceleration`, the default) or newtons (`force`); `top` caps either; `ramp` seconds to full strength; `react`: the other end is pushed back |
+| `steer [on WHO] (along DIRECTION \| toward POINT) speed S strength A [ramp S] [react]` | every tick, brings the target's velocity to S m/s that way, A how hard (M296: until then `force A kind velocity top S`, which is now a mistake that says this). Toward a point it brings the whole velocity there, no faster than it can still stop: what it pulls arrives and stays (the telekinesis) |
 | `move [for S] PARAMETER VALUE ...` | the owner's movement parameters (`walk_speed`, `gravity`, `friction`, `air_control`, ... [the list](server-mods.md#movement-parameters)) while it is the step, or for S seconds. In a find, given to the player found for S seconds (a slow, a root); a player holds six such at most |
 | `link [length L] [reel S] [alone] [on WHO]` | under a cast: a rope to what it holds (or a field's entity). Length 0: as long as it is when it takes hold; reel: metres a second taken in; `alone`: it moves the player only |
 | `follow PATH over S` | carried along a `Path3D` beside the sheet (drawn from its first point, facing −Z), in S seconds; walls still stop it |
@@ -359,11 +363,11 @@ An `Area3D` under an item is not part of the item's body.
 
 | `along DIRECTION` | |
 |---|---|
-| `look`, `move`, `facing`, `up` | where the camera looks; the move input (the facing with none); the body's facing; up |
+| `look`, `move`, `facing`, `up`, `down` | where the camera looks; the move input (the facing with none); the body's facing; up; down (M296: until then `world (0, -1, 0)`) |
 | `world (x, y, z)` | as given, in the world (`world direction (x, y, z)`, the older spelling) |
 | `to` | toward the target (what the cast holds, or a field's entity) |
 | `away` | in a find: from the player out to what it found, along the ground |
-| `toward owner`, `toward look D`, `toward hit` (M290, in place of `along`) | from the target to the owner's chest (a pull), to a point along the look, to where the cast holds. A force of `kind velocity` toward a point brings the target's whole velocity to its speed toward it, no faster than it can still stop there: what it pulls arrives and stays |
+| `toward owner`, `toward look D`, `toward hit` (M290, in place of `along`) | from the target to the owner's chest (a pull), to a point along the look, to where the cast holds. A `steer` toward a point brings the target's whole velocity to its speed toward it, no faster than it can still stop there: what it pulls arrives and stays |
 | `NODE` | a `Marker3D`'s (any `Node3D`'s) forward (−Z) as drawn, turned as the look is |
 | then `turn (yaw, pitch)` | turned by degrees, right and up |
 
@@ -448,7 +452,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	lasts 3
 	change brawl.cd_slam = 5
 	emit brawl.slam.started
-	impulse 25 along world (0, -1, 0) replace vertical
+	impulse 25 along down replace vertical
 	wait for grounded
 	emit brawl.slam.landed
 	find Shockwave players
@@ -506,7 +510,7 @@ use if dash.charges > 0
 	move for 0.18 friction 0
 
 motion Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
-	change flight.fuel -= 30          # per second, in a while motion
+	change flight.fuel -= 30 per second
 	emit flight.thrust
 	force 26 along up
 ```
@@ -533,7 +537,7 @@ react on item.hit if event.value > 0 and local      # when: on an event (its "if
 | `cooldown S` | a setting: not more often than every S seconds |
 | `server only` | a setting: on the server's cue only, not on a press of the viewer's that is guessed |
 | `as holder` / `actor` / `target` / `me` / `local` / `world` / PATH | a scope: whose the lines are (whose fields the condition reads, who the cue must name). An item's holder, the cue's two (world reactions), the sheet's own entity, the viewer's player, the world. With none: `me` |
-| `at point` / `end` / `beam from PATH` / `follow` / PATH `[offset X Y Z]` | a scope: where what is created and heard goes: the cue's point or end (where a shot ended), a beam from a node to the end, following the subject, at a node. With none: where the `CbRules` node is |
+| `at point` / `end` / `beam from PATH` / PATH `[offset X Y Z]` / PATH `attached` | a scope: where what is created and heard goes: the cue's point or end (where a shot ended), a beam from a node to the end, at a node (where it is and how it is turned, then; it stays there), or **attached** to a node: it rides along with it, a child of it (`at Muzzle attached`, `at holder attached`, `at local@pickup.target attached`). With none: where the `CbRules` node is. **One way to say where** (M296): `create X under P` and `at follow` are mistakes that say to write `at P attached` |
 | `after S` | a scope: S seconds later |
 | `chance P` | a scope: only so often (0 to 1) |
 | `if actor is prop`, `if actor is bouncy_ball` (first in the `if`) | only when the subject is this kind of entity (`player`, `prop`, `static`, `ragdoll`, `item`) or comes from this template; its lines must be `as` that subject |
@@ -541,7 +545,7 @@ react on item.hit if event.value > 0 and local      # when: on an event (its "if
 | Action | Does |
 |---|---|
 | `sound NAME [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPRESSION]` | a sound: `NAME` is `assets/sfx/NAME.wav` of the sheet's project, or a full `res://` path |
-| `create NAME [under PATH] [for S]` | an effect: `vfx/NAME.tscn` of the sheet's project (or a full path), riding `under` a node, removed after S seconds |
+| `create NAME [for S]` | an effect: `vfx/NAME.tscn` of the sheet's project (or a full path), where the `at` above it says, removed after S seconds |
 | `play PATH ANIMATION [off ANIMATION]` | an `AnimationPlayer` plays it (and the other when a `while` stops) |
 | `set PATH PROPERTY VALUE [blend S]`, `set PATH PROPERTY = EXPRESSION` | a property: a number, `true`, `false`, `rgb(r, g, b)`, `rgba(r, g, b, a)`, `(x, y, z)`, a word or `"text"`; or the expression's value |
 | `call PATH METHOD [ARGUMENT ...]` | a method of a node |
@@ -585,6 +589,19 @@ hud Skills/Dash
 | `bind PROPERTY = EXPRESSION [if EXPRESSION]` | an expression into a property, or a part of one (`modulate:a`) |
 
 Each line becomes a `CbFieldBinding` on the control.
+
+**The local player's motions and statuses** (M296), as a motion reads them: `ready Strike`,
+`cooldown Strike` (seconds left), `uses Dash` (uses left), a status (`stunned`: while it lasts) and
+`remaining stunned` (seconds), in a condition, a bind, or a format (`{cooldown Strike}s`: seconds to
+a tenth). Its own simulation's, so they count down with no field kept for the HUD:
+
+```
+hud Skills/Strike
+	text "[{key:slot2}]  DASH STRIKE  READY" if ready Strike
+	text "[{key:slot2}]  DASH STRIKE  {cooldown Strike}s" if not ready Strike
+```
+
+They are the viewer's own player's (another player's read 0: its motions are the server's).
 
 ## Version 0
 

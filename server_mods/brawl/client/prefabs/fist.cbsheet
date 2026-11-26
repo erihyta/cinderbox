@@ -19,6 +19,11 @@ event brawl.fist.ready
 event brawl.jab.hit
 event brawl.finisher.hit
 param inventory.start 1
+# How it meets the other skills: its tags, and what it waits out (the guard's tag, the telekinesis's status).
+tag attack
+tag punch
+tag guard
+status pulled
 
 # The box a punch hits in, written once (M289: a word for some words).
 let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1

@@ -7390,6 +7390,17 @@ MotionsOn Simulation::EntityMotionsOn( uint32_t netId ) const
 	return e.is_valid() && m_motions && HasMotionState( e ) && m_globals.tick > 0 ? ShownMotionsOn( GetMotionState( e ), m_globals.tick - 1 ) : MotionsOn{};
 }
 
+MotionClock Simulation::EntityMotionClock( uint32_t netId ) const
+{
+	MotionClock out;
+	flecs::entity e = FindEntity( netId );
+	if ( e.is_valid() && m_motions && HasMotionState( e ) && m_globals.tick > 0 && ( StandsIn( e ) == false || e.has<PuppetState>() == false ) )
+	{
+		MotionClockAt( *m_motions, GetMotionState( e ), m_globals.tick - 1, m_config.tickRate, out );
+	}
+	return out;
+}
+
 AnimStateCopy Simulation::EntityAnimState( uint32_t netId ) const
 {
 	flecs::entity e = FindEntity( netId );

@@ -1,4 +1,4 @@
-rule motion line 22 head 0
+rule motion line 25 head 0
   name: text "Pull"
   trigger: text "use"
   conditions: texts
@@ -24,34 +24,34 @@ rule motion line 22 head 0
                 - "players"
               statements: list
                 - dict
-                    line: int 28
+                    line: int 31
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "brawl.tk.pulled"
                 - dict
-                    line: int 29
+                    line: int 32
                     verb: text "apply"
                     only: text ""
                     kind: text "apply"
                     text: text "pulled"
                     value: text "0.6"
                 - dict
-                    line: int 30
-                    verb: text "force"
+                    line: int 33
+                    verb: text "steer"
                     only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbForce"
                       properties: dict
-                        strength: float 60
                         kind: int 2
-                        speed: float 14
                         target: int 1
                         toward: text "owner"
+                        speed: float 14
+                        strength: float 60
               guard: text ""
-              line: int 27
-rule motion line 32 head 0
+              line: int 30
+rule motion line 35 head 0
   name: text "Hold"
   trigger: text "while"
   expression: text "held.use2"
@@ -67,7 +67,7 @@ rule motion line 32 head 0
               point: text "look 6"
               kind: text "break"
               guard: text ""
-              line: int 34
+              line: int 37
           - dict
               verb: text "grab"
               most: int 8
@@ -80,21 +80,21 @@ rule motion line 32 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 36
-                    verb: text "force"
+                    line: int 39
+                    verb: text "steer"
                     only: text ""
                     kind: text "part"
                     part: dict
                       class: text "CbForce"
                       properties: dict
-                        strength: float 40
                         kind: int 2
-                        speed: float 12
                         toward: text "look 6"
+                        speed: float 12
+                        strength: float 40
                         target: int 3
               guard: text ""
-              line: int 35
-rule motion line 38 head 0
+              line: int 38
+rule motion line 41 head 0
   name: text "Throw"
   trigger: text "use"
   conditions: texts
@@ -116,7 +116,7 @@ rule motion line 38 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 41
+                    line: int 44
                     verb: text "throw"
                     only: text ""
                     kind: text "part"
@@ -129,4 +129,4 @@ rule motion line 38 head 0
                         marks_seconds: float 2
                         target: int 3
               guard: text ""
-              line: int 40
+              line: int 43

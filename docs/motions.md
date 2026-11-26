@@ -107,7 +107,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	lasts 3
 	change brawl.cd_slam = 5
 	emit brawl.slam.started
-	impulse 25 along world (0, -1, 0) replace vertical
+	impulse 25 along down replace vertical
 	wait for grounded
 	emit brawl.slam.landed
 ```
@@ -154,7 +154,7 @@ use if dash.charges > 0
 | While it lasts | `lasts S` | how long the motion is on after it starts (with a cast: after it takes hold). A `while` is on while its expression holds |
 | | `until EXPRESSION` | any of which ends it (`pressed.grapple`, `not held.grapple`). With one, or with a cast, and no `lasts`, the motion is on until something ends it. Not for a `while` |
 | | `move PARAMETER VALUE` | [movement parameters](server-mods.md#movement-parameters) the player has while it is on (`friction 0`). They win over the server's, the character's and a mod's `SetMove` for that long |
-| When it happens | `change` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=`), written like a [prediction's](looks.md#predictions). In a `while`, `-=` and `+=` are per second and need a Float field (`flight.fuel -= 30`), and `=` is set when it starts |
+| When it happens | `change` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=`), written like a [prediction's](looks.md#predictions). In a `while`, `-=` and `+=` are per second, said in the line, and need a Float field (`flight.fuel -= 30 per second`), and `=` is set when it starts |
 | | `emit EVENT` | a mod event at the player; under a cast, when it takes hold. A `while` emits it when it starts |
 
 - **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
@@ -200,9 +200,9 @@ Every tick its step is on.
 
 | Word | Meaning |
 |---|---|
-| `kind` | `acceleration` (the default): m/s², the same for everything (a jetpack). `force`: newtons, divided by what the target weighs (a hook's pull). `velocity`: brings the target's speed along the direction to `top`, by at most the strength in m/s per second (a conveyor, a brake) |
+| `kind` | `acceleration` (the default): m/s², the same for everything (a jetpack). `force`: newtons, divided by what the target weighs (a hook's pull). (A force toward a speed, a conveyor or a brake, is `steer ... speed S strength A` since M296: the speed it brings the target's velocity to, by at most A m/s per second.) |
 | `force VALUE` | how hard |
-| `top S` | acceleration and force: a top speed along the direction, past which it pushes no more. Velocity: the speed it goes to |
+| `top S` | a top speed along the direction, past which it pushes no more |
 | `ramp S` | seconds over which it rises from nothing to its strength |
 | `react` | the other end takes the same momentum the other way: the player, when the force is on something else; what the cast holds, when it is on the player. With velocity, `top` is then how fast the two close on each other, and each takes its share by weight |
 
@@ -444,7 +444,7 @@ motion Flying while flight.on
     move walk_speed 7 sprint_speed 12 air_control 1 gravity 0 air_friction 3 move_frame 1
 
 motion Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
-    change flight.fuel -= 30          # a while's += and -= are per second
+    change flight.fuel -= 30 per second
     emit flight.thrust
     force 26 along up                 # 26 m/s² (gravity is 18)
 

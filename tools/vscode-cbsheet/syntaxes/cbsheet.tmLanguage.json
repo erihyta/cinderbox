@@ -57,11 +57,11 @@
 			}
 		},
 		"declaration": {
-			"match": "^(field|event|action|param|status|let|uses|cbsheet)\\b",
+			"match": "^(field|event|action|param|status|tag|let|uses|cbsheet)\\b",
 			"name": "storage.modifier.cbsheet"
 		},
 		"keyword": {
-			"match": "\\b(on|while|when|if|else|wait|for|within|or|every|timeout|lasts|cooldown|until|uses|refill|ground|tags|blocked|by|cancels|shared|release|tap|hold|press|item|holder|carrier|owner|change|emit|value|end|apply|find|grab|cast|range|speed|holds|level|bodies|players|first|self|max|turned|look|facing|move|up|world|to|away|toward|at|hit|target|along|turn|impulse|force|kind|velocity|momentum|acceleration|top|ramp|react|link|length|reel|alone|launch|new|carried|lift|ahead|seconds|from|follow|over|break|radius|remove|throw|marks|replace|nothing|vertical|horizontal|all|sphere|box|capsule|ray|as|actor|me|local|create|sound|volume|pitch|jitter|bus|play|set|call|shake|flash|life|chance|after|server|only|known|of|is|active|ready|remaining|timer|int|float|bool|private|key|everyone|hud|text|bind|scene|beam|point|here)\\b",
+			"match": "\\b(on|while|when|if|else|wait|for|within|or|every|timeout|lasts|cooldown|until|uses|refill|ground|tags|blocked|by|cancels|shared|release|tap|hold|press|item|holder|carrier|owner|change|emit|value|end|apply|find|grab|cast|range|speed|holds|level|bodies|players|first|self|max|turned|look|facing|move|up|world|to|away|toward|at|hit|target|along|turn|impulse|force|kind|velocity|momentum|acceleration|top|ramp|react|link|length|reel|alone|launch|new|carried|lift|ahead|seconds|from|follow|over|break|radius|remove|throw|marks|replace|nothing|vertical|horizontal|all|sphere|box|capsule|ray|as|actor|me|local|create|sound|volume|pitch|jitter|bus|play|set|call|shake|flash|life|chance|after|server|only|known|of|is|active|ready|remaining|timer|int|float|bool|private|key|everyone|hud|text|bind|scene|beam|point|here|attached|steer|strength|down|per|second)\\b",
 			"name": "keyword.control.cbsheet"
 		},
 		"logic": {

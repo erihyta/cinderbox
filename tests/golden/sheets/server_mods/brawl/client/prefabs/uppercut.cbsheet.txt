@@ -1,4 +1,4 @@
-rule motion line 11 head 0
+rule motion line 15 head 0
   name: text "Rise"
   trigger: text "use"
   conditions: texts
@@ -19,13 +19,13 @@ rule motion line 11 head 0
               kind: text "change"
               text: text "brawl.cd_upper = 4"
               guard: text ""
-              line: int 16
+              line: int 20
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "brawl.uppercut.started"
               guard: text ""
-              line: int 17
+              line: int 21
           - dict
               verb: text "cast"
               range: float 3
@@ -36,13 +36,13 @@ rule motion line 11 head 0
               holds: texts
               statements: list
                 - dict
-                    line: int 19
+                    line: int 23
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "brawl.uppercut.hit"
                 - dict
-                    line: int 20
+                    line: int 24
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -54,7 +54,7 @@ rule motion line 11 head 0
                         replace: int 1
                         target: int 1
                 - dict
-                    line: int 21
+                    line: int 25
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -66,4 +66,4 @@ rule motion line 11 head 0
                         frame: int 3
                         replace: int 1
               guard: text ""
-              line: int 18
+              line: int 22

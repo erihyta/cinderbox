@@ -20,6 +20,7 @@ constexpr uint32_t kMaxEntities = 1u << 16;
 constexpr uint32_t kMaxRagdolls = 1u << 12;
 constexpr uint32_t kMaxStats = 256;
 constexpr uint32_t kMaxTemplates = 1u << 12;
+constexpr size_t kMaxClockMotions = 4096; // (a local player's motions not at rest: M296)
 
 const Blackboard kNoPrivates{};
 
@@ -41,6 +42,7 @@ enum ExtraFlag : uint8_t
 	ExtraTexts = 1 << 0,	 // the typed text's count and lines follow (else: the base's)
 	ExtraConfirmed = 1 << 1, // the server's confirmed tick follows (else: 0)
 	ExtraRows = 1 << 2,		 // the published lists' rows follow (else: the base's), M292
+	ExtraClock = 1 << 3,	 // the local player's motion clock follows (else: the base's), M296
 };
 
 enum WorldFlag : uint8_t
@@ -1326,7 +1328,9 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	bool privates = base == nullptr ? frame.privates != kNoPrivates : frame.privates != base->privates;
 	bool texts = base == nullptr ? frame.textCount != 0 : frame.textCount != base->textCount;
 	bool rows = base == nullptr ? frame.rowsGeneration != 0 : frame.rowsGeneration != base->rowsGeneration;
-	uint8_t extra = uint8_t( ( texts ? ExtraTexts : 0 ) | ( frame.confirmedTick != 0 ? ExtraConfirmed : 0 ) | ( rows ? ExtraRows : 0 ) );
+	bool clock = base == nullptr ? frame.localClock != MotionClock{} : frame.localClock != base->localClock;
+	uint8_t extra = uint8_t( ( texts ? ExtraTexts : 0 ) | ( frame.confirmedTick != 0 ? ExtraConfirmed : 0 ) | ( rows ? ExtraRows : 0 ) |
+							 ( clock ? ExtraClock : 0 ) );
 	uint8_t flags = uint8_t( ( frame.hasWorld ? FlagWorld : 0 ) | ( map ? FlagMap : 0 ) | ( schema ? FlagSchema : 0 ) |
 							 ( names ? FlagNames : 0 ) | ( stats ? FlagStats : 0 ) | ( compact ? FlagCompact : 0 ) |
 							 ( privates ? FlagPrivates : 0 ) | ( extra != 0 ? FlagExtra : 0 ) );
@@ -1458,6 +1462,27 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 						WriteString( w, rowsOf[i][k].second );
 					}
 				}
+			}
+		}
+		if ( extra & ExtraClock )
+		{
+			// The motions not at rest, then the statuses (each a few at most: what a HUD shows).
+			const MotionClock& c = frame.localClock;
+			const size_t motions = std::min<size_t>( c.motions.size(), kMaxClockMotions );
+			w.Write( uint16_t( motions ) );
+			for ( size_t i = 0; i < motions; ++i )
+			{
+				w.Write( c.motions[i].motion );
+				w.Write( uint8_t( c.motions[i].ready ? 1 : 0 ) );
+				w.Write( c.motions[i].uses );
+				w.Write( c.motions[i].cooldown );
+			}
+			const size_t statuses = std::min<size_t>( c.statuses.size(), 255 );
+			w.Write( uint8_t( statuses ) );
+			for ( size_t i = 0; i < statuses; ++i )
+			{
+				w.Write( c.statuses[i].status );
+				w.Write( c.statuses[i].remaining );
 			}
 		}
 	}
@@ -1754,6 +1779,36 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	{
 		out.rowsGeneration = base != nullptr ? base->rowsGeneration : 0;
 		out.rows = base != nullptr ? base->rows : std::map<std::string, std::vector<ViewFrame::Row>>{};
+	}
+	if ( extra & ExtraClock )
+	{
+		out.localClock = MotionClock{};
+		const uint16_t motions = r.Read<uint16_t>();
+		if ( r.Ok() == false || motions > kMaxClockMotions )
+		{
+			return false;
+		}
+		for ( uint16_t i = 0; i < motions && r.Ok(); ++i )
+		{
+			MotionClockEntry e;
+			e.motion = r.Read<uint16_t>();
+			e.ready = r.Read<uint8_t>() != 0;
+			e.uses = r.Read<uint16_t>();
+			e.cooldown = r.Read<float>();
+			out.localClock.motions.push_back( e );
+		}
+		const uint8_t statuses = r.Read<uint8_t>();
+		for ( uint8_t i = 0; i < statuses && r.Ok(); ++i )
+		{
+			StatusClockEntry e;
+			e.status = r.Read<uint16_t>();
+			e.remaining = r.Read<float>();
+			out.localClock.statuses.push_back( e );
+		}
+	}
+	else
+	{
+		out.localClock = base != nullptr ? base->localClock : MotionClock{};
 	}
 
 	out.hasWorld = ( flags & FlagWorld ) != 0;

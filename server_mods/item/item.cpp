@@ -13,10 +13,11 @@
 // item put away is silent), and its animation pack's states. So items differ by their scenes, and
 // a new one needs no code.
 //
-// What a use *does* is another mod's: one that rules a kind of item (the gun mod: anything whose
-// scene says gun.damage) says the cues itself, when its rule says so, and marks the kinds it rules
-// with the item property "item.ruled". For every other item this mod says them on the press: an
-// item with no rules at all (a prop to wave about) still has its look.
+// What a use *does* is the item's sheet's, or another mod's: a kind whose sheet has motions (the
+// guns, the bat, the sword, the skills) says the cues itself, when its rule says so; the server
+// marks it with the item property "item.ruled" (M296: derived; a mod may declare it too). For
+// every other item this mod says them on the press: an item with no rules at all (a prop to wave
+// about) still has its look.
 
 #include "mod_api.h"
 

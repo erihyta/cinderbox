@@ -1,4 +1,4 @@
-rule motion line 12 head 0
+rule motion line 16 head 0
   name: text "Use"
   trigger: text "use"
   conditions: texts
@@ -16,13 +16,13 @@ rule motion line 12 head 0
               kind: text "change"
               text: text "brawl.cd_dash = 3"
               guard: text ""
-              line: int 15
+              line: int 19
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "brawl.dash_strike.started"
               guard: text ""
-              line: int 16
+              line: int 20
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -32,7 +32,7 @@ rule motion line 12 head 0
                   speed: float 16
                   replace: int 2
               guard: text ""
-              line: int 17
+              line: int 21
           - dict
               verb: text "move for"
               kind: text "part"
@@ -43,8 +43,8 @@ rule motion line 12 head 0
                   parameters: dict
                     friction: float 0
               guard: text ""
-              line: int 18
-rule motion line 20 head 0
+              line: int 22
+rule motion line 24 head 0
   name: text "Hit"
   trigger: text "use"
   conditions: texts
@@ -63,13 +63,13 @@ rule motion line 20 head 0
               holds: texts
               statements: list
                 - dict
-                    line: int 23
+                    line: int 27
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "brawl.dash_strike.hit"
                 - dict
-                    line: int 24
+                    line: int 28
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -80,4 +80,4 @@ rule motion line 20 head 0
                         frame: int 2
                         target: int 1
               guard: text ""
-              line: int 22
+              line: int 26

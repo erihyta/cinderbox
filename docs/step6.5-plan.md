@@ -144,7 +144,7 @@ agreeing, as in M287 and M289.
 | **M293** (**done**, 2026-11-26: as built, below the table) | **One front end** ([§3.1](#31-the-front-end-m293)) | every shipped, check and starter sheet lowers to the same rules (golden files unchanged, CI's re-bake unchanged); the 23 sheet tests pass; `LowerVersion1`, `ParseVersion0`, version 0 and `convert` deleted; errors with columns; a `let` named like a word of the language is refused |
 | **M294** (**done**, 2026-11-26: as built, below the table) | **The server compiles the sheet** ([§3.2](#32-the-server-compiles-the-sheet-m294)) | no mod has a `motions/` folder; the server, `cb_sheet test` and `cb_sheet check` compile sheets against baked parts; `CbItem.use_*` gone; the tests and the bots pass |
 | **M295** (**done**, 2026-11-26: as built, below the table) | **Limits** ([§3.3](#33-limits-m295)) | `active` reads any motion; no tag dropped; `every` without a cap; reference hashes refreshed, every compiler agreeing |
-| **M296** | **The language, made regular** ([§3.4](#34-the-language-made-regular-m296)) | each change has a `.cbtest` or a golden file; `sheets.md` updated |
+| **M296** (**done**, 2026-11-26: as built, below the table) | **The language, made regular** ([§3.4](#34-the-language-made-regular-m296)) | each change has a `.cbtest` or a golden file; `sheets.md` updated |
 | **M297** | **Shipped sheets on the new words** ([§3.5](#35-shipped-sheets-on-the-new-words-m297)) | no `cd_*` field in brawl; no number written twice in the guns; a playtest by hand of the kit, the sword, the bat and the guns |
 
 **M293 as built** (2026-11-26):
@@ -179,6 +179,21 @@ agreeing, as in M287 and M289.
 | Reference hashes refreshed | **not needed**: every tick hash and the animation hash match as they were. The limits only lift; nothing shipped reached them |
 | Proved | a test of 71 motions: the 69th, with the 69th tag, is on, read by another's condition (`motion.Far`), seen from outside, and its tag blocks a third until it ends; a state machine's `motion.<name>` with a list; the puppet codec's fuzz with lists. 195 tests; the Godot checks; a server's view file read by the game |
 
+**M296 as built** (2026-11-26). Each row was weighed again before it was made (the owner's rule);
+five were dropped and one moved, with the reasons in [§5](#5-reconsidered-and-dropped).
+
+| Planned | Built |
+|---|---|
+| One way to say where | `at PATH attached`: what is created is a child of that place and rides along (`at Muzzle attached`, `at holder attached`, `at local@pickup.target attached`). `create ... under P` and `at follow` are mistakes that say what to write. Placed at a node without `attached`, it takes the node's rotation too, not only its place. Shipped: the pistol's flash, the mark's zone, the bouncy trail, the pickup prompts |
+| A field's start value from a param | `field gun.rounds int on item = gun.capacity`: the guns say their magazine once (`param gun.capacity 12`). `gun.cpp` reads `gun.capacity` (it read `gun.magazine` as a property, which no scene had set since M286: always its fallback, 10) |
+| Tags declared, names checked | `tag NAME`. Every name in `tags`, `blocked by` and `cancels` is a tag the sheet declares, one of its motions, or (`blocked by`) a status it declares: anything else is a mistake at its line. A tag carried in another sheet is declared in each that names it (the fist: `tag guard`, `status pulled`) |
+| `down` | `along down` (the slam). `back`: dropped |
+| `per second` said | a `while` motion's `+=` and `-=` say `per second` (the flight's fuel); without it a mistake, and with it anywhere else |
+| A HUD reads `ready`, `cooldown`, `uses`, statuses | the local player's **motion clock**: `Simulation::EntityMotionClock` (the motions not at rest, and the statuses with seconds left), into the view (`ViewFrame::localClock`; view file 12), read by the game as a motion reads them, in a condition, a bind or a format (`{cooldown Strike}s`). Another player's read 0 |
+| `steer` | `steer [on WHO] (along D \| toward P) speed S strength A [ramp S] [react]`. **Not** "the old spelling still read": one spelling; `force ... kind velocity` is a mistake that says to write `steer` |
+| `item.ruled` derived (F5) | the server marks a kind ruled when its sheet has motions (it says what its use does, on the use or while it is used); the bat's and the sword's `param item.ruled 1` and the gun mod's declaration went. Checked first that no kind with motions and no mark (the kit's skills, the cannon, the boots, the hook, the shell, the frag) has anything that hears `item.use`. **Found on the way**: "a motion on its use", as planned, leaves out the rifle (`when using.gun.rifle`: held, it fires) and the guard (`use` while held): the item mod would have said `item.use` on the rifle's press, and the gun mod shot once more. A server on the published items marks all 12 of its kinds with motions (the sword, the cannon and the shell on theirs) |
+| Proved | every motion compiles byte for byte as before (`motions_golden`: 17 owners; `down`, `steer`, `per second` are spellings); the sheet goldens changed only by the new lines, and `every_word` and `every_mistake` hold each new word and each new mistake; `motions_meet` reads the clock (a cooldown of 0.97 s, a shared one with it, a status's 0.48 s); `view_codec` carries it; the guns' sheet tests; the Godot checks; the bakes (the pistol gains `gun.capacity`, the bat and the sword lose `item.ruled`) |
+
 **Order, and why.** M293 first: every later change is made once, on the tree, not in a text
 rewrite that is about to go. M294 next: it decides what an item carries, which 6b builds on. M295
 before M296, so that the new words (`tag`, `active` in HUDs) do not inherit the old caps. M297 last,
@@ -194,6 +209,13 @@ when the words it uses exist.
 | Fixing the baked `.cfg` headers ("Baked from the CbMotion nodes") | the files go in M294 |
 | Replacing the rule dictionaries with typed structs | the look's nodes read them until 6b, which replaces the nodes |
 | A new word so a timed-out marker can skip the recovery | only if the owner picks F3 (c); (a) needs no word |
+| `as holder` the default subject in an item's sheet (M296) | a reaction with no `as` reads the sheet's own entity (`me`): the bat's glow (`react while melee.heat > 0`) reads its own heat that way. A default that changes with where the sheet is would make one line mean two things; `as holder` is one line |
+| A motion with more than one trigger (M296) | the gun's `Dry` and `Reload` share their three lines through an event: one says it (`emit`), a motion `on` it does the lines (M297). One way to start a motion from another (D9), and one trigger keeps `ready`, `cooldown` and `uses` plain |
+| One name for an item's field in motions and in looks (M296) | in a motion the item is known (the one that runs it); a look is the player's, and `hand.` says which copy it reads. Two places, two questions |
+| A cast and the owner's own effects in one step (M296) | the dash strike's two motions become one with `emit` and `on` (M297); no new kind of step is needed |
+| A word for "this item is used" instead of `using.gun.rifle` (M296) | only the rifle says it, in its own sheet, where its kind's name is plain; a word whose meaning changes with the sheet that `uses` a file reads worse than the name |
+| `back` as a direction (M296) | no sheet wants it; `along facing turn (180, 0)` says it |
+| Mistakes with columns, underlined in the Sheet screen (M296: moved to the leftovers) | most mistakes already quote their word (`"gaurd" is no tag this sheet declares`), and the Sheet screen marks the line. A real column needs each of the compiler's mistakes to know its word's place, and every reader of `line N:` to change (the Sheet screen, the VS Code extension, `cb_sheet`, the Godot checks): with 6b's editor work |
 
 ## 6. Decisions for the owner
 
@@ -203,7 +225,7 @@ when the words it uses exist.
 | F2 | The word for riding along with a place | `attached` / `riding` / `follow` | **decided (the owner, 2026-11-26): `attached`** (the engines' word; `follow` is already a motion's word for a path) |
 | F3 | The fist, bat and sword when the clip's markers never come (the review's D-1) | (a) `wait for X or S` everywhere: a swing also waits out its recovery; (b) keep the copies; (c) a word to end early | **decided (the owner, 2026-11-26): (b), keep the copies for now**; the owner tests (a) soon ([ROADMAP, to try](../ROADMAP.md#to-try-the-owners-experiments)) |
 | F4 | `inventory.start` (the review's D-3) | the item's / the game mode's | **decided (the owner, 2026-11-26): the item's, as it is**; the game mode's is an experiment for later ([ROADMAP, to try](../ROADMAP.md#to-try-the-owners-experiments)) |
-| F5 | `item.ruled` | a param / derived from a sheet with a use motion | **decided (the owner, 2026-11-26): derived**, in M296 |
+| F5 | `item.ruled` | a param / derived from a sheet with a use motion | **decided (the owner, 2026-11-26): derived**; done in M296 |
 
 ## 7. Risks
 

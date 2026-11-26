@@ -283,6 +283,30 @@ struct MotionsOn
 	}
 };
 
+// A player's motion clock (M296), for its own HUD: what ready.X, cooldown.X and uses.X read, for the
+// motions not at rest (not ready, cooling down, or with uses left to count), and its statuses with
+// the seconds each has left. A motion it does not list is ready, with no cooldown and no uses.
+struct MotionClockEntry
+{
+	uint16_t motion = 0;
+	bool ready = true;
+	uint16_t uses = 0;
+	float cooldown = 0.0f;
+	bool operator==( const MotionClockEntry& ) const = default;
+};
+struct StatusClockEntry
+{
+	uint16_t status = 0;
+	float remaining = 0.0f;
+	bool operator==( const StatusClockEntry& ) const = default;
+};
+struct MotionClock
+{
+	std::vector<MotionClockEntry> motions;
+	std::vector<StatusClockEntry> statuses;
+	bool operator==( const MotionClock& ) const = default;
+};
+
 // --- Commands ------------------------------------------------------------------------------------
 //
 // What the server's gameplay mods decide, in a form every simulation can apply. Mods run only on

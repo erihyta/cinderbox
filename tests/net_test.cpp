@@ -7987,19 +7987,29 @@ void TestHybridFar()
 class FaceOffMod final : public mods::ServerMod
 {
 public:
-	explicit FaceOffMod( float apart = 8.0f )
+	// sayEvery: once they face off, a word of this mod's at player 0 that often (ticks; 0: none).
+	explicit FaceOffMod( float apart = 8.0f, uint32_t sayEvery = 0 )
 		: m_apart( apart )
+		, m_sayEvery( sayEvery )
 	{
 	}
 	const char* Name() const override
 	{
 		return "test_face_off";
 	}
-	void Declare( mods::Declarations& ) override
+	void Declare( mods::Declarations& declare ) override
 	{
+		if ( m_sayEvery != 0 )
+		{
+			m_said = declare.Event( "test.face_off.said" );
+		}
 	}
 	void Tick( mods::Context& ctx ) override
 	{
+		if ( done && m_sayEvery != 0 && ctx.Tick() % m_sayEvery == 0 )
+		{
+			ctx.Emit( m_said, SlotTarget( 0 ) );
+		}
 		if ( done || ctx.Tick() < 60 || ctx.InWorld( 0 ) == false || ctx.InWorld( 1 ) == false )
 		{
 			return;
@@ -8012,6 +8022,8 @@ public:
 
 private:
 	float m_apart;
+	uint32_t m_sayEvery = 0;
+	mods::EventHandle m_said;
 };
 
 // Lag compensation of the motions (M250, SimConfig::compensation): the brawl kit's jab, a find, from
@@ -8255,7 +8267,9 @@ void TestBrawlLagCompensation()
 void TestHybridPuppets()
 {
 	std::vector<std::unique_ptr<mods::ServerMod>> mods;
-	mods.push_back( std::make_unique<FaceOffMod>( 1.6f ) );
+	// (A word of a mod's at the fighter every 40 ticks: until M296 the item mod said item.use on each
+	// jab, which the fist's sheet rules now.)
+	mods.push_back( std::make_unique<FaceOffMod>( 1.6f, 40 ) );
 	const FaceOffMod* faceOff = static_cast<const FaceOffMod*>( mods.back().get() );
 	Harness h( 48180, {}, {}, { { "test.mods", "brawl" }, { "combat.max_health", "1000000" } }, UseHybridModel, std::move( mods ) );
 	net::NetSimConfig link;
@@ -8388,8 +8402,9 @@ void TestHybridPuppets()
 		}
 		return out;
 	};
-	// The other's game hears every one, once; the fighter's own only what a mod said (item.use, a
-	// hit's combat.damage): the rest (its fist's used) it says itself, predicting.
+	// The other's game hears every one, once; the fighter's own only what a mod said (the face-off's
+	// word, a hit's combat.damage): the rest (its fist's used, the jab's events) it says itself,
+	// predicting.
 	const Said all = inWindow( onServerEvents ), saidByMods = inWindow( saidByModsOnServer );
 	const Said watcherHeard = inWindow( heardBy[1] ), fighterHeard = inWindow( heardBy[0] );
 	std::printf( "    the events at the fighter: %zu on the server (%zu a mod's), the other's game heard %zu, its own %zu\n", all.size(), saidByMods.size(),

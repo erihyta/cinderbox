@@ -185,6 +185,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 12 | The local player's motion clock, when it changed: its motions not at rest (ready, uses left, cooldown left) and its statuses (seconds left), what its HUD reads (M296) |
 | 11 | A player's motions that are on: how many and which (up to 16 at once, by index), not a mask of the server's first 64 (M295) |
 | 10 | What a player carries, by kind (M260) |
 | 9 | Two-byte slots (M252) |

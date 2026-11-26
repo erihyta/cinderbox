@@ -76,6 +76,9 @@ struct ViewFrame
 	// The local player's private fields (BoardScope::Private), by slot: what only it was sent. All 0
 	// for a source that has none (a recording, a view file: they were never written down).
 	Blackboard privates;
+	// The local player's motion clock (M296): what its HUD's ready X, cooldown X, uses X and statuses read.
+	// Empty for a source that has no local player's simulation.
+	MotionClock localClock;
 	// Players' names by slot ("" for an empty slot or a source that knows none).
 	PerPlayer<std::string> names; // (on the heap: M252)
 	uint64_t namesGeneration = 0;

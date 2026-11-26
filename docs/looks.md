@@ -514,7 +514,8 @@ motion Fire on use if gun.ammo > 0 and not gun.reloading
 
 react on item.use
 	as holder
-		create muzzle_flash under Muzzle for 0.3
+		at Muzzle attached
+			create muzzle_flash for 0.3
 		at Muzzle
 			sound gunshot volume -5 jitter 0.06 range 70
 

@@ -1866,6 +1866,21 @@ struct StateReader
 	uint32_t tickRate = 60;
 };
 
+// One motion's clock at `tick`: its cooldown left (seconds), its uses left (0 for one without a
+// limit of uses), and whether it is ready (not on, not cooling down, a use left).
+MotionClockEntry ClockOf( const Motion& m, const MotionSlot& slot, uint32_t tick, uint32_t tickRate )
+{
+	MotionClockEntry out;
+	// (lastTick: its last start's tick plus one; 0: never.)
+	const uint32_t cooldownEnds = slot.lastTick != 0 ? slot.lastTick - 1 + Ticks( m.cooldown, tickRate ) : 0;
+	out.cooldown = cooldownEnds > tick ? float( cooldownEnds - tick ) / float( tickRate ) : 0.0f;
+	const uint32_t usesLeft = m.uses > slot.used ? m.uses - slot.used : 0;
+	out.uses = uint16_t( std::min<uint32_t>( usesLeft, 65535 ) );
+	const bool on = slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick;
+	out.ready = on == false && out.cooldown <= 0.0f && ( m.uses == 0 || usesLeft > 0 );
+	return out;
+}
+
 float ReadMotionState( const void* user, AnimExpr::VarKind kind, uint16_t index )
 {
 	const StateReader& r = *static_cast<const StateReader*>( user );
@@ -1873,25 +1888,35 @@ float ReadMotionState( const void* user, AnimExpr::VarKind kind, uint16_t index 
 	{
 		return 0.0f;
 	}
-	const Motion& m = r.motions->list[index];
-	const MotionSlot& slot = r.state->slots[index];
-	// (lastTick: its last start's tick plus one; 0: never.)
-	const uint32_t cooldownEnds = slot.lastTick != 0 ? slot.lastTick - 1 + Ticks( m.cooldown, r.tickRate ) : 0;
-	const float cooldownLeft = cooldownEnds > r.tick ? float( cooldownEnds - r.tick ) / float( r.tickRate ) : 0.0f;
-	const uint32_t usesLeft = m.uses > slot.used ? m.uses - slot.used : 0;
-	if ( kind == AnimExpr::VarKind::MotionCooldown )
-	{
-		return cooldownLeft;
-	}
-	if ( kind == AnimExpr::VarKind::MotionUses )
-	{
-		return float( usesLeft ); // (0 for one without a limit of uses)
-	}
-	const bool on = slot.lastTick != 0 && slot.sinceTick <= r.tick && r.tick < slot.untilTick;
-	return on == false && cooldownLeft <= 0.0f && ( m.uses == 0 || usesLeft > 0 ) ? 1.0f : 0.0f;
+	const MotionClockEntry clock = ClockOf( r.motions->list[index], r.state->slots[index], r.tick, r.tickRate );
+	return kind == AnimExpr::VarKind::MotionCooldown ? clock.cooldown
+		   : kind == AnimExpr::VarKind::MotionUses	  ? float( clock.uses )
+													  : ( clock.ready ? 1.0f : 0.0f );
 }
 
 } // namespace
+
+void MotionClockAt( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MotionClock& out )
+{
+	out.motions.clear();
+	out.statuses.clear();
+	for ( size_t i = 0; i < motions.list.size() && i < state.slots.size() && i < 65535; ++i )
+	{
+		MotionClockEntry clock = ClockOf( motions.list[i], state.slots[i], tick, tickRate );
+		if ( clock.ready == false || clock.cooldown > 0.0f || clock.uses > 0 )
+		{
+			clock.motion = uint16_t( i );
+			out.motions.push_back( clock );
+		}
+	}
+	for ( const MotionStatus& s : state.statuses )
+	{
+		if ( s.endTick > tick )
+		{
+			out.statuses.push_back( { s.status, float( s.endTick - tick ) / float( std::max( 1u, tickRate ) ) } );
+		}
+	}
+}
 
 void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, const Character& c, Blackboard& board,
 				 bool& boardChanged, std::vector<ModEventRecord>& events, std::vector<MotionActive>& active )

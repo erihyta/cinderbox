@@ -221,6 +221,7 @@ const LineRule kLineRules[] = {
 	{ "apply", kInStep | kInEvery | kInTimeout | kInFind | kInGrab | kInCast },
 	{ "move", kInStep | kInCast },
 	{ "force", kInStep | kInGrab | kInCast },
+	{ "steer", kInStep | kInGrab | kInCast },
 	{ "grab", kInStep },
 	{ "link", kInStep | kInCast },
 	{ "follow", kInStep },
@@ -417,6 +418,14 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 			k += 2;
 			return true;
 		}
+		if ( word == "along" && k + 1 < w.size() && w[k + 1].text == "down" )
+		{
+			// along down (M296): along world (0, -1, 0)
+			props["frame"] = 4;
+			props["direction"] = Float3{ 0.0f, -1.0f, 0.0f };
+			k += 2;
+			return true;
+		}
 		if ( word == "along" && k + 2 < w.size() && w[k + 1].text == "world" && ValueOf( w[k + 2] ).type() == Value::Type::Vec3 )
 		{
 			// along world (x, y, z)
@@ -462,7 +471,54 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 		}
 		return false;
 	};
-	if ( verb == "impulse" || verb == "force" || verb == "throw" )
+	if ( verb == "steer" )
+	{
+		// steer [on WHO] (toward POINT | along DIRECTION) speed S strength A [ramp S] [react] (M296): a force
+		// that brings the velocity to S, A how hard (until M296: force A kind velocity top S).
+		part["class"] = "CbForce";
+		props["kind"] = 2;
+		auto steerStops = []( const std::string& word ) {
+			return word == "on" || word == "along" || word == "direction" || word == "speed" || word == "strength" || word == "ramp" || word == "react" ||
+				   word == "turn" || word == "toward";
+		};
+		bool hasSpeed = false, hasStrength = false;
+		for ( i = 1; i < w.size() && why.empty(); )
+		{
+			const std::string word = w[i].text;
+			if ( common( word, i ) )
+			{
+				continue;
+			}
+			if ( ( word == "speed" || word == "strength" ) && i + 1 < w.size() )
+			{
+				// (Amounts: the line's fifth and sixth fields, as a force's strength and top.)
+				i += 1;
+				Amount amount;
+				TakeAmount( w, i, steerStops, amount );
+				amountInto( amount, word == "speed" ? "speed" : "strength", word == "speed" ? 5 : 4 );
+				( word == "speed" ? hasSpeed : hasStrength ) = true;
+			}
+			else if ( word == "ramp" && i + 1 < w.size() && Number( w[i + 1], value ) )
+			{
+				props["ramp_in"] = value;
+				i += 2;
+			}
+			else if ( word == "react" )
+			{
+				props["react"] = true;
+				i += 1;
+			}
+			else
+			{
+				why = "\"" + word + "\" is not something steer takes: speed S, strength A, toward POINT, along DIRECTION, on WHO, ramp S, react";
+			}
+		}
+		if ( why.empty() && ( hasSpeed == false || hasStrength == false ) )
+		{
+			why = "steer ... speed S strength A: the speed it brings the velocity to, and how hard";
+		}
+	}
+	else if ( verb == "impulse" || verb == "force" || verb == "throw" )
 	{
 		// How much: a number, or an expression up to the first word that is an option (read when it
 		// acts: "9 * curve(Falloff, reach)", "2 * dash.power").
@@ -533,10 +589,14 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 			else if ( verb == "force" && word == "kind" && i + 1 < w.size() )
 			{
 				const std::string k = w[i + 1].text;
-				const int kind = k == "acceleration" ? 0 : k == "force" ? 1 : k == "velocity" ? 2 : -1;
-				if ( kind < 0 )
+				const int kind = k == "acceleration" ? 0 : k == "force" ? 1 : -1;
+				if ( k == "velocity" )
 				{
-					why = "kind acceleration, force or velocity";
+					why = "a force toward a speed is steer (M296): steer ... speed S strength A";
+				}
+				else if ( kind < 0 )
+				{
+					why = "kind acceleration or force (toward a speed: steer)";
 				}
 				props["kind"] = kind;
 				i += 2;
@@ -704,7 +764,7 @@ bool ParsePart( const std::vector<Token>& w, Dict& part, std::string& why )
 	}
 	else
 	{
-		why = "\"" + verb + "\" is not one of: change, cooldown, emit, impulse, force, link, move, launch";
+		why = "\"" + verb + "\" is not one of: change, cooldown, emit, impulse, force, steer, link, move, launch";
 	}
 	if ( why.empty() == false )
 	{
@@ -1114,8 +1174,28 @@ private:
 				Fail( number, "change FIELD = VALUE, += or -=" );
 				return;
 			}
+			// (M296) A while motion's += and -= go on every tick, a rate: the line says "per second".
+			// Nothing else does (until M296 a while's += was per second without saying so).
+			std::string text = RestFrom( line, w[1] );
+			const bool whileMotion = m_settings.Get( "trigger", "" ).AsString() == "while";
+			const bool rate = w[2].text == "+=" || w[2].text == "-=";
+			const bool says = w.size() >= 6 && w[w.size() - 2].text == "per" && w.back().text == "second";
+			if ( whileMotion && rate && says == false )
+			{
+				Fail( number, "a while motion's += and -= are per second: say so (change " + w[1].text + " " + w[2].text + " " + RestFrom( line, w[3] ) + " per second)" );
+				return;
+			}
+			if ( says && ( whileMotion == false || rate == false ) )
+			{
+				Fail( number, "per second is for += and -= in a while motion (anywhere else a change is once)" );
+				return;
+			}
+			if ( says )
+			{
+				text = Strip( text.substr( 0, text.rfind( " per " ) ) );
+			}
 			statement["kind"] = "change";
-			statement["text"] = RestFrom( line, w[1] );
+			statement["text"] = text;
 		}
 		else if ( verb == "emit" )
 		{
@@ -1162,7 +1242,7 @@ private:
 				Fail( number, BeginsWith( why, "\"" + verb + "\" is not one of" )
 								  ? "\"" + verb +
 										"\" is not a line of a motion: if, else, wait, timeout, every, cooldown, uses, lasts, until, tags, blocked by, cancels, for, on item, change, "
-										"emit, end, apply, find, grab, cast, impulse, throw, force, link, move, launch, follow, break, remove"
+										"emit, end, apply, find, grab, cast, impulse, throw, force, steer, link, move, launch, follow, break, remove"
 								  : why );
 				return;
 			}
@@ -1298,6 +1378,20 @@ private:
 					if ( one.empty() == false )
 					{
 						names.push_back( one );
+						// (M296) Every name is one the sheet knows: a tag it declares, for blocked by and
+						// cancels also a motion of its own, for blocked by also a status it declares.
+						const Tree& tree = m_l.tree;
+						const bool tag = tree.tags.count( one ) > 0;
+						const bool motion = verb != "tags" && tree.motions.count( one ) > 0;
+						const bool status = verb == "blocked" && tree.statuses.count( one ) > 0;
+						if ( tag == false && motion == false && status == false )
+						{
+							Fail( number, verb == "tags" ? "\"" + one + "\" is no tag this sheet declares: tag " + one
+										  : verb == "cancels"
+											  ? "\"" + one + "\" is no tag this sheet declares, nor one of its motions (declare it: tag " + one + ")"
+											  : "\"" + one + "\" is no tag or status this sheet declares, nor one of its motions (declare it: tag " + one +
+													", or status " + one + ")" );
+						}
 					}
 				}
 			}
@@ -1641,7 +1735,7 @@ private:
 					continue;
 				}
 				Dict props = part["properties"].AsDict();
-				if ( ( verb == "impulse" || verb == "throw" || verb == "force" ) && props.Has( "target" ) == false )
+				if ( ( verb == "impulse" || verb == "throw" || verb == "force" || verb == "steer" ) && props.Has( "target" ) == false )
 				{
 					props["target"] = castBlock ? 1 : 3; // (what it holds, or found, unless it says)
 				}
@@ -1922,12 +2016,34 @@ private:
 			current[verb == "after" ? "delay" : verb] = value;
 			return true;
 		}
-		// at point | end | beam [from PATH] | follow | here | PATH, then [offset X Y Z]
+		// at point | end | beam [from PATH] | here | PATH [attached], then [offset X Y Z]. One way to say
+		// where (M296, the owner): `attached` makes what is created ride along with the place, a child of
+		// it (until M296 `create ... under PATH`, and `at follow` for the subject).
 		std::vector<Token> at = w;
+		if ( at.size() >= 2 && at[1].text == "follow" )
+		{
+			why = "at follow went (M296): at holder attached (or the subject's own path) makes it ride along";
+			return false;
+		}
+		const bool attached = at.size() >= 3 && at[2].text == "attached";
+		if ( attached )
+		{
+			const std::string& place = at[1].text;
+			if ( place == "point" || place == "end" || place == "beam" || place == "here" || at.size() != 3 )
+			{
+				why = "at PATH attached: a node (or holder, me, actor, target, local) it rides along with, nothing after it";
+				return false;
+			}
+			current.Erase( "place_node" );
+			current.Erase( "offset" );
+			current["place"] = 0;
+			current["scene_parent"] = EnginePath( place );
+			return true;
+		}
 		for ( size_t k = 1; k < at.size(); ++k )
 		{
 			const std::string& word = at[k].text;
-			const bool place = k == 1 && word != "point" && word != "end" && word != "beam" && word != "follow";
+			const bool place = k == 1 && word != "point" && word != "end" && word != "beam";
 			if ( place || ( k > 1 && at[k - 1].text == "from" ) )
 			{
 				at[k].text = EnginePath( word );
@@ -1943,7 +2059,7 @@ private:
 		}
 		if ( at.size() < 2 )
 		{
-			why = "at point, end, beam from PATH, follow or a path";
+			why = "at point, end, beam from PATH, or a path [attached]";
 			return false;
 		}
 		if ( ParseAt( at, 1, at.size(), current, next, why ) == false || next != at.size() )
@@ -2060,11 +2176,16 @@ private:
 		{
 			if ( w.size() < 2 )
 			{
-				m_l.Fail( number, "create NAME [under PATH] [for S]" );
+				m_l.Fail( number, "create NAME [for S]" );
 				return;
 			}
 			p["scene"] = EffectPath( w[1].text );
-			if ( Options( w, code, 2, p, verb, { { "under", "scene_parent" }, { "for", "scene_lifetime" } }, number ) == false )
+			if ( std::any_of( w.begin() + 2, w.end(), []( const Token& t ) { return t.text == "under" && t.quoted == false; } ) )
+			{
+				m_l.Fail( number, "create ... under went (M296): write at PATH attached above it (one way to say where)" );
+				return;
+			}
+			if ( Options( w, code, 2, p, verb, { { "for", "scene_lifetime" } }, number ) == false )
 			{
 				return;
 			}
@@ -2333,7 +2454,19 @@ void LowerHud( const Lowering& l, const Node& block )
 			}
 			else
 			{
-				p["text_format"] = w[0].text;
+				// (M296) A motion's clock in a format, as in an expression: "{cooldown Strike}" is
+				// {cooldown.Strike}; so ready, uses and remaining.
+				std::string format = w[0].text;
+				for ( size_t open = format.find( '{' ); open != std::string::npos; open = format.find( '{', open + 1 ) )
+				{
+					const size_t close = format.find( '}', open );
+					const std::vector<Word> inside = close == std::string::npos ? std::vector<Word>{} : WordsOf( format.substr( open + 1, close - open - 1 ) );
+					if ( inside.size() == 2 && ( inside[0].text == "ready" || inside[0].text == "cooldown" || inside[0].text == "uses" || inside[0].text == "remaining" ) )
+					{
+						format.replace( open + 1, close - open - 1, inside[0].text + "." + inside[1].text );
+					}
+				}
+				p["text_format"] = format;
 				if ( cut == 3 && w[1].text == "into" )
 				{
 					p["property"] = w[2].text;
