@@ -79,8 +79,9 @@ Which steps launch needs: [the road](#the-road).
 | 3c | [Groundwork](#3c-groundwork) | **done** (M262 to M272, 2026-11-19 and 20): the pack check, the tests' registration, CI skipping docs, lag compensation's limit, images failing softly, the versions' changelogs, the motion nodes deleted, the Godot checks and the sanitizers in CI, warnings as errors. Left for the owner: how to fix a stall's lag-compensation gap (M271), a `.clang-format`; open: Godot's crash after a fresh project's first import (M269) | yes, first: every later step leans on it |
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
-| 6 | [Sheets improved](#6-sheets-improved) | **started** (2026-11-21): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284); version 1, one spelling, every sheet converted (M285); names and numbers declared in the sheet (M286); timers, `wait for X or S` anywhere, emit values, an item's own fields in its motions, the guns' rounds and the bat's heat in their sheets (M287); how skills meet: tags, blocked by, cancels, shared cooldowns, tap and hold, statuses (M288); one sheet for many items: uses, replace, let (M289); where and on what: points, players first, grab, toward, thrown marks, an if for each thing found; telekinesis (M290); sheet tests (.cbtest, cb_sheet test, in CI), Format and mistakes in the Sheet screen, a VS Code grammar (M291); rows a mod publishes for a CbList (the shop's offers written once), version 0 refused, a blast's cover and a shove by momentum (the frag), curves postponed (M292). **Step 6 done** (2026-11-22); what it left: [leftovers](#leftovers-by-area), Sheets and HUDs | yes: the sheet's format settled, with a version |
-| 6b | [Cooked items](#6b-cooked-items) | after 6 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
+| 6 | [Sheets improved](#6-sheets-improved) | **done** (M283 to M292, 2026-11-21 and 22): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284); version 1, one spelling, every sheet converted (M285); names and numbers declared in the sheet (M286); timers, `wait for X or S` anywhere, emit values, an item's own fields in its motions, the guns' rounds and the bat's heat in their sheets (M287); how skills meet: tags, blocked by, cancels, shared cooldowns, tap and hold, statuses (M288); one sheet for many items: uses, replace, let (M289); where and on what: points, players first, grab, toward, thrown marks, an if for each thing found; telekinesis (M290); sheet tests (.cbtest, cb_sheet test, in CI), Format and mistakes in the Sheet screen, a VS Code grammar (M291); rows a mod publishes for a CbList (the shop's offers written once), version 0 refused, a blast's cover and a shove by momentum (the frag), curves postponed (M292). **Step 6 done** (2026-11-22); what it left: [leftovers](#leftovers-by-area), Sheets and HUDs | yes: the sheet's format settled, with a version |
+| 6.5 | [The sheet compiler, for real](#65-the-sheet-compiler-for-real) | **started** (2026-11-26): from [the step 6 review](docs/step6-review.md); [the plan](docs/step6.5-plan.md), M293 to M297 | yes: 6b makes the sheet compiler the reader for strangers' content |
+| 6b | [Cooked items](#6b-cooked-items) | after 6.5 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
 | 7 | [Timing from the clip](#7-timing-from-the-clip) | when the slice asks | as far as the slice needs |
@@ -103,6 +104,8 @@ Which steps launch needs: [the road](#the-road).
   owner's next weapons need the sheets step 6 makes (telekinesis needs `at POINT` and a pull on
   many bodies), and every item should be written once, the new way, not twice; 6b ends Godot packs
   from strangers before anyone else's items can reach players. The alpha waits for all three.
+  Step 6.5 joined them on 2026-11-26 (the owner, after [the step 6 review](docs/step6-review.md)):
+  6b reads strangers' sheets with step 6's compiler, so the compiler comes first.
 - **The slice next**: steps 5 to 8 are what a fighting game leans on, and the slice says which
   parts matter. Steps 9 to 11 are worth more once there is a game to mod and strangers who played it.
 - **Why the slice came late**: steps 3 and 3b (M244 to M261) went to network models and to 255 and
@@ -351,7 +354,10 @@ names, `known`, `of`, `active`), every shipped sheet converted and compiling to 
 `cb_sheet check | fmt | convert`; [docs/sheets.md](docs/sheets.md) the reference. M286, a sheet declares
 its names (`field`, `event`, `action`: the server reads them from the mod's item, after its C++)
 and its item's numbers and own fields (`param`, `field ... on item`: the `CbItem`'s `properties` and
-`fields` went); units on numbers (`0.4 s`), checked.
+`fields` went); units on numbers (`0.4 s`), checked. M287 to M292: timers, item fields, readable
+motion state, how skills meet, one sheet for many items, points and grabs, sheet tests, rows from
+the server ([HISTORY](docs/HISTORY.md)). **Step 6 done** (2026-11-22). Reviewed on 2026-11-26
+([docs/step6-review.md](docs/step6-review.md)): what it left is [step 6.5](#65-the-sheet-compiler-for-real).
 
 **The plan (2026-11-21): [docs/step6-plan.md](docs/step6-plan.md)**: the language as it would be, the
 shipped sheets before and after, the compiler, what the engine has to learn, ten milestones (M283 to
@@ -396,7 +402,7 @@ its format's version, and the compiler reads older ones, so words can still be a
 | **Curves as resources** (`curve(res://falloff.tres, reach)` or a curves dictionary on the node) (**postponed**, M292: [leftovers](#leftovers-by-area)) | no shipped sheet used `curve()`; the frag's falloff is a line, and what a blast needed was cover and a shove by momentum (M292); a sheet's `curve()` is refused until this; the simulation still reads a motions file's `curve` lines |
 | **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/sheets.md#planned)) | |
 | **Tools**: a formatter; errors in the editor as you type; headless sheet tests (a motion on a stand-in, then what moved) | |
-| **`.rules` becomes `.cbsheet`** (**done**, M284; the VS Code grammar not made: the editor's Sheet screen colours them) | the name says what the file is, one family with `.cbmap` |
+| **`.rules` becomes `.cbsheet`** (**done**, M284; the VS Code grammar, M291: `tools/vscode-cbsheet`) | the name says what the file is, one family with `.cbmap` |
 | **Last, not needed by the slice: items drawn as data and reactions run from the compiled sheet** | moved to [6b](#6b-cooked-items) (2026-11-17) |
 
 **The dash strike after** (proposed, not valid today); its HUD reads the cooldown itself, and
@@ -413,10 +419,31 @@ use
 		impulse 10 on target along move
 ```
 
+### 6.5. The sheet compiler, for real
+
+**The plan (2026-11-26): [docs/step6.5-plan.md](docs/step6.5-plan.md)**, from
+[the step 6 review](docs/step6-review.md). Every change is reconsidered before it is made (the
+owner's rule for this step); what was dropped is in the plan.
+
+**Why**: step 6 shipped the language, not the compiler its plan described. Version 1 is rewritten
+as text into version 0, parsed by one 1,366-line function, baked to `.cfg` text, and parsed again
+by the simulation. The server runs the baked `.cfg`, not the sheet. Errors name lines, not words,
+and `cb_sheet check` passes what the bake later refuses. 6b makes this compiler the reader for
+strangers' sheets, so it comes first.
+
+| # | Milestone | What |
+|---|---|---|
+| M293 | One front end | tokens with line and column, a syntax tree, lowering to today's rules (golden files unchanged); the text rewrites, `ParseVersion0`, version 0 and the converter deleted |
+| M294 | The server compiles the sheet | the bake writes the scene's parts a sheet names (shapes, markers, paths); the server, `cb_sheet test` and `cb_sheet check` compile sheets against them; items stop carrying `motions/*.cfg` |
+| M295 | Limits | `active X` for any motion (not a server's first 64); tags never dropped (not 32 per server); `every` without a cap |
+| M296 | The language, made regular | one way to say where (`at` and `attached`, decided 2026-11-26); `as holder` by default; a field's start from a param; tags declared and checked; several triggers; `down`; `per second`; HUDs read cooldowns |
+| M297 | Shipped sheets on the new words | brawl's `cd_*` timers gone; no number written twice; units; `let` for repeats; a playtest by hand |
+
 ### 6b. Cooked items
 
 **The plan (2026-11-26): [docs/step6b-plan.md](docs/step6b-plan.md)**: the item format, the reader,
-the cooker, drawing, effects, reactions on parts, HUDs, delivery, eight milestones (M293 to M300)
+the cooker, drawing, effects, reactions on parts, HUDs, delivery, eight milestones (M298 to M305,
+after step 6.5's)
 and the owner's decisions it needs (E1 to E12).
 
 **Decided (2026-11-17).** Mod content stops being Godot packs. One cooker makes each item from what
@@ -877,7 +904,7 @@ Independent of the road; each is small unless it says otherwise.
 | The state thread | a new `std::thread` every state (30 a second): one thread that lives, and a debug check in every function that changes a client while a state is made (review, 2026-11-17) |
 | `CinderboxClient` | one class in five files, about 140 methods |
 | `GameServer` in modules | 3,211 lines: connections, the schema, the mods, states, the bench. Split when [step 10](#10-server-rules-in-luau) starts: the Luau host replaces part of it |
-| Long functions | `ParseRules` 1,198 lines (step 6 replaces it), `CompileMotionSet` 957, `CbCharacter::BakeGraph` 765, `Simulation::ApplyCommand` 529, `GameServer::Start` 497, `Simulation::MoveCharacters` 433: table-driven parsers, one builder for the schema |
+| Long functions | `ParseVersion0` 1,366 lines (step 6.5's M293 deletes it), `CompileMotionSet` 1,243, `CbCharacter::BakeGraph` 765, `Simulation::ApplyCommand` 529, `GameServer::Start` 497, `Simulation::MoveCharacters` 433: table-driven parsers, one builder for the schema |
 | The bench inside the server | `game_server.cpp` names the bench or fake players 132 times: a profiler interface and a fake transport |
 | Box3D's pin | a commit 21 past its `v0.1.0` tag, with five patches: pinned until launch; an upgrade is a milestone of its own |
 | `tests/test_main.cpp` in files by area | about 13,800 lines; `tests/net_test.cpp` about 8,400. For reading: alone, `test_main.cpp` recompiles in about 17 s and a file of the extension in 2 to 7 s (2026-11-17), so build times are not the reason |

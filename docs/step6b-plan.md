@@ -1,6 +1,7 @@
 # Step 6b: cooked items, planned
 
-Written 2026-11-26 (after step 6, M292), for the owner and for whoever builds it. Nothing here is
+Written 2026-11-26 (after step 6, M292; it comes after [step 6.5](step6.5-plan.md), M293 to M297, so its
+milestones are M298 to M305), for the owner and for whoever builds it. Nothing here is
 built yet; [ROADMAP.md step 6b](../ROADMAP.md#6b-cooked-items) is the decision (2026-11-17) and this
 is the plan behind it. Where this file and the code disagree about what exists today, the code wins.
 
@@ -40,7 +41,8 @@ done, no stranger's bytes go through a Godot loader, and nodes no longer grow wi
 - **Authoring is Godot's editor**: a modder still makes a `CbItem` scene with meshes, materials,
   particles, a sheet, a HUD scene, and presses Publish. What a scene may contain does not shrink
   without a reason the editor says (the bake already warns what it cannot draw).
-- **The simulation's data is as it is**: `items/<kind>.cfg`, `motions/<kind>.cfg`, the ozz
+- **The simulation's data is as it is**: `items/<kind>.cfg` (with the parts a sheet names, step 6.5's
+  M294: no `motions/<kind>.cfg` any more), the ozz
   skeletons and clips, a character's graph. They move into the cooked item unchanged; the server
   reads them as it does today (it already never uses Godot for them).
 - **Sheets are text** (step 6, D4): the item carries the source; every reader compiles it.
@@ -117,7 +119,7 @@ chunk*  (kind u32, size u64, hash 32 bytes, bytes): each chunk's size and hash a
 
 | Chunk kind | Holds | Today |
 |---|---|---|
-| `simcfg` | `items/<kind>.cfg`, `motions/<kind>.cfg`, a pack's `graph.cfg` / `anim.cfg`, a character's files | the same files in the zip |
+| `simcfg` | `items/<kind>.cfg` (with its sheets' parts, M294), a pack's `graph.cfg` / `anim.cfg`, a character's files | the same files in the zip |
 | `ozz` | a skeleton or a clip, ozz's own archive | the same |
 | `sheet` | a sheet's text, by its `res://` path (a `uses` is found by it) | the same |
 | `mesh` | vertex arrays (positions, normals, tangents, UVs, colours, bones, weights) and indices, per surface; an AABB | `Mesh` resources inside `.scn` |
@@ -263,14 +265,14 @@ playtest compares what is on the screen.
 
 | # | Milestone | What | Done when |
 |---|---|---|---|
-| **M293** | **The format and the reader** | `src/item/`: the `.cbitem` container, the manifest, caps and hashes, mesh, material, part, sound (PCM) and ozz chunks; `cb_item` (dump, check); the fuzz target and a deterministic run in `cb_tests` | a hand-made item of each kind of mistake is refused with why; the fuzzer runs in CI |
-| **M294** | **Cooked simulation data** | the cooker in the extension writes `.cbitem` with every mod's simulation chunks and sheets (and today's pack inside, for the rest); Publish writes it; the server and the tests read only cooked chunks (no zip folders); `client_item.cfg` names the `.cbitem` | every mod published as `.cbitem`; every test passes reading them |
-| **M295** | **Item looks cooked** | meshes, materials, parts; `ItemLook` from cooked data; every item drawn through the RenderingServer, the viewer's own and those lying in the world too; the editor's item preview drawn the same way | a bat, held by 255 players, is no node; each shipped item, cooked, compares equal to its scene |
-| **M296** | **Characters cooked** | a character item's skinned meshes, skeleton, sockets; `CharacterLook` from cooked data; the base game's characters through the same cooker (at export) | the critter and the mannequin drawn from cooked data; the character checks pass |
-| **M297** | **Effects** | emitters, lights, sounds (the voice pool), tracks, `create` effects cooked; the reaction scenes (`vfx/`) cooked | the sword's sparks, the bat's glow, the guns' muzzle flashes and every shipped sound from cooked items |
-| **M298** | **Reactions on parts** | reactions from the compiled sheet in the mirror, per entity, on part indices and fixed fields; `CbReaction` nodes only in the editor | an item with reactions is no node in the game; the Cue Preview runs the same code |
-| **M299** | **HUDs cooked** | the `hud` chunk; our code builds the controls | every shipped HUD from cooked data |
-| **M300** | **No packs** | the pack leaves the item; `load_resource_pack` and `check_mod` go for mod content; players' own restyles are cooked items too; the store check (`cb_store`, the reader and budgets on upload) | no Godot loader sees a mod's bytes; the crowd bench's node count is flat |
+| **M298** | **The format and the reader** | `src/item/`: the `.cbitem` container, the manifest, caps and hashes, mesh, material, part, sound (PCM) and ozz chunks; `cb_item` (dump, check); the fuzz target and a deterministic run in `cb_tests` | a hand-made item of each kind of mistake is refused with why; the fuzzer runs in CI |
+| **M299** | **Cooked simulation data** | the cooker in the extension writes `.cbitem` with every mod's simulation chunks and sheets (and today's pack inside, for the rest); Publish writes it; the server and the tests read only cooked chunks (no zip folders); `client_item.cfg` names the `.cbitem` | every mod published as `.cbitem`; every test passes reading them |
+| **M300** | **Item looks cooked** | meshes, materials, parts; `ItemLook` from cooked data; every item drawn through the RenderingServer, the viewer's own and those lying in the world too; the editor's item preview drawn the same way | a bat, held by 255 players, is no node; each shipped item, cooked, compares equal to its scene |
+| **M301** | **Characters cooked** | a character item's skinned meshes, skeleton, sockets; `CharacterLook` from cooked data; the base game's characters through the same cooker (at export) | the critter and the mannequin drawn from cooked data; the character checks pass |
+| **M302** | **Effects** | emitters, lights, sounds (the voice pool), tracks, `create` effects cooked; the reaction scenes (`vfx/`) cooked | the sword's sparks, the bat's glow, the guns' muzzle flashes and every shipped sound from cooked items |
+| **M303** | **Reactions on parts** | reactions from the compiled sheet in the mirror, per entity, on part indices and fixed fields; `CbReaction` nodes only in the editor | an item with reactions is no node in the game; the Cue Preview runs the same code |
+| **M304** | **HUDs cooked** | the `hud` chunk; our code builds the controls | every shipped HUD from cooked data |
+| **M305** | **No packs** | the pack leaves the item; `load_resource_pack` and `check_mod` go for mod content; players' own restyles are cooked items too; the store check (`cb_store`, the reader and budgets on upload) | no Godot loader sees a mod's bytes; the crowd bench's node count is flat |
 
 ## 15. Decisions for the owner
 
@@ -296,5 +298,5 @@ playtest compares what is on the screen.
 | A look changes when cooked (a material field missed) | the per-item compare in the Godot checks; a playtest after each looks milestone; the editor's preview draws the cooked look, so a modder sees what players will |
 | The fixed lists are too small for a modder | the editor says what is not cooked on the node; a kind or a field is added in a milestone, with the reader's check |
 | The reader has a hole | fuzzed in CI; small; no Godot types; sizes before bytes; the store and the game run the same one |
-| The step is long (eight milestones) | M293 and M294 change nothing a player sees; M295 alone removes most nodes (held items); the owner can stop after M297 and keep packs for HUDs behind the guard |
+| The step is long (eight milestones) | M298 and M299 change nothing a player sees; M300 alone removes most nodes (held items); the owner can stop after M302 and keep packs for HUDs behind the guard |
 | Godot's RenderingServer particles or lights behave differently from nodes | the same server draws both; the compare says |
