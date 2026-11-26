@@ -31,6 +31,7 @@
 #include "scenario.h"
 #include "sheet_bake.h"
 #include "sheet_dump.h"
+#include "sheet_parts.h"
 #include "sheet_rules.h"
 #include "sheet_v1.h"
 #include "simulation.h"
@@ -1867,6 +1868,84 @@ void TestSheetsGolden()
 	std::printf( "    %zu sheets: %d as their golden files say, %d differ, %d without one%s\n", sheets.size(), same, differ, missing,
 				 update ? " (golden files written)" : "" );
 	CHECK( sheets.size() >= 40 && differ == 0 && missing == 0 );
+}
+
+// The server's motions (M294: sheet_parts.h): every mod's parts files (motions/<owner>.cfg, what the
+// editor's bake recorded of the scenes its sheets' motions name) and its sheets compile to what
+// tests/golden/motions/<mod>/<owner>.txt says. They were recorded from the motions the editor baked
+// before M294, so the server compiles what the editor did, byte for byte. CB_UPDATE_GOLDEN=1 writes them
+// (a change a sheet or the bake meant).
+void TestMotionsGolden()
+{
+	namespace fs = std::filesystem;
+	const fs::path root = CB_SOURCE_DIR;
+	const bool update = std::getenv( "CB_UPDATE_GOLDEN" ) != nullptr;
+	auto read = []( const fs::path& path, std::string& text ) {
+		std::ifstream in( path, std::ios::binary );
+		std::stringstream all;
+		all << in.rdbuf();
+		text = all.str();
+		return in.good() || text.empty() == false;
+	};
+	int owners = 0, same = 0, differ = 0, missing = 0, failed = 0;
+	std::error_code error;
+	for ( fs::directory_iterator mod( root / "server_mods", error ), end; mod != end; mod.increment( error ) )
+	{
+		const fs::path client = mod->path() / "client";
+		if ( fs::is_directory( client / "motions" ) == false )
+		{
+			continue;
+		}
+		for ( fs::directory_iterator it( client / "motions", error ), done; it != done; it.increment( error ) )
+		{
+			if ( it->path().extension() != ".cfg" )
+			{
+				continue;
+			}
+			++owners;
+			const std::string name = mod->path().filename().string() + "/" + it->path().stem().string();
+			std::string partsText, text, why;
+			sheet::OwnerParts owner;
+			read( it->path(), partsText );
+			auto sheetOf = [&]( const std::string& path, std::string& out ) { return read( client / path, out ); };
+			if ( sheet::ReadParts( partsText, owner, why ) == false || sheet::MotionsFromParts( owner, sheetOf, text, why ) == false )
+			{
+				std::printf( "    %s: %s\n", name.c_str(), why.c_str() );
+				++failed;
+				continue;
+			}
+			const fs::path golden = root / "tests" / "golden" / "motions" / ( name + ".txt" );
+			if ( update )
+			{
+				fs::create_directories( golden.parent_path() );
+				std::ofstream( golden, std::ios::binary ) << text;
+				continue;
+			}
+			std::string expected;
+			if ( read( golden, expected ) == false )
+			{
+				std::printf( "    %s: no golden file\n", name.c_str() );
+				++missing;
+				continue;
+			}
+			if ( expected != text )
+			{
+				size_t at = 0;
+				while ( at < text.size() && at < expected.size() && text[at] == expected[at] )
+				{
+					++at;
+				}
+				std::printf( "    %s: differs from its golden file at its line %zu\n", name.c_str(),
+							 size_t( std::count( text.begin(), text.begin() + std::ptrdiff_t( at ), '\n' ) ) + 1 );
+				++differ;
+				continue;
+			}
+			++same;
+		}
+	}
+	std::printf( "    %d motion owners: %d as their golden files say, %d differ, %d without one, %d not compiled%s\n", owners, same, differ, missing, failed,
+				 update ? " (golden files written)" : "" );
+	CHECK( owners >= 16 && differ == 0 && missing == 0 && failed == 0 );
 }
 
 // Version 1 of the sheets (M285: sheet_v1.h): every shipped sheet is version 1, in the one style,
@@ -6830,30 +6909,6 @@ void TestMotionFinds()
 class EmptyScene final : public sheet::Scene
 {
 public:
-	bool IsItem() const override
-	{
-		return false;
-	}
-	int ItemUse() const override
-	{
-		return 0;
-	}
-	sheet::Strings UseConditions() const override
-	{
-		return {};
-	}
-	sheet::Strings UseChanges() const override
-	{
-		return {};
-	}
-	double UseCooldown() const override
-	{
-		return 0.0;
-	}
-	std::string UseEmits() const override
-	{
-		return std::string();
-	}
 	bool Place( const std::string& path, const char*, sheet::Float3&, sheet::Float3&, std::string& why ) const override
 	{
 		why = "no node " + path;
@@ -6883,7 +6938,7 @@ std::string SheetMotionsText( const std::string& sheetText, std::string& errors 
 			continue;
 		}
 		std::string error;
-		const std::string baked = sheet::BakeSheetMotion( rule.properties, "", EmptyScene(), error );
+		const std::string baked = sheet::BakeSheetMotion( rule.properties, "", 0, EmptyScene(), error );
 		text += baked;
 		problems.push_back( error );
 	}
@@ -14845,6 +14900,7 @@ int main( int argc, char** argv )
 		{ "arena_walls", TestArenaWalls },
 		{ "sheets_golden", TestSheetsGolden },
 		{ "sheets_version1", TestSheetsVersion1 },
+		{ "motions_golden", TestMotionsGolden },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },

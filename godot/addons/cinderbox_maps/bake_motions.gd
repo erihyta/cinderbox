@@ -4,8 +4,8 @@ extends SceneTree
 ##   godot --headless --path server_mods/<mod>/client --script <repo>/godot/addons/cinderbox_maps/bake_motions.gd
 ##
 ## Every res://motion_sets/*.tscn whose root is a CbMotionSet is baked into res://motions/<its
-## set_name>.cfg: what the server reads from the mod's item, sends to every client, and every
-## simulation runs. Saving the scene in the editor does the same; this makes sure the item that is
+## set_name>.cfg: the parts of the scene its sheets' motions name (M294), from which the server
+## compiles the motions it sends to every client and every simulation runs. Saving the scene in the editor does the same; this makes sure the item that is
 ## published was baked from the scenes it has now. A bake that changes nothing writes nothing.
 ## Exit code 1 if a set does not bake.
 

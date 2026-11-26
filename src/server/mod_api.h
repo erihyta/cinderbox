@@ -200,8 +200,8 @@ struct CharacterHandle
 	}
 };
 
-// A set of motions the mod ships (sim/motions.h: a rules sheet's motion blocks baked into its item
-// as motions/<name>.cfg).
+// A set of motions the mod ships (sim/motions.h: a rules sheet's motion blocks, which the server
+// compiles from the sheets and the parts file its item carries as motions/<name>.cfg, M294).
 struct MotionsHandle
 {
 	int index = -1;

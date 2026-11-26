@@ -1,0 +1,7 @@
+cinderbox_motions	3
+motion	DoubleJump
+when	press	jump
+if	( not grounded and dash.double_jump_on )
+uses	1	ground
+emit	dash.double_jump
+impulse	self	6.5	up	vertical

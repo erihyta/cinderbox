@@ -742,7 +742,8 @@ int main( int argc, char** argv )
 		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
 		return cb::LoadModCharacterItem( zip, item, name, error, warnings );
 	};
-	// Motions: motions/<set>.cfg, baked from the motion blocks of the mod's rules sheets.
+	// Motions: motions/<set>.cfg, the parts its sheets' motions name (M294); the server compiles the
+	// motions from them and the sheets.
 	options.loadMotions = [itemsDir, workshopDir]( const std::string& mod, const std::string& set, std::string& text, std::string& error ) {
 		cb::ModItem item;
 		if ( ReadItem( itemsDir, mod, item ) == false )

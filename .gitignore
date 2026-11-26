@@ -59,6 +59,7 @@ server_mods/gun/client/items/gun.rifle.cfg
 server_mods/gun/client/prefabs/rifle.cbsheet*
 server_mods/gun/client/prefabs/rifle.cbtest
 server_mods/gun/client/motions/gun.rifle.cfg
+tests/golden/motions/gun/gun.rifle.txt
 server_mods/gun/client_item.cfg
 # The character built from the paid Source pack (its glb, scene, baked clips): local only.
 godot/characters/ual_mannequin/

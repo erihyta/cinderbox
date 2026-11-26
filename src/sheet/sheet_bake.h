@@ -7,7 +7,7 @@
 //
 // What a sheet names in its scene (a shape a find uses, a marker, a path) is the scene's: a Scene
 // answers for it. In the editor it is the Godot scene the sheet is in (src/godot/sheet_motions.cpp);
-// later, a cooked item's parts (6b).
+// on the server, the parts the editor's bake recorded (sheet_parts.h, M294).
 
 #include "sheet_text.h"
 #include "sheet_value.h"
@@ -34,15 +34,6 @@ class Scene
 public:
 	virtual ~Scene() = default;
 
-	// The item the sheet is under (its CbItem): whether it is one, how it is used, its "When used"
-	// fields. (A motion set's sheet: no item.)
-	virtual bool IsItem() const = 0;
-	virtual int ItemUse() const = 0;
-	virtual Strings UseConditions() const = 0;
-	virtual Strings UseChanges() const = 0;
-	virtual double UseCooldown() const = 0;
-	virtual std::string UseEmits() const = 0;
-
 	// A node beside the sheet (a Marker3D): its forward axis (the basis' third column) and its origin,
 	// in the frame of what is baked. False with why (`what`: the word that named it, "along", "from").
 	virtual bool Place( const std::string& path, const char* what, Float3& zAxis, Float3& origin, std::string& why ) const = 0;
@@ -56,7 +47,8 @@ public:
 };
 
 // A motion block (a Rule of type "motion": its properties) as a motions file's lines; "" with why.
-// `kind`: the item kind of the sheet ("" for a motion set's).
-std::string BakeSheetMotion( const Dict& motion, const std::string& kind, const Scene& scene, std::string& error );
+// `kind`: the item kind of the sheet ("" for a motion set's); `use`: how the item is used (its
+// CbItem's use: kItemUsePress, kItemUseHold, ...).
+std::string BakeSheetMotion( const Dict& motion, const std::string& kind, int use, const Scene& scene, std::string& error );
 
 } // namespace cb::sheet

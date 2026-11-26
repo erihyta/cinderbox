@@ -14,11 +14,13 @@ extends Node
 ## Player mods are searched in (later packs override earlier ones, alphabetically within a folder):
 ##   <game folder>/mods, user://mods, and every --mods=<dir> on the command line.
 
-const MODDABLE_PREFIXES := ["prefabs/", "vfx/", "ui/", "maps/", "assets/", "characters/", "anim/", "items/", "motions/"]
+const MODDABLE_PREFIXES := ["prefabs/", "vfx/", "ui/", "maps/", "assets/", "characters/", "anim/", "items/", "motions/", "motion_sets/"]
+## (motion_sets/ since M294: a motion set's sheets, which the server compiles; its scenes stay out of
+## the pack, the editor's only.)
 ## Baked animation data: a character item's next to its scene under characters/<name>/, and a mod's
 ## animation packs under anim/<pack>/: ozz skeleton and clips (.ozz) and anim.cfg / graph.cfg /
 ## hitboxes.cfg; a mod's item bodies under items/ (<kind>.cfg) and its motions under motions/
-## (<set>.cfg), both read by the server. Read by the
+## (<set>.cfg: the parts its sheets' motions name, M294), both read by the server. Read by the
 ## engine as data, never loaded as resources.
 const DATA_PREFIXES := ["characters/", "anim/", "items/", "motions/"]
 const CHARACTER_DATA_EXTENSIONS := ["ozz", "cfg"]

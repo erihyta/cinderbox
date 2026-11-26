@@ -5,6 +5,7 @@
 #include "capture.h"
 #include "view_codec.h"
 #include "fingerprint.h"
+#include "sheet_parts.h"
 #include "util.h"
 
 #include <algorithm>
@@ -95,12 +96,36 @@ bool GameServer::Start( const ServerOptions& options )
 			}
 		}
 	}
-	// The mods' motions, from their items: the text goes to everyone in the schema, and every
-	// simulation compiles it against the same names.
+	// The mods' motions, compiled here from their items' sheets and the parts of the scenes they name
+	// (M294: sheet_parts.h): the text goes to everyone in the schema, and every simulation compiles it
+	// against the same names.
+	std::map<std::string, std::vector<std::pair<std::string, std::string>>> modSheets;
 	for ( MotionSetInfo& set : m_schema.motionSets )
 	{
-		std::string setError;
-		if ( options.loadMotions == nullptr || options.loadMotions( set.mod, set.name, set.text, setError ) == false )
+		std::string setError, parts;
+		sheet::OwnerParts owner;
+		bool ok = options.loadMotions != nullptr && options.loadMotions( set.mod, set.name, parts, setError ) && sheet::ReadParts( parts, owner, setError );
+		if ( ok )
+		{
+			if ( modSheets.count( set.mod ) == 0 )
+			{
+				modSheets[set.mod] = options.lookSheets ? options.lookSheets( set.mod ) : std::vector<std::pair<std::string, std::string>>{};
+			}
+			const auto& sheets = modSheets[set.mod];
+			auto read = [&sheets]( const std::string& path, std::string& text ) {
+				for ( const auto& [one, its] : sheets )
+				{
+					if ( one == path )
+					{
+						text = its;
+						return true;
+					}
+				}
+				return false;
+			};
+			ok = sheet::MotionsFromParts( owner, read, set.text, setError );
+		}
+		if ( ok == false )
 		{
 			set.text.clear();
 			Log( "motions %s (mod %s) are not available%s%s; they do nothing", set.name.c_str(), set.mod.c_str(),

@@ -10,7 +10,8 @@ score, rounds). This page is the reference: **everything on it is built**; what 
 [at the end](#planned), and where the language goes next is [step6-plan.md](step6-plan.md).
 
 ```
-a .cbsheet sheet ──bake──> motions/<set>.cfg ──> every simulation runs it (server and clients)
+a .cbsheet sheet ──the server compiles it──> the motions ──> every simulation runs them (server and clients)
+    │   (the editor's bake records the parts of the scene they name: motions/<set>.cfg, M294)
     │   └── names nodes by path: shapes, markers, paths, curves (drawn in the 3D view)
     └── reactions, predictions, HUD lines ──> the viewer's nodes (CbReaction, CbPrediction, CbFieldBinding)
 
@@ -162,8 +163,9 @@ A HUD line's format (`"{brawl.cd_dash}s"`) is read as written: inside quotes, ve
 tree (`sheet_tree.h`: what is indented under a line is under it; what it uses composed in; lets
 and units resolved), and the tree is lowered into the rules the engine runs (`sheet_rules.h`);
 the bake writes a motion block for the simulation (`sheet_bake.h`, the scene it is in answering
-for the nodes a line names). The editor, the bake and the names check use it; the server, the
-cooker and the tests can. Every sheet's rules are a golden file (`tests/golden/sheets`, the
+for the nodes a line names: Godot's in the editor, the parts the editor recorded on the server,
+`sheet_parts.h`, M294). The editor, the bake, the names check, the server (which compiles every
+mod's motions from its sheets) and the tests use it; the cooker will. Every sheet's rules are a golden file (`tests/golden/sheets`, the
 `sheets_golden` test; `tests/sheets/every_word.cbsheet` holds every word, `every_mistake.cbsheet`
 the mistakes), and every mod's committed bakes are checked to be what its sheets bake to now
 (the Godot checks).
@@ -192,7 +194,7 @@ motion NAME TRIGGER [if EXPRESSION]
 ```
 
 - **`use [if EXPRESSION]`** is `motion Use on use [if EXPRESSION]`, word for word: an item's use.
-  An item has one motion named `Use`; its `CbItem`'s *When used* fields join it.
+  An item has one motion named `Use` (its `CbItem`'s *When used* fields went in M294).
 - A sheet's other blocks (`react`, `predict`, `hud`) are the viewer's; the first word keeps the
   two apart.
 - Indenting counts: an `if`'s lines (and an `else`'s), a `find`'s, a `grab`'s and a `cast`'s are
@@ -613,7 +615,7 @@ Not in version 1 (no shipped sheet said them): `side`, `wait off`. (`at here` is
 
 | Tool | |
 |---|---|
-| `cb_sheet check FILE...` | reads each sheet, its mistakes as `FILE:LINE: why`; exit code 1 if any. A motion's nodes (a find's shape) are the scene's: the editor and the bake check those |
+| `cb_sheet check FILE...` | reads each sheet, its mistakes as `FILE:LINE: why`; exit code 1 if any. Its motions are compiled as the server compiles them (M294), against the parts its owner's bake recorded (`motions/*.cfg` naming it): a node a line names that the scene does not have is said too |
 | `cb_sheet fmt [--check] FILE...` | writes each version 1 sheet in the one style: tabs, no spaces at the ends of lines, one blank line at most; what it means is checked to stay the same |
 | `cb_sheet test FILE.cbtest...` | (M291) runs each [sheet test](#tests) on the real server, headless; what failed as `FILE:LINE: why`; exit code 1 if any did |
 | the editor's Sheet screen | colours, names offered, mistakes on their lines as you type, and above the sheet how many and the first (M291); **Format** (as `cb_sheet fmt`, one undo) ([looks.md](looks.md#rules-sheets)) |

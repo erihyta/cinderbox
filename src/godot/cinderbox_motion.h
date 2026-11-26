@@ -8,8 +8,9 @@
 //   └── Rules           CbRules       file "res://motion_sets/dash_moves.cbsheet"
 //
 // The set bakes to res://motions/<set_name>.cfg when its scene is saved (and when the mod is
-// published); the server mod names it: declare.Motions( "dash.moves" ). The file is read by the
-// server from the mod's item, sent to every client, and run by every simulation (sim/motions.h),
+// published): the parts of the scene its sheets' motions name (M294); the server mod names it:
+// declare.Motions( "dash.moves" ). The server compiles the motions from that and the sheets, sends
+// them to every client, and every simulation runs them (sim/motions.h),
 // so a player's own dash starts on the tick of the press, in its own prediction, and a rollback
 // replays it. An item's own motions are the blocks of the sheets under its CbItem, baked with it.
 //
@@ -33,9 +34,10 @@ class CbMotionSet : public godot::Node
 	GDCLASS( CbMotionSet, godot::Node )
 
 public:
-	// The whole file: its header, then the motion blocks of every rules sheet under it, in tree
-	// order. "" with `error` when it cannot be baked.
-	std::string Bake( godot::String& error ) const;
+	// Its motions file (what the server compiles from its sheets): its header, then the motion blocks of
+	// every rules sheet under it, in tree order; with `parts`, the parts file the mod carries
+	// (motions/<set_name>.cfg, M294). "" with `error` when it cannot be baked.
+	std::string Bake( godot::String& error, std::string* parts = nullptr ) const;
 	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	void set_set_name( const godot::String& v )
@@ -48,10 +50,10 @@ public:
 		return m_name;
 	}
 
-	// The set's file: { text, error, motions } (text is empty when it cannot be baked).
+	// The set: { text, parts, error, motions } (text is empty when it cannot be baked).
 	godot::Dictionary bake() const;
-	// What the Bake button and saving the scene do: writes res://motions/<set_name>.cfg, only when
-	// its bytes change.
+	// What the Bake button and saving the scene do: writes res://motions/<set_name>.cfg (its parts,
+	// M294), only when its bytes change.
 	void bake_to_project();
 	godot::Callable get_bake_button();
 

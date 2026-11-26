@@ -1,0 +1,15 @@
+cinderbox_motions	3
+motion	Rise
+when	event	brawl.uppercut.used
+if	( not linked and brawl.cd_upper <= 0 and grounded )
+until	( brawl.uppercut.used or pressed.jump )
+tags	attack
+blocked	guard	pulled
+duration	0.05
+change	brawl.cd_upper	=	4
+emit	brawl.uppercut.started
+probe	3	0
+probe_frame	facing
+hold_emit	brawl.uppercut.hit
+impulse	hit	12	up	vertical
+impulse	self	6	up	vertical

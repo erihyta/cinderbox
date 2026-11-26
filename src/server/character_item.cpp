@@ -836,18 +836,22 @@ bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<
 		mz_free( data );
 		if ( sheet_ )
 		{
-			// Only its declarations (its motions are baked, its looks the game's).
+			// All but its looks (the blocks the viewer runs: react, predict, hud): its declarations, and
+			// since M294 its motions, which the server compiles from it.
 			std::string kept;
 			std::istringstream lines( content );
 			std::string line;
+			bool look = false;
 			while ( std::getline( lines, line ) )
 			{
-				for ( const char* verb : { "field ", "event ", "action " } )
+				const bool top = line.empty() == false && line[0] != ' ' && line[0] != '\t' && line[0] != '#';
+				if ( top )
 				{
-					if ( line.rfind( verb, 0 ) == 0 )
-					{
-						kept += line + "\n";
-					}
+					look = line.rfind( "react ", 0 ) == 0 || line.rfind( "predict ", 0 ) == 0 || line.rfind( "hud ", 0 ) == 0;
+				}
+				if ( look == false )
+				{
+					kept += line + "\n";
 				}
 			}
 			content = kept;

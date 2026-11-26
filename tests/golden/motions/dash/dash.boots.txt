@@ -1,0 +1,9 @@
+cinderbox_motions	3
+motion	Use
+when	event	dash.boots.used
+if	( dash.charges > 0 )
+cooldown	0.4
+change	dash.charges	-=	1
+emit	dash.started
+impulse	self	11	move	horizontal
+param	friction	0	0.18

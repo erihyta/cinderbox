@@ -2,7 +2,7 @@
 // (sim/motions.h).
 //
 // None of the three is in this file. They are motion blocks of a rules sheet in the mod's client project
-// (server_mods/flight/client/motion_sets/flight_moves.tscn), baked to motions/flight.moves.cfg and
+// (server_mods/flight/client/motion_sets/flight_moves.cbsheet), compiled by the server (M294) and
 // run by every simulation from the player's own input:
 //
 //   T                   flight on and off: gravity gone, WASD moves along the camera, up and down too

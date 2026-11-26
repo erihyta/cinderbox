@@ -80,41 +80,7 @@ public:
 	}
 	// (Its own fields and its numbers are its sheet's since M286: "field gun.rounds int on item = 12",
 	// "param gun.damage 25" (docs/sheets.md, Declarations), baked into items/<kind>.cfg.)
-	// When used: what must hold for a use to do anything ("dash.charges > 0"), what a use changes
-	// ("dash.charges -= 1"), the seconds between two, and the event a use says. For the helper nodes
-	// under the item (its probe, effects, moves): what using it does.
-	void set_use_conditions( const godot::PackedStringArray& v )
-	{
-		m_useConditions = v;
-	}
-	godot::PackedStringArray get_use_conditions() const
-	{
-		return m_useConditions;
-	}
-	void set_use_changes( const godot::PackedStringArray& v )
-	{
-		m_useChanges = v;
-	}
-	godot::PackedStringArray get_use_changes() const
-	{
-		return m_useChanges;
-	}
-	void set_use_cooldown( double v )
-	{
-		m_useCooldown = v;
-	}
-	double get_use_cooldown() const
-	{
-		return m_useCooldown;
-	}
-	void set_use_emits( const godot::String& v )
-	{
-		m_useEmits = v.strip_edges();
-	}
-	godot::String get_use_emits() const
-	{
-		return m_useEmits;
-	}
+	// (Its "When used" fields went in M294: an item's use is its sheet's use block.)
 	// Its own HUD: a scene the game shows over the screen for the viewer's own player while it has one
 	// in the hand (HUD_IN_HAND) or carries one at all (HUD_CARRIED); once, however many copies.
 	enum HudShows
@@ -450,13 +416,14 @@ public:
 
 	// The text of items/<kind>.cfg, or "" (and why in the returned { text, error }).
 	godot::Dictionary bake() const;
-	// Its motions' file, as bake_to_project writes it (motions/<kind>.cfg): {text, error}; text "" with
-	// no error when it has none.
+	// Its motions: {text, parts, error}: the motions file the server will compile from its sheets, and
+	// the parts file bake_to_project writes (motions/<kind>.cfg, M294); text "" with no error when it has none.
 	godot::Dictionary bake_motions() const;
 	// The inspector's button, and what saving the scene does: writes res://items/<kind>.cfg.
-	// The motion blocks of the rules sheets under the item, as a motion set named like the kind
-	// (motions/<kind>.cfg): each for whoever has the item. Empty with no error: it has none.
-	std::string BakeMotions( godot::String& error ) const;
+	// The motion blocks of the rules sheets under the item, as a motion set named like the kind: each
+	// for whoever has the item; with `parts`, the parts file it carries (motions/<kind>.cfg, M294).
+	// Empty with no error: it has none.
+	std::string BakeMotions( godot::String& error, std::string* parts = nullptr ) const;
 	void BakeMotionsToProject() const;
 	void bake_to_project();
 	godot::Callable get_bake_button();
@@ -474,10 +441,6 @@ private:
 	godot::String m_useKey;
 	godot::String m_hud;
 	int m_hudShows = HUD_IN_HAND;
-	godot::PackedStringArray m_useConditions;
-	godot::PackedStringArray m_useChanges;
-	double m_useCooldown = 0.0;
-	godot::String m_useEmits;
 	godot::Vector3 m_viewOffset;
 	godot::NodePath m_viewCamera;
 	godot::Vector3 m_viewRotation;

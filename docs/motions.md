@@ -21,7 +21,9 @@ and run by the simulation, the way a character's [state machine](characters.md#s
 they were deleted.
 
 ```
-a sheet's motion blocks ──bake──> motions/<set>.cfg ──> the server reads it from the mod's item
+a sheet's motion blocks ──the server compiles them──> the motions (M294: from the mod's sheets and
+   (the editor's bake records the parts       the parts its bake recorded, motions/<set>.cfg)
+    of the scene they name)
                                                      │ the schema (welcome, recordings)
    your press ──> your simulation runs the motion ───┤
                   the server runs the same motion  ──┘   same input, same state, same result
@@ -36,7 +38,7 @@ players where your game showed them when it ran, up to `cb_server --lag-compensa
 | Half | Where | What |
 |---|---|---|
 | The rules | `server_mods/<mod>/<mod>.cpp` | declares the action, the fields and the events the motions name, names the set (`declare.Motions( "dash.moves" )`), and decides who may: a field a condition reads |
-| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with a `CbRules` sheet of motion blocks under it; saving the scene bakes `motions/<set_name>.cfg` |
+| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with a `CbRules` sheet of motion blocks under it; saving the scene bakes `motions/<set_name>.cfg` (the parts of the scene its motions name: the server compiles the sheet, M294) |
 
 ```cpp
 // server_mods/dash/dash.cpp: the names, and how many dashes a player has. Not the dash, not its key.
@@ -76,7 +78,7 @@ under them (*what happens to whom*): [sheets.md](sheets.md#a-motion-block).
 ## What an item does
 
 Under a `CbItem`, a sheet's `use` rule is what using the item does (its own key, or the use button
-with it in the hand), if its **When used** rules allow:
+with it in the hand):
 
 The boots' sheet (`server_mods/dash/client/prefabs/boots.cbsheet`, a `CbRules` under the item):
 
@@ -90,8 +92,8 @@ use if dash.charges > 0
 ```
 
 **A `use` rule** is the item's `Use` motion: `use [if ...]` is `motion Use on use [if ...]` word
-for word (M213), so it takes every line a motion block does (a `cast`, steps, a `find`), with the
-item's **When used** settings joined. An item used while its key is held has it on while it is
+for word (M213), so it takes every line a motion block does (a `cast`, steps, a `find`). (Until M294 the
+`CbItem`'s **When used** fields joined it; they went: a use is its sheet's.) An item used while its key is held has it on while it is
 held.
 
 **A motion block** (`motion NAME ...`) in a sheet under an item or a `CbMotionSet` is a whole
@@ -122,21 +124,14 @@ use if dash.charges > 0
 
 | Line | Is |
 |---|---|
-| `use [if EXPRESSION]` | the When used conditions (added to the item's own) |
-| `change`, `cooldown`, `emit` | `use_changes` (one line each), `use_cooldown`, `use_emits` |
+| `use [if EXPRESSION]` | what must hold for a use to do anything |
+| `change`, `cooldown`, `emit` | the fields a use changes, the seconds between two, the event it says |
 | `impulse`, `force`, `move`, `launch`, `cast`, `find` ... | what a motion block's lines do ([effects](#effects-on-whom-in-which-direction), [sheets.md](sheets.md#lines)) |
 
 - **One `use` rule an item.** (The boots, the slam, the guard and the dash strike were nodes once;
   converted to sheets, their `motions/*.cfg` came out the same.)
 
-| On the `CbItem` (When used) | Means |
-|---|---|
-| `use_conditions` | what must hold for a use to do anything (`dash.charges > 0`): [expressions](looks.md#expressions), as a motion's conditions |
-| `use_changes` | fields of the player a use changes (`dash.charges -= 1`) |
-| `use_cooldown` | seconds between two uses |
-| `use_emits` | the event a use says (`dash.started`), for looks and state machines |
-
-- **One motion**: they bake with the item into a motion named `Use` (`motions/<kind>.cfg`): in a
+- **One motion**: the item's motion named `Use` (the server compiles it from the sheet): in a
   condition `motion.<kind>.Use`, in a sheet `active <kind>.Use` (the boots' pose weighs by `motion.dash.boots.Use`), for a
   `CbLinkLook` `<kind>/Use`.
 - **When**: on `<kind>.used` (the press, or the use button's), or for an item used while held, for
@@ -507,7 +502,39 @@ with `"[{key:dash}]  DASH {dash.charges} / {dash.max}"`, and the count drops on 
 
 ## Baked file
 
-`motions/<set_name>.cfg`, tab-separated, written on save and when the mod is published. Never edited.
+**Since M294 the server compiles the motions** from the mod's sheets, and the item carries no
+motion compiled elsewhere. What it carries as `motions/<set_name>.cfg` (or `motions/<kind>.cfg` for
+an item) is what the sheets' motions name of the scene, recorded by the editor's bake: its kind and
+use (an item's), its sheets by path, and for each the markers, paths and shapes its lines name,
+every number as the bake had it. Written on save and when the mod is published; never edited.
+
+```
+cinderbox_parts	1
+# what made it
+kind	frag.grenade
+use	1
+sheet	prefabs/frag.cbsheet
+shapes	Blast	root	0	0	0	1
+piece	8	0	0	0
+```
+
+| Line | Fields |
+|---|---|
+| `kind`, `use` | an item's kind and how it is used (its `CbItem`'s); none for a motion set |
+| `sheet` | a sheet's path in the item; the parts after it are what its motions name |
+| `marker` | a path, its forward axis (x y z) and its place (x y z), in the frame of what is baked |
+| `path` | a path, then its 32 samples (x y z each) |
+| `shapes` | a path, its frame (`root` or `own`), how far it is moved (x y z), how many pieces follow |
+| `piece` | a radius, then its points (x y z each) |
+
+The server reads it with the item's sheets and compiles each motion block (`sheet_parts.h`:
+`MotionsFromParts`, the editor's bake running the same function), into the text below: what it
+sends to every client in the schema. A part a sheet names that is not in the file is a mistake
+("not among the item's baked parts: bake it again"). `cb_tests motions_golden` checks that every
+mod compiles to what its golden file says (`tests/golden/motions`, recorded from the motions the
+editor baked before M294: the same, byte for byte).
+
+The motions themselves, tab-separated (what the schema carries):
 
 ```
 cinderbox_motions	2
@@ -557,9 +584,9 @@ motion blocks) has the last eight; a file without them is written as version 2.
 
 | Step | Who |
 |---|---|
-| Bake | saving the scene, the **Bake motions** button, `tools\publish_mod.ps1` (`bake_motions.gd`) |
-| Ship | the mod's item: `motions/*.cfg` is packed, `motion_sets/` is not |
-| Read | the server, from the item (its SHA-256 checked); a set it cannot read does nothing |
+| Bake | saving the scene, the **Bake motions** button, `tools\publish_mod.ps1` (`bake_motions.gd`): the parts file |
+| Ship | the mod's item: `motions/*.cfg` (parts) and the sheets are packed, `motion_sets/*.tscn` is not |
+| Compile | the server, from the item's sheets and parts (its SHA-256 checked); a set it cannot compile does nothing |
 | Send | in the schema: the welcome, and a recording's header |
 | Compile | every simulation, against the schema's names (`CompileMotions`) |
 

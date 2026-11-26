@@ -120,8 +120,9 @@ struct AnimPackInfo
 };
 
 // A set of motions a mod provides (sim/motions.h): what its players can do besides walking and
-// jumping (a dash, a double jump). Baked into the mod's workshop item as motions/<name>.cfg; the
-// text travels here so every simulation runs the server's.
+// jumping (a dash, a double jump). Compiled by the server from the mod's sheets (and the parts file
+// its workshop item carries as motions/<name>.cfg, M294); the text travels here so every simulation
+// runs the server's.
 struct MotionSetInfo
 {
 	std::string mod;

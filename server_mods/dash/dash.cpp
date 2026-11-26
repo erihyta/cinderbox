@@ -7,8 +7,8 @@
 //   - The dash is an item's: the boots (client/prefabs/boots.tscn, kind dash.boots) carry the
 //     motion, and only who has them dashes. The item is taken from the scene (ItemsOfLook); the
 //     inventory mod gives every life a pair ("inventory.start" on the scene).
-//   - The double jump is everyone's: client/motion_sets/dash_moves.tscn, baked to
-//     motions/dash.moves.cfg.
+//   - The double jump is everyone's: client/motion_sets/dash_moves.cbsheet, which the
+//     server compiles (its parts in motions/dash.moves.cfg).
 //
 // This file is the rules: the names the motions use, and how many dashes a player has. The dash
 // motion asks "dash.charges > 0" and takes one; the mod gives them back, one at a time.

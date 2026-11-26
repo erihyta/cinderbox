@@ -1,0 +1,6 @@
+cinderbox_motions	3
+motion	Use
+when	event	cannon.cannon.used
+cooldown	1.2
+emit	cannon.fired
+launch	cannon.ball	36	look	1	0.9	10

@@ -106,8 +106,9 @@ struct ServerOptions
 	std::function<std::shared_ptr<const anim::AnimSet>( const std::string& mod, const std::string& pack, std::string& error,
 														std::string& warnings )>
 		loadAnimPack;
-	// Reads a mod's motion set (motions/<set>.cfg in its workshop item) into `text`. Unset or false:
-	// the set does nothing.
+	// Reads a mod's motion set's parts file (motions/<set>.cfg in its workshop item, M294) into `text`;
+	// the server compiles the motions from it and the mod's sheets (lookSheets). Unset or false: the
+	// set does nothing.
 	std::function<bool( const std::string& mod, const std::string& set, std::string& text, std::string& error )> loadMotions;
 	// Every item of a mod's look (items/*.cfg of its workshop item): for a mod that takes its
 	// items from its scenes (Declarations::ItemsOfLook). Without it such a mod has none.
