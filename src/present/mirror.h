@@ -65,7 +65,7 @@ struct Visual
 	bool linked = false;
 	bool linkHolds = false;
 	bool linkMissed = false;
-	uint64_t motionsOn = 0; // the player's motions that are on, a bit each
+	MotionsOn motionsOn; // the player's motions that are on (M295: a list, up to kMotionsOnShown)
 	// Players: what it carries, by item kind, and which are in use (FrameEntity's).
 	uint16_t kinds[16] = {};
 	uint16_t kindsInUse = 0;

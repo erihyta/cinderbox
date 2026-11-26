@@ -65,8 +65,8 @@ struct FrameEntity
 	bool linkMissed = false; // the line found nothing: it flies out its range and is gone
 	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
-	// Players: the motions that are on, a bit each (the first 64 of the server's): "motion.<name>".
-	uint64_t motionsOn = 0;
+	// Players: the motions that are on ("motion.<name>"): up to kMotionsOnShown at once, by index (M295).
+	MotionsOn motionsOn;
 	// Players: what it carries, by item kind, and which are in use (a bit each): all of it, also
 	// what another has put away out of sight, which is not sent (M260: Simulation::KindsOf).
 	uint16_t kinds[16] = {};

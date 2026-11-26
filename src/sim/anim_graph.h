@@ -345,9 +345,11 @@ struct AnimGraphInputs
 	uint8_t pressedButtons = 0;
 	const uint16_t* heldKinds = nullptr;
 	uint32_t heldCount = 0;
-	// The player's motions that are on, a bit each ("motion.<name>"): for a state machine as this
-	// tick's motions left them, for a motion's own conditions as the tick found them.
-	uint64_t motionsOn = 0;
+	// The player's motions that are on, by index ("motion.<name>", "active <name>"): for a state machine
+	// as this tick's motions left them, for a motion's own conditions as the tick found them. Its own
+	// simulation's: all of them; another's body, a look: what it was sent (MotionsOn, M295).
+	const uint16_t* motionsOn = nullptr;
+	uint32_t motionsOnCount = 0;
 	// Kinds of everything the player has, the hand's among them ("carried.<kind>").
 	const uint16_t* carriedKinds = nullptr;
 	uint32_t carriedCount = 0;

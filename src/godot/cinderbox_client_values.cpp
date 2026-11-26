@@ -147,7 +147,7 @@ void CinderboxClient::RefreshHeldKinds()
 				m_carriedKinds[v.netId].push_back( v.kinds[k] );
 			}
 		}
-		if ( v.kind == present::VisualKind::Player && v.motionsOn != 0 )
+		if ( v.kind == present::VisualKind::Player && v.motionsOn.count != 0 )
 		{
 			m_motionsOn[v.netId] = v.motionsOn;
 		}
@@ -167,7 +167,7 @@ const std::vector<std::pair<String, int>>& CinderboxClient::MotionKeys()
 		m_motionKeysFor = signature;
 		m_motionKeys.clear();
 		std::vector<std::string> names = MotionNames( schema );
-		for ( size_t i = 0; i < names.size() && i < 64; ++i )
+		for ( size_t i = 0; i < names.size() && i < size_t( kMotionLimit ); ++i )
 		{
 			size_t slash = names[i].find( '/' );
 			std::string set = names[i].substr( 0, slash );
@@ -219,12 +219,12 @@ bool CinderboxClient::PlayerName( uint32_t netId, const std::string& name, float
 	{
 		const std::vector<std::pair<String, int>>& keys = const_cast<CinderboxClient*>( this )->MotionKeys();
 		String key = String::utf8( name.c_str() );
-		for ( const auto& [motion, bit] : keys )
+		for ( const auto& [motion, index] : keys )
 		{
 			if ( motion == key )
 			{
 				auto on = m_motionsOn.find( netId );
-				value = on != m_motionsOn.end() && ( ( on->second >> bit ) & 1 ) != 0 ? 1.0f : 0.0f;
+				value = on != m_motionsOn.end() && on->second.Has( uint16_t( index ) ) ? 1.0f : 0.0f;
 				return true;
 			}
 		}

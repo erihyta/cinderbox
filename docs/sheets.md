@@ -181,7 +181,7 @@ Every machine runs it, and rollback runs a tick again many times:
 | Rule | Why |
 |---|---|
 | **Deterministic**: no clock, no randomness but the simulation's | the server and every client reach the same result |
-| **Bounded**: no loops but `every` (64 times at most); a `find` takes 16 things at most | a tick costs about the same however often it is run again |
+| **Bounded**: no loops but `every` (each repetition in a tick of its own: as often as its step lasts, M295); a `find` takes 16 things at most | a tick costs about the same however often it is run again |
 | **No storage of its own**: fields, the world, each motion's small record (28 bytes: its step, since when, its ifs' answers) | the record rolls back with the rest |
 | **No files, no network, no text** | it runs inside the physics step |
 
@@ -322,7 +322,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 | `wait for EXPRESSION or S` | the next step, once this holds or after S seconds without it: it goes on either way |
 | `wait S` | the next step, S seconds after this one started |
 | `timeout` | what a `within` that gave up runs, before the motion ends |
-| `every S` | the lines after it in its step happen when the step starts and every S seconds while it is the step (64 times at most) |
+| `every S` | the lines after it in its step happen when the step starts and every S seconds while it is the step, as often as it lasts (M295; 64 times at most before) |
 | `if EXPRESSION` / `else` | the lines further in happen or not, decided when the step starts |
 
 ### Finding
@@ -421,7 +421,10 @@ change brawl.combo += 1 + brawl.streak
 | Limit | |
 |---|---|
 | things a find takes | 16 |
-| times an `every` repeats | 64 |
+| times an `every` repeats | as often as its step lasts (M295; 64 before) |
+| a player's motions others see on at once | 16 (its own simulation: all; M295) |
+| tags | as many as the motions name (M295; 32 a server before, the rest dropped) |
+| motions a server runs | 65,535 (any of them read by `active`, M295; the first 64 before) |
 | `if`s a step decides | 16 |
 | steps a motion has | 64 |
 | a step's `move` values from expressions | 16 |

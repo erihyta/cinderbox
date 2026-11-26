@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 constexpr char kMagic[4] = { 'C', 'B', 'V', 'F' };
-constexpr uint32_t kVersion = 10; // each version's change: docs/versions.md (add a row when raising it)
+constexpr uint32_t kVersion = 11; // each version's change: docs/versions.md (add a row when raising it)
 constexpr uint64_t kKeyInterval = 300;
 constexpr size_t kHeaderSize = 8;
 constexpr size_t kRecordHeaderSize = 5;

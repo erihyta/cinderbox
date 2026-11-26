@@ -2977,7 +2977,14 @@ void TestProtocol()
 			p.lastJumpTick = random( 4 ) == 0 ? tick - 1 - random( 5000 ) : p.lastJumpTick;
 			p.airSince = random( 4 ) == 0 ? ( random( 2 ) ? 0 : tick - 1 - random( 300 ) ) : p.airSince;
 			p.stepCount += random( 3 );
-			p.motionsOn = random( 6 ) == 0 ? NextRandom( prng ) : p.motionsOn;
+			if ( random( 6 ) == 0 )
+			{
+				p.motionsOn = MotionsOn{};
+				for ( uint32_t n = random( kMotionsOnShown + 1 ), k = 0; k < n; ++k )
+				{
+					p.motionsOn.Add( uint16_t( random( 65536 ) ) );
+				}
+			}
 			p.layerCount = random( 5 ) == 0 ? uint8_t( random( kPuppetLayers + 1 ) ) : p.layerCount;
 			for ( size_t l = 0; l < kPuppetLayers; ++l )
 			{

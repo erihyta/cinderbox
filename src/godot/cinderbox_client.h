@@ -510,7 +510,7 @@ private:
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_heldKinds;
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_carriedKinds; // with what is put away
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_usingKinds;	 // what each uses this tick
-	std::unordered_map<uint32_t, uint64_t> m_motionsOn;				// a player's motions that are on, a bit each
+	std::unordered_map<uint32_t, MotionsOn> m_motionsOn;			// a player's motions that are on (M295: by index)
 	std::unordered_map<uint32_t, uint32_t> m_handItems;				// the item in a player's hand (not put away)
 	// "hand.<field>": that field of the item in the player's hand (0 with none, or one without it).
 	// False for any other name.

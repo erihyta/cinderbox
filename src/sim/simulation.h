@@ -471,8 +471,8 @@ public:
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
 	AnimStateCopy EntityAnimState( uint32_t netId ) const;
-	// A player's motions that are on, a bit each (the first 64 of the server's).
-	uint64_t EntityMotionsOn( uint32_t netId ) const;
+	// A player's motions that are on, as others see them (MotionsOn: up to kMotionsOnShown at once).
+	MotionsOn EntityMotionsOn( uint32_t netId ) const;
 	// Every item a player carries, in the hand or put away, in NetId order.
 	std::vector<uint32_t> CarriedItemsOf( uint32_t holder ) const;
 

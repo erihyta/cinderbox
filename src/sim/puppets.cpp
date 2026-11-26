@@ -410,7 +410,8 @@ void Simulation::ApplyPuppets( const std::vector<PuppetEntry>& puppets, uint32_t
 				graphIn.carriedCount = carriedCount;
 				graphIn.usingKinds = held;
 				graphIn.usingCount = ( p.flags & PuppetUsing ) != 0 ? heldCount : 0;
-				graphIn.motionsOn = p.motionsOn;
+				graphIn.motionsOn = p.motionsOn.ids;
+				graphIn.motionsOnCount = p.motionsOn.count;
 				m_markerScratch.clear(); // (the server's markers come as its events)
 				UpdateAnimGraph( anim, *graph, m_animPacks, graphIn, dt, m_markerScratch, p.layers, std::min<size_t>( p.layerCount, kPuppetLayers ) );
 			}

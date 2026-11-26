@@ -408,12 +408,12 @@ struct MotionStep
 	std::vector<Break> breaks;
 	std::vector<int8_t> removes; // an item's "remove self" each, under a guard
 	// What it does again and again (a sheet's "every S": the lines after it): once when the step
-	// starts and every `every` seconds while it is the step, 64 times at most. Its once statements
+	// starts and every `every` seconds while it is the step, as long as it is (M295: no count; a
+	// repetition costs only its own tick). Its once statements
 	// only (changes, emits, impulses, launches, finds, breaks); its guards are this step's.
 	float every = 0.0f;
 	std::vector<MotionStep> repeats; // empty, or one
 };
-inline constexpr uint32_t kMotionRepeats = 64;
 inline constexpr float kMotionMomentumLimit = 100000.0f; // N s
 
 // Whether a step's repeat happens on `tick` (its step started at `stepStart`).
@@ -501,7 +501,7 @@ struct Motion
 	// cooldown it shares with every motion that names the same.
 	std::vector<std::string> tagNames, blockedNames, cancelNames;
 	std::string sharedCooldown;
-	uint32_t tags = 0, blockedTags = 0, cancelTags = 0;
+	std::vector<uint16_t> tags, blockedTags, cancelTags; // tag numbers, in order (M295: no limit)
 	std::vector<uint16_t> blockedMotions, cancelMotions, blockedStatuses;
 	int16_t sharedGroup = -1;
 	float holdSeconds = 0.25f; // Tap, Hold
@@ -545,8 +545,11 @@ std::vector<std::string> MotionNames( const ModSchema& schema );
 int FindMotionByName( const ModSchema& schema, const std::string& name );
 // True while MotionNames is at work (a condition compiled then is not to look a motion up).
 bool ListingMotionNames();
-// The motions of a player that are in effect at `tick`, a bit each (the first 64).
-uint64_t MotionsOnAt( const MotionState& state, uint32_t tick );
+// The motions of a player that are in effect at `tick`, by index, in order: all of them (M295: until
+// then a mask of the server's first 64). `out` is cleared first.
+void MotionsOnAt( const MotionState& state, uint32_t tick, std::vector<uint16_t>& out );
+// The same as others see them: the first kMotionsOnShown.
+MotionsOn ShownMotionsOn( const MotionState& state, uint32_t tick );
 
 // Every set of a schema. A set that does not compile is left out; motions past kMaxMotions too.
 // Null when there are none.

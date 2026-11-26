@@ -12,6 +12,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 101 | A puppet's motions that are on: how many, then each one's index (up to 16 at once), not a mask of the server's first 64 (M295) |
 | 100 | The message `Rows` (a list's rows a mod published, `Context::SetRows`: the shop's offers); view files carry them (M292) |
 | 99 | Two snapshot components: what a player's grab holds (`MotionGrab`) and the bodies it threw marked (`ThrownMarks`); a motion's finds and breaks at a point (`look D`, `hit`), players first, grabs, their lines' per-thing conditions (`only`); `toward`, `marks`, `hold_apply`; expressions read `player` and what was found (`$other:FIELD`) (M290) |
 | 98 | Statuses (the schema's list; a player's motion state carries up to 8, and when each of its first 16 actions went down; the command `ApplyStatus`); a motion's tags, what blocks it, what it cancels, a shared cooldown; triggers release, tap, hold; `apply` (M288) |
@@ -184,6 +185,7 @@ Earlier versions were not written down: the protocol's 1 to 3, the replay's 1, t
 
 | Version | What changed |
 |---|---|
+| 11 | A player's motions that are on: how many and which (up to 16 at once, by index), not a mask of the server's first 64 (M295) |
 | 10 | What a player carries, by kind (M260) |
 | 9 | Two-byte slots (M252) |
 | 8 | The container open to a player |

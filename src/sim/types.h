@@ -247,6 +247,42 @@ struct Float3
 	bool operator==( const Float3& ) const = default;
 };
 
+// The motions of a player that are on, by their index in the server's list (sim/motions.h), as
+// others see them (M295): another player's body, a look ("motion.<name>"), a view file. Its own
+// simulation reads them all (Simulation::RunMotions); this holds as many as are on at once, up to
+// kMotionsOnShown (the lowest indices first): a count of skills in use together, not of how many
+// motions the mods have (until M295 a mask of the server's first 64).
+inline constexpr int kMotionsOnShown = 16;
+struct MotionsOn
+{
+	uint16_t ids[kMotionsOnShown] = {};
+	uint8_t count = 0;
+	uint8_t reserved = 0; // (no padding: a puppet is hashed as bytes)
+
+	bool Has( uint16_t motion ) const
+	{
+		for ( int i = 0; i < count; ++i )
+		{
+			if ( ids[i] == motion )
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+	void Add( uint16_t motion )
+	{
+		if ( count < kMotionsOnShown )
+		{
+			ids[count++] = motion;
+		}
+	}
+	bool operator==( const MotionsOn& other ) const
+	{
+		return count == other.count && std::memcmp( ids, other.ids, sizeof( uint16_t ) * count ) == 0;
+	}
+};
+
 // --- Commands ------------------------------------------------------------------------------------
 //
 // What the server's gameplay mods decide, in a form every simulation can apply. Mods run only on

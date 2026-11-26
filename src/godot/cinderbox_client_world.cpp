@@ -250,9 +250,9 @@ void CinderboxClient::PushStates()
 			state["link_holds"] = v.linked && v.linkHolds;
 			state["link_missed"] = v.linked && v.linkMissed;
 			// "motion.<name>": that motion of its is on.
-			for ( const auto& [key, bit] : MotionKeys() )
+			for ( const auto& [key, index] : MotionKeys() )
 			{
-				state[key] = ( ( v.motionsOn >> bit ) & 1 ) != 0;
+				state[key] = v.motionsOn.Has( uint16_t( index ) );
 			}
 			for ( size_t kind = 0; kind < schema.itemKinds.size(); ++kind )
 			{
