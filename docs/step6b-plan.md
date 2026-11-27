@@ -278,15 +278,15 @@ playtest compares what is on the screen.
 
 | # | Question | Options | Leaning |
 |---|---|---|---|
-| E1 | The item's shape | one `.cbitem` file / loose files named by hash with a manifest | **one file** (one download, one hash to name, one place for caps); the store may serve chunks alone later |
+| E1 | The item's shape | one `.cbitem` file / loose files named by hash with a manifest | **decided (the owner, 2026-11-27): one file** (one download, one hash to name, one place for caps); the store may serve chunks alone later |
 | E2 | Sounds | PCM (16-bit, as today's WAVs, bigger) / Ogg Vorbis (smaller, a decoder to fuzz: stb_vorbis) / both | **PCM first** (today's sounds are short; no decoder on the boundary); Ogg Vorbis when an item's sounds grow |
 | E3 | Texture formats | desktop blocks (BC1, BC3, BC4, BC5, BC7) / those and mobile (ETC2, ASTC) | **desktop only** (no mobile build planned); no mod has a texture yet |
 | E4 | Materials | a `StandardMaterial3D` field list now, our own shipped shaders later / our shaders now | **the field list now** (Godot's own shader; the shipped-shaders plan of 2026-11-21 later) |
 | E5 | Particles | `GPUParticles3D` cooked as emitter fields / our own particle system | **cooked fields** on Godot's particles (its shader is ours to trust) |
 | E6 | HUDs | a fixed list of controls our code builds / Godot scenes behind today's guard until a later step | **the fixed list** (the controls the mods use are few, [§2](#2-where-it-stands)) |
 | E7 | What an item's animation may move | parts' fixed fields and methods / any property | **the fixed fields**: what is not one is said by the editor |
-| E8 | Fuzzing | libFuzzer job in CI and a deterministic run in `cb_tests` / only the deterministic run | **both** (the job on Linux clang, a few minutes; the run everywhere) |
-| E9 | Compression | none now / Zstd now | **none now** (items are 1.5 to 210 KB); Zstd with the store |
+| E8 | Fuzzing | libFuzzer job in CI and a deterministic run in `cb_tests` / only the deterministic run | **decided (the owner, 2026-11-27): both** (the job on Linux clang, a few minutes; the run everywhere) |
+| E9 | Compression | none now / Zstd now | **decided (the owner, 2026-11-27): none now** (items are 1.5 to 210 KB); Zstd with the store |
 | E10 | The store's hosting and uploads | a CDN and an upload service now / the folder store and a LAN `cb_store` now, hosting with launch | **later**, with how players find servers (undecided, 2026-11-17) |
 | E11 | The map | in 6b / its own step when a mod can bring a map | **its own step** ([§12](#12-the-map)) |
 | E12 | Who builds | | Claude, as step 6 |
