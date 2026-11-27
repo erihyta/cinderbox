@@ -230,6 +230,7 @@ when the words it uses exist.
 | A cast and the owner's own effects in one step (M296) | the dash strike's two motions become one with `emit` and `on` (M297); no new kind of step is needed |
 | A word for "this item is used" instead of `using.gun.rifle` (M296) | only the rifle says it, in its own sheet, where its kind's name is plain; a word whose meaning changes with the sheet that `uses` a file reads worse than the name |
 | `back` as a direction (M296) | no sheet wants it; `along facing turn (180, 0)` says it |
+| `predict use2 as item.use2` respelled `predict item.use2 on press use2` (proposed 2026-11-27) | the owner kept it (2026-11-27): an action (the input) and a cue (what happened) are two kinds of name, and `predict ACTION as CUE` reads right once that is known |
 | Mistakes with columns, underlined in the Sheet screen (M296: moved to the leftovers) | most mistakes already quote their word (`"gaurd" is no tag this sheet declares`), and the Sheet screen marks the line. A real column needs each of the compiler's mistakes to know its word's place, and every reader of `line N:` to change (the Sheet screen, the VS Code extension, `cb_sheet`, the Godot checks): with 6b's editor work |
 
 ## 6. Decisions for the owner
