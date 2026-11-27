@@ -113,6 +113,18 @@ public:
 	{
 		return m_heardCount;
 	}
+	// What its game shows of what was said at characters (M297.1), a ring of kHeardHistory: the heard
+	// events, and the own character's as first predicted (its shot's item.use on the tick of the
+	// press). Each once: one predicted again after a state is not shown again, as an own throw is
+	// drawn once.
+	const ModEventRecord* ShownEvents() const
+	{
+		return m_shown.data();
+	}
+	uint32_t ShownCount() const
+	{
+		return m_shownCount;
+	}
 	// The first physics tick whose checksum differed (UINT32_MAX: none).
 	uint32_t DesyncTick() const
 	{
@@ -209,6 +221,13 @@ private:
 	void Hear( State& state );
 	std::array<ModEventRecord, kHeardHistory> m_heard{};
 	uint32_t m_heardCount = 0;
+	std::array<ModEventRecord, kHeardHistory> m_shown{};
+	uint32_t m_shownCount = 0;
+	void Show( const ModEventRecord& e )
+	{
+		m_shown[m_shownCount % kHeardHistory] = e;
+		m_shownCount += 1;
+	}
 	std::array<PlayerInput, kMaxPlayers> m_othersInputs{};
 	uint32_t m_newest = 0;		  // the newest state's tick
 	uint32_t m_placed = UINT32_MAX; // the state the others stand as

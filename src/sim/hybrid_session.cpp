@@ -95,6 +95,7 @@ void HybridSession::Hear( State& state )
 	{
 		m_heard[m_heardCount % kHeardHistory] = e;
 		m_heardCount += 1;
+		Show( e );
 	}
 	state.events.clear();
 }
@@ -261,6 +262,7 @@ void HybridSession::Reconcile()
 		depth += 1;
 	}
 	m_sim->TakePredictedLaunches(); // (drawn already, when first predicted)
+	m_sim->TakePredictedEvents();	// (shown already, when first predicted)
 	m_stats.predictNs += NsSince( start );
 	m_stats.resimulatedTicks += depth;
 	m_stats.lastDepth = depth;
@@ -283,6 +285,10 @@ bool HybridSession::Predict( const PlayerInput& input )
 	auto start = std::chrono::steady_clock::now();
 	m_sim->StepCharacters( m_predicted, m_localSlot, input );
 	m_stats.predictNs += NsSince( start );
+	for ( const ModEventRecord& e : m_sim->TakePredictedEvents() )
+	{
+		Show( e );
+	}
 	for ( const Simulation::PredictedLaunch& launch : m_sim->TakePredictedLaunches() )
 	{
 		m_launches.push_back( { launch, m_nextLaunchId++, 0, 0 } );

@@ -402,6 +402,14 @@ public:
 	{
 		return std::move( m_predictedLaunches );
 	}
+	// The mod events the own character's prediction said (its item's use, its motions' events: a
+	// shot's item.use), taken as the launches are (M297.1): StepCharacters keeps none of its globals,
+	// the ring they are in, so its game would show none of them (the server sends a character's own
+	// motions' events to everyone but its player, who says them itself).
+	std::vector<ModEventRecord> TakePredictedEvents()
+	{
+		return std::move( m_predictedEvents );
+	}
 	// Where something thrown with `velocity` from `from` is after `ticks`, flying as a body of the
 	// item kind `kind` does (gravity, its drag), stopped at the first thing in its way; `velocity`
 	// is then its velocity there (zero once stopped). `ignore`: its own NetId, if it is in the world.
@@ -713,6 +721,7 @@ private:
 	uint32_t m_localCharacterId = kLocalCharacterIdBase; // (not the server's: CreateEntity)
 	bool m_predicting = false; // (StepCharacters)
 	std::vector<PredictedLaunch> m_predictedLaunches;
+	std::vector<ModEventRecord> m_predictedEvents;
 	// On the characters' side (SaveState), or in the physics world (a body there, a ragdoll, a pusher).
 	bool CharacterSide( flecs::entity e ) const;
 	bool PhysicsSide( flecs::entity e ) const;

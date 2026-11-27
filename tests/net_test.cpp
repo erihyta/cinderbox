@@ -8822,6 +8822,85 @@ void TestRemoteCues()
 	}
 }
 
+// A shooter's own game shows its own shot at once (the gun's sheet's Fire, which its own simulation
+// runs): item.use at the shooter is in its own frames on the tick of the press, once, and the
+// server's word for it is not shown again; the hit (item.hit) is the server's, heard.
+void TestOwnShots()
+{
+	Harness h( 48226, {}, {}, {}, UseHybridModel );
+	const ModSchema& schema = h.server.Schema();
+	const int useEvent = schema.FindEvent( "item.use" );
+	const int hitEvent = schema.FindEvent( "item.hit" );
+	CHECK( useEvent >= 0 && hitEvent >= 0 );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.actions = kKeySlot1 | ( tick > 200 && tick % 30 < 2 ? kKeyUse : 0 );
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+	const uint32_t shooter = h.server.Sim().PlayerNetId( h.bots[0].client->Slot() );
+	struct Count
+	{
+		int use = 0, hit = 0;
+	};
+	Count server, heard, shown;
+	uint32_t serverSeen = h.server.Sim().Globals().modEventCount, heardSeen = 0;
+	uint32_t firstServer = 0, firstShown = 0; // (the first shot: the server's tick, and the tick the shooter's game predicted when it showed it)
+	present::Mirror mirror( anim::AnimSet::CreateProcedural() );
+	auto tally = [&]( Count& c, int type, uint32_t a ) {
+		c.use += type == useEvent && a == shooter ? 1 : 0;
+		c.hit += type == hitEvent && a == shooter ? 1 : 0;
+	};
+	present::PresentationFrame frame;
+	h.RunUntil( 8.0, [&]( double ) {
+		const SimGlobals& g = h.server.Sim().Globals();
+		for ( ; serverSeen < g.modEventCount; ++serverSeen )
+		{
+			const ModEventRecord& e = g.modEvents[serverSeen % kModEventHistory];
+			tally( server, int( e.type ), e.netIdA );
+			firstServer = firstServer == 0 && int( e.type ) == useEvent && e.netIdA == shooter ? e.tick : firstServer;
+		}
+		GameClient& w = *h.bots[0].client;
+		Simulation* sim = w.Sim();
+		const HybridSession* hybrid = w.Hybrid();
+		if ( sim == nullptr || hybrid == nullptr )
+		{
+			return;
+		}
+		const uint32_t count = hybrid->HeardCount();
+		for ( heardSeen = std::max( heardSeen, count - std::min( count, HybridSession::kHeardHistory ) ); heardSeen < count; ++heardSeen )
+		{
+			const ModEventRecord& e = hybrid->HeardEvents()[heardSeen % HybridSession::kHeardHistory];
+			tally( heard, int( e.type ), e.netIdA );
+		}
+		present::CaptureFrame( *sim, frame );
+		frame.localNetId = sim->Globals().playerNetIds[w.Slot()];
+		// (As LiveSource fills it: what the game shows.)
+		frame.heardCount = hybrid->ShownCount();
+		frame.heard.assign( hybrid->ShownEvents(), hybrid->ShownEvents() + HybridSession::kHeardHistory );
+		mirror.Update( frame, 0.5f, 1.0f / 60.0f );
+		for ( const present::Event& e : mirror.Events() )
+		{
+			if ( e.type == present::EventType::Mod )
+			{
+				tally( shown, int( e.modType ), e.netId );
+				firstShown = firstShown == 0 && int( e.modType ) == useEvent && e.netId == shooter ? hybrid->PredictedTick() : firstShown;
+			}
+		}
+	} );
+	std::printf( "    the shooter's shots and hits: on the server %d and %d; heard from the server %d and %d; shown in its own game %d and %d; "
+				 "the first shot the server's at tick %u, shown while its game predicted tick %u\n",
+				 server.use, server.hit, heard.use, heard.hit, shown.use, shown.hit, firstServer, firstShown );
+	CHECK( server.use >= 8 && server.hit >= 8 );
+	CHECK( heard.use == 0 && heard.hit == server.hit ); // (its own shot is not the server's to say to it)
+	// Each shot once (none twice when a state makes its character the server's again and its inputs
+	// run again), the last one perhaps before the server has run its tick: the game runs ahead.
+	CHECK( shown.use >= server.use && shown.use <= server.use + 1 && shown.hit == server.hit );
+	CHECK( firstShown != 0 && firstShown <= firstServer + 1 );
+}
+
 // The hybrid on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A lost
 // state costs nothing but itself (the next is a few ticks away, against a base the client has); a
 // lost frame comes again in the next packets, and the physics, behind, has waited for it rarely.
@@ -9104,6 +9183,7 @@ int main( int argc, char** argv )
 		{ "brawl_lag_compensation", TestBrawlLagCompensation },
 		{ "seen_back_capped", TestSeenBackCapped },
 		{ "remote_cues", TestRemoteCues },
+		{ "own_shots", TestOwnShots },
 		{ "hybrid_puppets", TestHybridPuppets },
 		{ "hybrid_own_fields", TestHybridOwnFields },
 		{ "hybrid_reconnect", TestHybridReconnect },
