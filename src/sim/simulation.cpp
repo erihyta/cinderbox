@@ -3581,13 +3581,20 @@ void Simulation::Step( const InputFrame& given )
 	m_globals.tick += 1;
 }
 
-void Simulation::StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInput& input )
+void Simulation::StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInput& input, const std::vector<ModEventRecord>& before )
 {
 	PhysicsArena::Scope scope( *m_arena );
 	// The tick the character is at, ahead of the physics; the physics' own globals kept (a random
 	// number a motion draws is not the physics world's).
 	const SimGlobals kept = m_globals;
 	m_globals.tick = tick;
+	// What its motions said on the predicted tick before (put back with the globals after it, so
+	// gone from the ring): heard now, as the server's motions hear what was said late before them.
+	for ( const ModEventRecord& e : before )
+	{
+		m_globals.modEvents[m_globals.modEventCount % kModEventHistory] = e;
+		m_globals.modEventCount += 1;
+	}
 	m_predicting = true;
 	InputFrame frame;
 	frame.tick = tick;
@@ -3605,6 +3612,16 @@ void Simulation::StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInp
 	UpdateFootsteps();
 	m_globals = kept;
 	m_predicting = false;
+}
+
+bool Simulation::AboutAnotherCharacter( const ModEventRecord& record ) const
+{
+	if ( record.netIdB == 0 || record.netIdB == record.netIdA )
+	{
+		return false;
+	}
+	const flecs::entity b = FindEntity( record.netIdB );
+	return b.is_valid() && b.has<Character>();
 }
 
 b3Vec3 Simulation::FlyItem( uint16_t kind, b3Vec3 from, b3Vec3& velocity, uint32_t ticks, uint32_t ignore )

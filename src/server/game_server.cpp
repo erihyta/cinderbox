@@ -2607,7 +2607,8 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	}
 	plan.budgeted = spentBytes;
 	// The events at the characters chosen (M257), all it was not sent of those kept (its own
-	// character's, only those a mod said: the rest its game says itself, predicting it).
+	// character's, only those a mod said and those about another character, M297.5: the rest its
+	// game says itself, predicting it; what happens to another player is the server's to say).
 	for ( size_t g = 0; g < groups; ++g )
 	{
 		const uint32_t h = now.heads[g];
@@ -2625,7 +2626,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		const uint32_t from = eventsFrom( h );
 		for ( const KeptEvent& e : found->second )
 		{
-			if ( e.record.tick >= from && e.record.tick < newest.tick && ( own == false || e.command ) )
+			if ( e.record.tick >= from && e.record.tick < newest.tick && ( own == false || e.command || m_sim->AboutAnotherCharacter( e.record ) ) )
 			{
 				plan.events.push_back( { netId, e.record, e.serial } );
 			}
