@@ -1,11 +1,11 @@
 [gd_scene format=3]
 
 ; Uppercut: its slot's key (3), on the ground. Whoever is within 3 m ahead is launched
-; upward, and you hop after it. 4 s to come back (brawl.cd_upper). A miss does nothing and costs
+; upward, and you hop after it. 4 s to come back (the motion's cooldown). A miss does nothing and costs
 ; nothing: with a probe, a use only counts if the line finds something.
 ;   Uppercut    CbItem     once a press, by its slot's key
-;     Rules     CbRules    uppercut.cbsheet: Rise (brawl.cd_upper <= 0, grounded; a line 3 m ahead,
-;                          at once: 12 m/s up on who it hit, 6 up on you; brawl.cd_upper = 4)
+;     Rules     CbRules    uppercut.cbsheet: Rise (grounded, 4 s apart; a line 3 m ahead, at once:
+;                          12 m/s up on who it hit, 6 up on you)
 
 [ext_resource type="CbSheet" path="res://prefabs/uppercut.cbsheet" id="sheet"]
 

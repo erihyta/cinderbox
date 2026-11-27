@@ -7,7 +7,7 @@ param inventory.start 1
 
 use if dash.charges > 0
 	change dash.charges -= 1
-	cooldown 0.4
+	cooldown 0.4 s
 	emit dash.started
-	impulse 11 replace horizontal
-	move for 0.18 friction 0
+	impulse 11 m/s replace horizontal
+	move for 0.18 s friction 0

@@ -3,6 +3,7 @@
 #include "navigation.h"
 
 #include "anim_graph.h"
+#include "motions.h"
 
 #include "detmath.h"
 #include "map.h"
@@ -920,6 +921,27 @@ std::vector<ModEventRecord> Context::RecentEvents() const
 		{
 			out.push_back( e );
 		}
+	}
+	return out;
+}
+
+int Context::MotionIndex( const std::string& motion ) const
+{
+	return FindMotionByName( m_schema, motion );
+}
+
+MotionClockEntry Context::PlayerMotion( PlayerSlot slot, int motion ) const
+{
+	MotionClockEntry out{ uint16_t( std::max( motion, 0 ) ), false, 0, 0.0f };
+	if ( motion < 0 || m_sim.IsPlayerActive( slot ) == false )
+	{
+		return out;
+	}
+	// (One the clock does not list is at rest: ready.)
+	out.ready = true;
+	for ( const MotionClockEntry& e : m_sim.EntityMotionClock( m_sim.PlayerNetId( slot ) ).motions )
+	{
+		out = int( e.motion ) == motion ? e : out;
 	}
 	return out;
 }

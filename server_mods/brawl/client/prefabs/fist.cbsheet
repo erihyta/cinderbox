@@ -3,7 +3,7 @@ cbsheet 1
 # The fist: a jab, twice in a row; the third use within the combo's window is a finisher. A press
 # starts the punch (the pack, brawl.fists, plays it); the hit is where the fist lands: the clip's
 # brawl.fist.strike marker. Whoever is in the box in front of the body then (2.6 m ahead, knee to head
-# height; M279: turned with the look, pitch and all, about the chest: with the fist out the body faces
+# height; turned with the look, pitch and all, about the chest: with the fist out the body faces
 # the camera and its upper body bends with the pitch, so a punch reaches up and down where it is
 # drawn) is hit (said with who it was: the brawl mod's damage) and pushed. The punch is over
 # at the clip's brawl.fist.ready marker (the fist mostly back): until then the next one cannot start,
@@ -25,41 +25,41 @@ tag punch
 tag guard
 status pulled
 
-# The box a punch hits in, written once (M289: a word for some words).
+# The box a punch hits in, written once.
 let hitbox = box (0.8, 1.2, 2.6) at (0, 1, 1.4) turned look max 1
 
 motion Jab on use if not linked and brawl.combo < 2
 	tags attack, punch
 	blocked by punch, guard, pulled
-	cooldown 0.3
+	cooldown 0.3 s
 	change brawl.combo += 1
 	change brawl.combo_left = 1.5
-	wait for brawl.fist.strike within 0.35
+	wait for brawl.fist.strike within 0.35 s
 	find hitbox
 		emit brawl.jab.hit
-		impulse 4 along facing
+		impulse 4 m/s along facing
 	timeout
 	find hitbox
 		emit brawl.jab.hit
-		impulse 4 along facing
-	wait for brawl.fist.ready within 0.7
+		impulse 4 m/s along facing
+	wait for brawl.fist.ready within 0.7 s
 
 motion Finisher on use if brawl.combo >= 2
 	tags attack, punch
 	blocked by punch, guard, pulled
-	cooldown 0.3
+	cooldown 0.3 s
 	change brawl.combo = 0
-	wait for brawl.fist.strike within 0.5
+	wait for brawl.fist.strike within 0.5 s
 	find hitbox
 		emit brawl.finisher.hit
-		impulse 70 along facing
-		impulse 5 along up
+		impulse 70 m/s along facing
+		impulse 5 m/s along up
 	timeout
 	find hitbox
 		emit brawl.finisher.hit
-		impulse 70 along facing
-		impulse 5 along up
-	wait for brawl.fist.ready within 0.9
+		impulse 70 m/s along facing
+		impulse 5 m/s along up
+	wait for brawl.fist.ready within 0.9 s
 
 # The combo's window: brawl.combo_left counts down by itself (a timer); when it is out, the combo is
 # over (while the fists are carried at all).

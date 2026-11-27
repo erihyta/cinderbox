@@ -5,4 +5,6 @@ test "the key lunges and knocks back the player ahead"
 	press brawl.dash_strike at 0
 	expect event brawl.dash_strike.started at 0
 	expect event brawl.dash_strike.hit at 0 within 0.6
-	expect brawl.cd_dash > 2 at 0.5
+	expect cooldown Strike > 2 at 0.5
+	expect ready Strike == 0 at 0.5
+	expect ready Strike == 1 at 3.1

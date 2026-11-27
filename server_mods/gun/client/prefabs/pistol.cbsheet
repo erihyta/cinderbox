@@ -14,53 +14,54 @@ param mark.seconds 1 s
 react on item.use
 	as holder
 		at Muzzle attached
-			create muzzle_flash for 0.3
+			create muzzle_flash for 0.3 s
 		at Muzzle
-			sound gunshot volume -5 jitter 0.06 range 70
+			sound gunshot volume -5 jitter 0.06 range 70 m
 
 # Tracer: from the muzzle to where the server's shot ended.
 react on item.reach
 	as holder
 		at beam from Muzzle
-			create tracer for 0.06
+			create tracer for 0.06 s
 
 # ScanBeam, MarkSound
 react on item.use2
 	as holder
 		at beam from Muzzle
-			create scan_beam for 0.15
+			create scan_beam for 0.15 s
 		at Muzzle
-			sound dry_click volume -4 pitch 1.8 range 25
+			sound dry_click volume -4 pitch 1.8 range 25 m
 
-# PredictScan: the mark mod's scan (its use2), still the server's with a guess here
+# PredictScan: the mark mod's scan (its use2), still the server's with a guess here, as often as
+# the mark mod allows one
 predict use2 as item.use2 if !hand.gun.reloading and !combat.dead
-	cooldown 0.95
+	cooldown mark.seconds
 
 # DrySound
 react on item.use_failed
 	as holder
 		at Muzzle
-			sound dry_click volume -8 range 12
+			sound dry_click volume -8 range 12 m
 
 # ReloadSound
 react on item.reload
 	as holder
 		at Muzzle
-			sound reload volume -10 range 25
+			sound reload volume -10 range 25 m
 
 # HitSurface
 react on item.hit if event.value == 0
 	as holder
 		at point
-			sound ricochet volume -16 jitter 0.3 range 30
-			create bullet_spark for 1
+			sound ricochet volume -16 jitter 0.3 range 30 m
+			create bullet_spark for 1 s
 
 # HitPlayer
 react on item.hit if event.value > 0
 	as holder
 		at point
-			sound body_hit volume -8 jitter 0.15 range 40
-			create hit_puff for 1
+			sound body_hit volume -8 jitter 0.15 range 40 m
+			create hit_puff for 1 s
 
 # HitMarker
 react on item.hit if local and event.value > 0

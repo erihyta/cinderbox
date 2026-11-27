@@ -17,19 +17,19 @@ action fly key T
 react on flight.started
 	as actor
 		at point
-			sound prop_spawn volume -12 pitch 0.7 range 30
-			create jump for 2
+			sound prop_spawn volume -12 pitch 0.7 range 30 m
+			create jump for 2 s
 
 # Stopped
 react on flight.stopped
 	as actor
 		at point
-			sound prop_destroy volume -14 pitch 0.8 range 30
+			sound prop_destroy volume -14 pitch 0.8 range 30 m
 
 # Thrust
 react on flight.thrust
-	cooldown 0.2
+	cooldown 0.2 s
 	as actor
 		at point
-			sound jump volume -12 pitch 0.6 range 30
-			create land for 2
+			sound jump volume -12 pitch 0.6 range 30 m
+			create land for 2 s

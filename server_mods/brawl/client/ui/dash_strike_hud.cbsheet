@@ -1,8 +1,9 @@
 cbsheet 1
 
-# The dash strike's line: READY in green, or the seconds left.
+# The dash strike's line: READY in green, or the seconds its motion's cooldown has left (the local
+# player's own simulation counts it down).
 hud Line
-	text "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
-	text "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
-	bind modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
-	bind modulate:b = 1 - 0.45 * (brawl.cd_dash <= 0)
+	text "[{key:slot2}]  DASH STRIKE  READY" if ready brawl.dash_strike.Strike
+	text "[{key:slot2}]  DASH STRIKE  {cooldown brawl.dash_strike.Strike}s" if not ready brawl.dash_strike.Strike
+	bind modulate:r = 1 - 0.45 * ready brawl.dash_strike.Strike
+	bind modulate:b = 1 - 0.45 * ready brawl.dash_strike.Strike

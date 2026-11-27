@@ -23,7 +23,7 @@ const Color kUnknown( 1.0f, 0.35f, 0.35f );
 const Color kPlain( 0.8f, 0.82f, 0.86f );
 const Color kProblem( 1.0f, 0.25f, 0.25f, 0.16f );
 
-// A character a word or a name of a sheet is made of ("brawl.cd_dash", "!combat.dead", "?weather").
+// A character a word or a name of a sheet is made of ("brawl.combo", "!combat.dead", "?weather").
 bool WordChar( char32_t c )
 {
 	return ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) || ( c >= '0' && c <= '9' ) || c == '_' || c == '.' || c == '!' || c == '?';

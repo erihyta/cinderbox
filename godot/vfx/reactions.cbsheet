@@ -5,56 +5,56 @@ cbsheet 1
 
 # PropSpawn
 react on spawned if actor is prop
-	cooldown 0.05
+	cooldown 0.05 s
 	as actor
 		at point
-			sound prop_spawn volume -8 jitter 0.15 range 40
-			create prop_spawn for 3
+			sound prop_spawn volume -8 jitter 0.15 range 40 m
+			create prop_spawn for 3 s
 
 # PropDestroy
 react on destroying if actor is prop
-	cooldown 0.08
+	cooldown 0.08 s
 	as actor
 		at point
-			sound prop_destroy volume -12 jitter 0.2 range 35
-			create prop_destroy for 3
+			sound prop_destroy volume -12 jitter 0.2 range 35 m
+			create prop_destroy for 3 s
 
 # Jump
 react on jumped if actor is player
 	as actor
 		at point
-			sound jump volume -14 jitter 0.1 range 25
-			create jump for 2
+			sound jump volume -14 jitter 0.1 range 25 m
+			create jump for 2 s
 
 # Land
 react on landed if actor is player
 	as actor
 		at point
-			sound land volume -10 jitter 0.12 range 30
-			create land for 2
+			sound land volume -10 jitter 0.12 range 30 m
+			create land for 2 s
 
 # BouncyTrail
 react on spawned if actor is bouncy_ball
 	as actor
 		at actor attached
-			create bouncy_trail for 25
+			create bouncy_trail for 25 s
 
 # Footstep
 react on footstep if actor is player
 	as actor
 		at point
-			sound footstep volume -20 jitter 0.18 range 18
+			sound footstep volume -20 jitter 0.18 range 18 m
 
 # Impact
 react on impact if event.strength >= 2.5
-	cooldown 0.03
+	cooldown 0.03 s
 	as actor
 		at point
-			sound impact volume -18 jitter 0.25 range 30
+			sound impact volume -18 jitter 0.25 range 30 m
 
 # HardImpact
 react on impact if event.strength >= 8.0
-	cooldown 0.1
+	cooldown 0.1 s
 	as actor
 		at point
-			create prop_destroy for 1.5
+			create prop_destroy for 1.5 s

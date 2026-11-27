@@ -1,4 +1,4 @@
-rule motion line 25 head 0
+rule motion line 27 head 0
   name: text "Pull"
   trigger: text "use"
   conditions: texts
@@ -24,20 +24,20 @@ rule motion line 25 head 0
                 - "players"
               statements: list
                 - dict
-                    line: int 31
+                    line: int 33
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "brawl.tk.pulled"
                 - dict
-                    line: int 32
+                    line: int 34
                     verb: text "apply"
                     only: text ""
                     kind: text "apply"
                     text: text "pulled"
                     value: text "0.6"
                 - dict
-                    line: int 33
+                    line: int 35
                     verb: text "steer"
                     only: text ""
                     kind: text "part"
@@ -50,8 +50,8 @@ rule motion line 25 head 0
                         speed: float 14
                         strength: float 60
               guard: text ""
-              line: int 30
-rule motion line 35 head 0
+              line: int 32
+rule motion line 37 head 0
   name: text "Hold"
   trigger: text "while"
   expression: text "held.use2"
@@ -67,7 +67,7 @@ rule motion line 35 head 0
               point: text "look 6"
               kind: text "break"
               guard: text ""
-              line: int 37
+              line: int 39
           - dict
               verb: text "grab"
               most: int 8
@@ -80,7 +80,7 @@ rule motion line 35 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 39
+                    line: int 41
                     verb: text "steer"
                     only: text ""
                     kind: text "part"
@@ -93,8 +93,8 @@ rule motion line 35 head 0
                         strength: float 40
                         target: int 3
               guard: text ""
-              line: int 38
-rule motion line 41 head 0
+              line: int 40
+rule motion line 43 head 0
   name: text "Throw"
   trigger: text "use"
   conditions: texts
@@ -116,7 +116,7 @@ rule motion line 41 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 44
+                    line: int 46
                     verb: text "throw"
                     only: text ""
                     kind: text "part"
@@ -129,4 +129,4 @@ rule motion line 41 head 0
                         marks_seconds: float 2
                         target: int 3
               guard: text ""
-              line: int 43
+              line: int 45

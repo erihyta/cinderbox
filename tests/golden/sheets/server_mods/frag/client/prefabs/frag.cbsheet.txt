@@ -32,7 +32,7 @@ rule motion line 23 head 0
         within: float 0.3
         or: bool true
         wait: text "frag.release"
-rule motion line 34 head 0
+rule motion line 36 head 0
   name: text "Blast"
   trigger: text "event"
   event: text "expired"
@@ -45,7 +45,7 @@ rule motion line 34 head 0
               kind: text "emit"
               text: text "frag.blast"
               guard: text ""
-              line: int 36
+              line: int 38
           - dict
               verb: text "break"
               radius: text "frag.break_radius"
@@ -53,7 +53,7 @@ rule motion line 34 head 0
               seconds: text "frag.rubble_seconds"
               kind: text "break"
               guard: text ""
-              line: int 37
+              line: int 39
           - dict
               verb: text "find"
               sight: bool true
@@ -65,7 +65,7 @@ rule motion line 34 head 0
               who: text "bodies"
               statements: list
                 - dict
-                    line: int 39
+                    line: int 41
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -77,10 +77,10 @@ rule motion line 34 head 0
                         cap: float 30
                         frame: int 6
                         amounts: dict
-                          2: text "(distance < frag.radius) * 6 * frag.push * (1 - distance / frag.radius)"
+                          2: text "6 * frag.push * (distance < frag.radius) * (1 - distance / frag.radius)"
                         target: int 3
                 - dict
-                    line: int 40
+                    line: int 42
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -92,7 +92,7 @@ rule motion line 34 head 0
                         cap: float 12
                         frame: int 3
                         amounts: dict
-                          2: text "(distance < frag.radius) * 6 * 0.35 * frag.push * (1 - distance / frag.radius)"
+                          2: text "6 * 0.35 * frag.push * (distance < frag.radius) * (1 - distance / frag.radius)"
                         target: int 3
               guard: text ""
-              line: int 38
+              line: int 40

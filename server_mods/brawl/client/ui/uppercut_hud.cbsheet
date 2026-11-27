@@ -1,8 +1,9 @@
 cbsheet 1
 
-# The uppercut's line: READY in green, or the seconds left.
+# The uppercut's line: READY in green, or the seconds its motion's cooldown has left (the local
+# player's own simulation counts it down).
 hud Line
-	text "[{key:slot3}]  UPPERCUT  READY" if brawl.cd_upper <= 0
-	text "[{key:slot3}]  UPPERCUT  {brawl.cd_upper}s" if brawl.cd_upper > 0
-	bind modulate:r = 1 - 0.45 * (brawl.cd_upper <= 0)
-	bind modulate:b = 1 - 0.45 * (brawl.cd_upper <= 0)
+	text "[{key:slot3}]  UPPERCUT  READY" if ready brawl.uppercut.Rise
+	text "[{key:slot3}]  UPPERCUT  {cooldown brawl.uppercut.Rise}s" if not ready brawl.uppercut.Rise
+	bind modulate:r = 1 - 0.45 * ready brawl.uppercut.Rise
+	bind modulate:b = 1 - 0.45 * ready brawl.uppercut.Rise

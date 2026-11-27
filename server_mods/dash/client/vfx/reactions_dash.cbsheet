@@ -7,12 +7,12 @@ cbsheet 1
 react on dash.started
 	as actor
 		at point
-			sound prop_spawn volume -10 pitch 1.6 jitter 0.1 range 30
-			create land for 2
+			sound prop_spawn volume -10 pitch 1.6 jitter 0.1 range 30 m
+			create land for 2 s
 
 # DoubleJumped
 react on dash.double_jump
 	as actor
 		at point
-			sound jump volume -12 pitch 1.4 range 25
-			create jump for 2
+			sound jump volume -12 pitch 1.4 range 25 m
+			create jump for 2 s

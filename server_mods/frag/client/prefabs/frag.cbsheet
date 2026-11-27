@@ -22,19 +22,21 @@ param inventory.start 1
 # arm's pack does not fit, the critter): a throw always happens.
 motion Throwing on use
 	for carrier
-	cooldown 0.7
-	lasts 0.7
-	wait for frag.release or 0.3
+	cooldown 0.7 s
+	lasts 0.7 s
+	wait for frag.release or 0.3 s
 	emit frag.thrown
-	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
+	launch carried speed 15 m/s lift 3 m/s ahead 0.8 m seconds 2.5 s
 
-# The blast (M292): what the level hides from it is not thrown (in sight: a wall, a rise);
-# the rest is shoved by momentum, as a blast shoves: a 6 kg body at frag.push at the centre, a heavier
-# one slower, a lighter one faster, up to 30 m/s (top), less further out.
+# The blast: what the level hides from it is not thrown (in sight: a wall, a rise); the rest is
+# shoved by momentum, as a blast shoves: a 6 kg body at frag.push at the centre, a heavier one
+# slower, a lighter one faster, up to 30 m/s (top), less further out (falloff: 1 at the centre, 0
+# from frag.radius on).
+let falloff = (distance < frag.radius) * (1 - distance / frag.radius)
 motion Blast on expired
 	on item
 	emit frag.blast
 	break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
 	find Blast bodies in sight
-		impulse (distance < frag.radius) * 6 * frag.push * (1 - distance / frag.radius) kind momentum top 30 along away
-		impulse (distance < frag.radius) * 6 * 0.35 * frag.push * (1 - distance / frag.radius) kind momentum top 12 along up
+		impulse 6 * frag.push * falloff kind momentum top 30 m/s along away
+		impulse 6 * 0.35 * frag.push * falloff kind momentum top 12 m/s along up

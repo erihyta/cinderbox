@@ -4674,6 +4674,9 @@ void TestBots()
 		return;
 	}
 	Simulation& server = h.server.Sim();
+	// The kit's skills that wait out a cooldown (M297: a bot asks the motion whether it is ready).
+	const int skills[3] = { schema.FindEvent( "brawl.dash_strike.started" ), schema.FindEvent( "brawl.uppercut.started" ),
+							schema.FindEvent( "brawl.slam.started" ) };
 	auto still = []( uint32_t ) { return PlayerInput{}; };
 	h.AddBot().script = still;
 	auto botSlots = [&] {
@@ -4687,7 +4690,7 @@ void TestBots()
 		}
 		return out;
 	};
-	int fromBots = 0, dealt = 0;
+	int fromBots = 0, dealt = 0, skillsUsed = 0;
 	uint32_t seen = 0;
 	h.server.SetTickObserver( [&] {
 		const SimGlobals& g = server.Globals();
@@ -4704,6 +4707,8 @@ void TestBots()
 				fromBots += 1;
 				dealt += e.value;
 			}
+			const bool skill = int( e.type ) == skills[0] || int( e.type ) == skills[1] || int( e.type ) == skills[2];
+			skillsUsed += skill && by >= 0 && h.server.IsBot( PlayerSlot( by ) ) ? 1 : 0;
 		}
 	} );
 	h.RunUntil( 5.0 );
@@ -4732,11 +4737,13 @@ void TestBots()
 	h.server.SetTickObserver( {} );
 	const size_t afterSecond = botSlots().size();
 	h.Report();
-	std::printf( "    bots after 5 s: %zu (%s), teams %d and %d (none %d); in 20 s their hits %d (%d damage), deaths %d; a second person: %zu bots\n",
-				 joined.size(), names.c_str(), sizes[1], sizes[2], sizes[0], fromBots, dealt, fell, afterSecond );
+	std::printf( "    bots after 5 s: %zu (%s), teams %d and %d (none %d); in 20 s their hits %d (%d damage), skills used %d, deaths %d; a "
+				 "second person: %zu bots\n",
+				 joined.size(), names.c_str(), sizes[1], sizes[2], sizes[0], fromBots, dealt, skillsUsed, fell, afterSecond );
 	CHECK( joined.size() == 3 && names.find( "\"Bot 1\"" ) != std::string::npos && names.find( "\"Bot 3\"" ) != std::string::npos );
 	CHECK( sizes[1] == 2 && sizes[2] == 2 );
 	CHECK( fromBots >= 5 && dealt > 0 && fell >= 1 );
+	CHECK( skillsUsed >= 2 ); // (5 in each run: a skill is pressed when its motion is ready)
 	CHECK( afterSecond == 2 );
 	for ( Bot& b : h.bots )
 	{

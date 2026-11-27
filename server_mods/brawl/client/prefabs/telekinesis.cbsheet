@@ -1,7 +1,7 @@
 cbsheet 1
 
-# Telekinesis (M290: the owner's weapon, here as a skill of the kit until its look is made). Select
-# it (slot 6), then:
+# Telekinesis (the owner's weapon, here as a skill of the kit until its look is made). Select it
+# (slot 6), then:
 #   left button       a pull: a ball thrown 18 m along the look holds the first player it meets and
 #                     draws them to you for 0.6 s; meanwhile they cannot attack (pulled). 4 s apart
 #   right button      held: a ball 6 m along the look (the level stops it short) breaks loose the
@@ -21,24 +21,26 @@ tag guard
 param brawl.tk.reach 6 m
 param brawl.tk.pull_speed 14 m/s
 param brawl.tk.throw_speed 30 m/s
+# Where it holds: brawl.tk.reach along the look (the level stops it short).
+let held_point = look brawl.tk.reach
 
 motion Pull on use if not active Hold
 	tags attack
 	blocked by guard, pulled
 	cooldown 4 s
 	lasts 0.6 s
-	cast sphere 0.4 range 18 holds players
+	cast sphere 0.4 m range 18 m holds players
 		emit brawl.tk.pulled
 		apply pulled for 0.6 s on target
 		steer on target toward owner speed brawl.tk.pull_speed strength 60
 
 motion Hold while held.use2
 	blocked by pulled
-	break radius 2 speed 2 at look brawl.tk.reach
-	grab sphere 3 bodies max 8 at look brawl.tk.reach
-		steer toward look brawl.tk.reach speed 12 strength 40
+	break radius 2 m speed 2 m/s at held_point
+	grab sphere 3 m bodies max 8 at held_point
+		steer toward held_point speed 12 m/s strength 40
 
 motion Throw on use if active Hold
 	tags attack
-	find sphere 3 bodies max 8 at look brawl.tk.reach
+	find sphere 3 m bodies max 8 at held_point
 		throw brawl.tk.throw_speed along look marks brawl.tk.struck for 2 s

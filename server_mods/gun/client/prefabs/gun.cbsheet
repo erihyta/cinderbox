@@ -1,10 +1,11 @@
 cbsheet 1
 
-# Every gun's trigger, its rounds and its reload (M289: one sheet, many items): a gun's sheet uses
-# this one (uses res://prefabs/gun.cbsheet), says its own numbers and fields, and replaces what it
-# does otherwise (the rifle's automatic Fire). Which every simulation runs (predicted: the gun's own
-# fields, M287). The shot itself is the gun mod's (gun.cpp): it hears item.use, aims along the camera
-# as it was, hit-tests posed bodies, and says item.reach (the tracer) and item.hit.
+# Every gun's trigger, its rounds and its reload: a gun's sheet uses this one (uses
+# res://prefabs/gun.cbsheet), says its own numbers, and replaces what it does otherwise (the rifle's
+# automatic Fire). Every simulation runs it, so a shot, a click and a reload are predicted (the
+# rounds are the gun's own fields). The shot itself is the gun mod's (gun.cpp): it hears item.use,
+# aims along the camera as it was, hit-tests posed bodies, and says item.reach (the tracer) and
+# item.hit.
 
 # Its names (the gun mod's C++ finds them), a gun's own fields (each copy's: a magazine put away half
 # empty comes out half empty), and the numbers a gun has unless its sheet says others (the gun mod
@@ -20,6 +21,7 @@ event item.reach
 event item.hit
 action reload key R
 param gun.capacity 10
+param gun.fire_seconds 0.2 s
 param gun.damage 10
 param gun.kill_push 6 m/s
 param gun.prop_push 4 m/s
@@ -27,17 +29,17 @@ param gun.range 80 m
 param gun.reload_seconds 1.5 s
 param inventory.start 1
 
-# Fire: once a press (the item's use), 0.2 s apart at most, while it has rounds and is not
-# reloading: a round off the gun, and item.use (the flash, the sound, the recoil: the pack's Shoot
-# state starts on it; the gun mod's shot).
+# Fire: once a press (the item's use), gun.fire_seconds apart at most, while it has rounds and is
+# not reloading: a round off the gun, and item.use (the flash, the sound, the recoil: the pack's
+# Shoot state starts on it; the gun mod's shot).
 motion Fire on use if gun.rounds > 0 and not gun.reloading
-	cooldown 0.2
+	cooldown gun.fire_seconds
 	change gun.rounds -= 1
 	emit item.use
 
 # Dry: the trigger on an empty magazine clicks, and the reload begins.
 motion Dry on use if gun.rounds <= 0 and not gun.reloading
-	cooldown 0.2
+	cooldown gun.fire_seconds
 	change gun.reloading = 1
 	change gun.reload_left = gun.reload_seconds
 	emit item.use_failed

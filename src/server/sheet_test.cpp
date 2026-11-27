@@ -33,8 +33,9 @@
 //   expect event EVENT at T [within S]          said between T and T + S (0.2)
 //   expect no event EVENT [from T to T2]        never said then (the whole test without a span)
 //   expect NAME [of item|of other|of world] OP N at T    after the tick at T: a field, a status (1
-//                                     or 0), or distance (from the tester to the other, metres) and
-//                                     speed (m/s); OP one of == != < <= > >=
+//                                     or 0), a motion's `ready M`, `cooldown M` (seconds left) or
+//                                     `uses M` (left), as a sheet reads them, or distance (from the
+//                                     tester to the other, metres) and speed (m/s); OP one of == != < <= > >=
 //
 // The tester stands where it joined, facing ahead (+Z), its camera level unless it looks; the run
 // ends half a second after the last time a line names.
@@ -324,12 +325,18 @@ bool ParseTests( const std::string& path, const std::string& text, std::vector<T
 			Expect e;
 			e.line = number;
 			e.name = w[1];
-			size_t k = OfWord( w, 2, e.of );
+			// (A motion's clock, M297: two words, as a sheet says it.)
+			const bool clock = ( w[1] == "ready" || w[1] == "cooldown" || w[1] == "uses" ) && w.size() >= 7;
+			if ( clock )
+			{
+				e.name = w[1] + "." + w[2];
+			}
+			size_t k = OfWord( w, clock ? 3 : 2, e.of );
 			static const std::set<std::string> ops = { "==", "!=", "<", "<=", ">", ">=" };
 			if ( k + 4 != w.size() || ops.count( w[k] ) == 0 || Number( w[k + 1], e.value ) == false || w[k + 2] != "at" ||
 				 Number( w[k + 3], a ) == false )
 			{
-				return fail( "expect NAME [of item|of other|of world] OP NUMBER at T" );
+				return fail( "expect NAME [of item|of other|of world] OP NUMBER at T (NAME: a field, a status, ready M, cooldown M, uses M, distance, speed)" );
 			}
 			e.op = w[k];
 			e.at = TicksOf( a );
@@ -732,6 +739,18 @@ SheetTestResult RunOne( const std::string& path, const std::string& root, const 
 				const Character* c = entity.is_valid() ? entity.try_get<Character>() : nullptr;
 				found = c != nullptr;
 				v = found ? b3Length( c->velocity ) : 0.0f;
+			}
+			else if ( e.name.rfind( "ready.", 0 ) == 0 || e.name.rfind( "cooldown.", 0 ) == 0 || e.name.rfind( "uses.", 0 ) == 0 )
+			{
+				const size_t dot = e.name.find( '.' );
+				const int motion = FindMotionByName( schema, e.name.substr( dot + 1 ) );
+				found = motion >= 0;
+				MotionClockEntry at{ uint16_t( std::max( motion, 0 ) ), true, 0, 0.0f }; // (one the clock does not list is at rest)
+				for ( const MotionClockEntry& c : sim.EntityMotionClock( who ).motions )
+				{
+					at = int( c.motion ) == motion ? c : at;
+				}
+				v = e.name[0] == 'r' ? ( at.ready ? 1.0f : 0.0f ) : e.name[0] == 'c' ? at.cooldown : float( at.uses );
 			}
 			else if ( const int status = schema.FindStatus( e.name ); status >= 0 )
 			{

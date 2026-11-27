@@ -13,8 +13,9 @@
 //                        them (M290: the owner's weapon, until its own look is made)
 //
 // What a skill does to bodies (the lunge, the knockback, the launch, the dive) is its scene's: every
-// simulation runs it from the player's input, so it is predicted. The cooldowns and the combo are
-// timers the skills' sheets set (they count down by themselves, M287). This file is what nodes cannot say:
+// simulation runs it from the player's input, so it is predicted. The cooldowns are the skills'
+// motions' own (their sheets' `cooldown`, which the HUD reads), the combo a timer the fist's sheet
+// sets (it counts down by itself). This file is what a sheet cannot say:
 //   - damage: a hit is the probe's event (brawl.jab.hit ..., with who was hit), and this mod turns
 //     it into combat.damage, a quarter of it on someone guarding
 //   - what telekinesis throws is its sheet's (a mark on each body thrown, M290); a player one
@@ -74,9 +75,6 @@ public:
 		// The fields the skills' rules and the motions read and write.
 		declare.Field( "brawl.combo", BoardType::Int );
 		declare.Field( "brawl.combo_left", BoardType::Float );
-		declare.Field( "brawl.cd_dash", BoardType::Float );
-		declare.Field( "brawl.cd_upper", BoardType::Float );
-		declare.Field( "brawl.cd_slam", BoardType::Float );
 		// What the skills say (their use_emits, their probes' hold_emits), and the slam's landing.
 		m_hits[0] = declare.Event( "brawl.jab.hit" );
 		m_hits[1] = declare.Event( "brawl.finisher.hit" );

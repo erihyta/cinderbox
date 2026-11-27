@@ -559,6 +559,13 @@ public:
 	{
 		return m_sim.EntityAnimState( m_sim.PlayerNetId( slot ) );
 	}
+	// A player's motion as a sheet reads it (M297: `ready X`, `cooldown X`, `uses X`): whether it could
+	// start now (not on, not cooling down, a use left), its cooldown's seconds left, its uses left.
+	// The motion from MotionIndex, found once (at Start): "brawl.slam.Slam" (its set and its name),
+	// or a name only one set has; -1 when there is none, -2 when several sets have it. A motion
+	// there is not is not ready.
+	int MotionIndex( const std::string& motion ) const;
+	MotionClockEntry PlayerMotion( PlayerSlot slot, int motion ) const;
 	const Transform* EntityTransform( uint32_t netId ) const
 	{
 		return m_sim.EntityTransform( netId );
