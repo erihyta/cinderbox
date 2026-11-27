@@ -21,6 +21,8 @@ tag guard
 param brawl.tk.reach 6 m
 param brawl.tk.pull_speed 14 m/s
 param brawl.tk.throw_speed 30 m/s
+# Its second use, the right mouse button held: what it grabs.
+action use2 key MouseRight
 # Where it holds: brawl.tk.reach along the look (the level stops it short).
 let held_point = look brawl.tk.reach
 
