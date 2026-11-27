@@ -32,23 +32,28 @@ See also: [motions.md](motions.md) (what motions are, what conditions read, the 
 cbsheet 1                                   # the version: the first line
 
 # The pistol: its trigger (every simulation) and how it looks (the viewer).
-motion Fire on use if gun.ammo > 0 and not gun.reloading
-	cooldown 0.2
-	change gun.ammo -= 1
+field gun.rounds int on item = gun.capacity
+param gun.capacity 12
+param gun.fire_seconds 0.2 s
+param mark.seconds 1 s
+
+motion Fire on use if gun.rounds > 0 and not gun.reloading
+	cooldown gun.fire_seconds
+	change gun.rounds -= 1
 	emit item.use
 
 react on item.use
 	as holder
 		at Muzzle attached
-			create muzzle_flash for 0.3
+			create muzzle_flash for 0.3 s
 		at Muzzle
-			sound gunshot volume -5 jitter 0.06 range 70
+			sound gunshot volume -5 jitter 0.06 range 70 m
 
-predict use2 as item.use2 if !gun.reloading
-	cooldown 0.95
+predict use2 as item.use2 if !hand.gun.reloading
+	cooldown mark.seconds
 
 hud Line
-	text "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
+	text "[{key:slot2}]  DASH STRIKE  READY" if ready brawl.dash_strike.Strike
 ```
 
 | Block | Runs | |
@@ -88,7 +93,7 @@ param gun.reload_seconds 1.5 s
 
 | Line | Is |
 |---|---|
-| `field NAME int\|float\|bool\|timer [on player\|world\|item] [shared\|private] [= VALUE]` (VALUE a number, `true`, `false`, or a param of the sheet: `= gun.capacity`, M296) | (`timer`, M287: a float that counts down to 0 by itself, a second a second, in every simulation: a player's, the world's, or an item's (while it is carried or lies in the world); `change brawl.cd_dash = 3` and it is a cooldown the HUD shows. `on item`: **in the sheet's motions the name is the item's own field**, read in their conditions and changed by their lines, a find's too: the copy in the hand, or the first carried for a motion `for carrier`; a look reads the one in the hand as `hand.FIELD`. An item's field may be `shared`: every player is sent it, the bat's heat.) | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
+| `field NAME int\|float\|bool\|timer [on player\|world\|item] [shared\|private] [= VALUE]` (VALUE a number, `true`, `false`, or a param of the sheet: `= gun.capacity`, M296) | (`timer`, M287: a float that counts down to 0 by itself, a second a second, in every simulation: a player's, the world's, or an item's (while it is carried or lies in the world); `change melee.hot_left = 2` and it counts down (a motion's own cooldown is its `cooldown`, which a HUD reads too). `on item`: **in the sheet's motions the name is the item's own field**, read in their conditions and changed by their lines, a find's too: the copy in the hand, or the first carried for a motion `for carrier`; a look reads the one in the hand as `hand.FIELD`. An item's field may be `shared`: every player is sent it, the bat's heat.) | a field. **The server declares it for the mod whose item has the sheet** (after the mod's C++: the C++'s `declare.Field` finds it; one declared with another type is a mistake when the server starts, with the sheet's path and line). `on item`: each copy's own, baked into `items/<kind>.cfg` (was the `CbItem`'s `fields`) |
 | `event NAME [everyone]` | an event, the same way |
 | `action NAME [key KEY]` | an action, its key as Godot names keys (`R`, `F`, `1`, `MouseLeft`) |
 | `param NAME NUMBER [UNIT]` | a number of the item whose scene holds the sheet: baked into `items/<kind>.cfg` as its property, which server mods read (`ctx.ItemProperty`; was the `CbItem`'s `properties`). **In the sheet it is its number**: `gun.rounds < gun.capacity` reads `gun.rounds < 12`; a field may start at it (the guns' magazine is said once) |
@@ -156,11 +161,11 @@ The same [expression language](looks.md#expressions) everywhere: a condition, a 
 | `active Slam`, `active brawl.fist.Jab` | a motion is on now (its own sheet's by name, another item's by its kind) |
 | `stunned`, `remaining stunned` | in a motion (M288): the player has the status now; the seconds it has left |
 | `player`, `combat.health of target`, `stunned of target` | in a find's (or a grab's, a cast's) lines (M290): what it found is a player; its field; its status |
-| `ready Fire`, `cooldown Fire`, `uses Fire` | in a motion (M287): the motion could start now (not on, off cooldown, a use left); the seconds of cooldown it has left; its uses left (0 without a limit). A HUD does not read them yet: a timer field is what it shows |
+| `ready Fire`, `cooldown Fire`, `uses Fire` | the motion could start now (not on, off cooldown, a use left); the seconds of cooldown it has left; its uses left (0 without a limit). In a motion, in a HUD (the local player's: [HUD blocks](#hud-blocks)), in a sheet test. Another set's motion by its set and name: `ready brawl.slam.Slam` |
 | everything else | numbers, fields, `+ - * /`, comparisons, `( )`, `grounded`, `speed`, `held.jump`, `pressed.dash`, `using.gun.rifle`, `carried.KIND`, `hand.FIELD`, `event.value`, `time`, `distance`, `reach` |
 
-A HUD line's format (`"{brawl.cd_dash}s"`) is read as written: inside quotes, version 0's signs
-(`?name`, `$other:name`) for now.
+A HUD line's format (`"{brawl.combo}"`) is read as written: inside quotes, version 0's signs
+(`?name`, `$other:name`) for now; a motion's clock as a sheet says it (`"{cooldown brawl.slam.Slam}s"`).
 
 **The compiler** (M283, M293): `src/sheet`, plain C++ with no Godot types. A sheet is read as a
 tree (`sheet_tree.h`: what is indented under a line is under it; what it uses composed in; lets
@@ -448,16 +453,18 @@ The ground slam (`server_mods/brawl/client/prefabs/slam.cbsheet`): a dive, and o
 in the drawn `Shockwave` cylinder thrown away and up; the brawl mod only hurts them.
 
 ```
-motion Slam on use if brawl.cd_slam <= 0 and not grounded
-	lasts 3
-	change brawl.cd_slam = 5
+motion Slam on use if not grounded
+	tags attack
+	blocked by guard, pulled
+	cooldown 5 s
+	lasts 3 s
 	emit brawl.slam.started
-	impulse 25 along down replace vertical
+	impulse 25 m/s along down replace vertical
 	wait for grounded
 	emit brawl.slam.landed
 	find Shockwave players
-		impulse 9 along away
-		impulse 4.5 along up
+		impulse 9 m/s along away
+		impulse 4.5 m/s along up
 		emit brawl.slam.hit
 ```
 
@@ -576,9 +583,9 @@ A prediction is the viewer's own press shown at once, as the cue a server mod wi
 ```
 hud Skills/Dash
 	show if carried.brawl.dash_strike
-	text "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
-	text "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" into text if brawl.cd_dash > 0
-	bind modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
+	text "[{key:slot2}]  DASH STRIKE  READY" if ready brawl.dash_strike.Strike
+	text "[{key:slot2}]  DASH STRIKE  {cooldown brawl.dash_strike.Strike}s" into text if not ready brawl.dash_strike.Strike
+	bind modulate:r = 1 - 0.45 * ready brawl.dash_strike.Strike
 ```
 
 | Line | Means |
@@ -597,9 +604,12 @@ a tenth). Its own simulation's, so they count down with no field kept for the HU
 
 ```
 hud Skills/Strike
-	text "[{key:slot2}]  DASH STRIKE  READY" if ready Strike
-	text "[{key:slot2}]  DASH STRIKE  {cooldown Strike}s" if not ready Strike
+	text "[{key:slot2}]  DASH STRIKE  READY" if ready brawl.dash_strike.Strike
+	text "[{key:slot2}]  DASH STRIKE  {cooldown brawl.dash_strike.Strike}s" if not ready brawl.dash_strike.Strike
 ```
+
+A motion of another sheet (a HUD has none of its own) is named with its set: the item's kind and the
+motion's name. A name alone works while only one set has it.
 
 They are the viewer's own player's (another player's read 0: its motions are the server's).
 

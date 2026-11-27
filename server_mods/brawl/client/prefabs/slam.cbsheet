@@ -4,8 +4,7 @@ cbsheet 1
 # ground, everyone in the Shockwave region (a cylinder 5 m around the feet) is thrown away from it
 # and up, by every simulation: the brawl mod only hurts them (brawl.slam.hit).
 
-# Its names (the brawl mod's C++ finds them) and its numbers.
-field brawl.cd_slam timer
+# Its names (the brawl mod's C++ finds them).
 event brawl.slam.started
 event brawl.slam.landed
 event brawl.slam.hit
@@ -15,16 +14,16 @@ tag attack
 tag guard
 status pulled
 
-motion Slam on use if brawl.cd_slam <= 0 and not grounded
+motion Slam on use if not grounded
 	tags attack
 	blocked by guard, pulled
-	lasts 3
-	change brawl.cd_slam = 5
+	cooldown 5 s
+	lasts 3 s
 	emit brawl.slam.started
-	impulse 25 along down replace vertical
+	impulse 25 m/s along down replace vertical
 	wait for grounded
 	emit brawl.slam.landed
 	find Shockwave players
-		impulse 9 along away
-		impulse 4.5 along up
+		impulse 9 m/s along away
+		impulse 4.5 m/s along up
 		emit brawl.slam.hit

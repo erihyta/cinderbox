@@ -48,7 +48,7 @@ godot::PackedStringArray ProblemsUnder( const godot::Node* root );
 
 // A rules sheet's text: what cannot be read and what it names that nobody declares, by line (from 1).
 std::vector<std::pair<int, godot::String>> SheetProblems( const godot::String& text );
-// For typing a sheet: the words and names that start with `prefix` ("brawl.cd" -> brawl.cd_dash ...).
+// For typing a sheet: the words and names that start with `prefix` ("brawl.co" -> brawl.combo ...).
 godot::PackedStringArray Completions( const godot::String& prefix );
 // What a word of a sheet is, for its colour: "word" (one of the sheet's), "number", "name" (one a mod
 // declares), "unknown" (a name with a dot nobody declares), or "" (anything else: a path, a file).

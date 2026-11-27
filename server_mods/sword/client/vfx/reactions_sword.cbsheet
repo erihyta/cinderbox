@@ -7,22 +7,22 @@ cbsheet 1
 react on sword.swing
 	as actor
 		at actor/RightHand
-			sound sword_swing volume -4 jitter 0.08 range 30
+			sound sword_swing volume -4 jitter 0.08 range 30 m
 
 # Hit
 react on sword.hit
 	as actor
 		at point
-			sound sword_hit volume -2 jitter 0.1 range 40
+			sound sword_hit volume -2 jitter 0.1 range 40 m
 
 # Blocked: a clang where the blades met.
 react on sword.blocked
 	as actor
 		at point
-			sound sword_clang volume -2 jitter 0.1 range 45
+			sound sword_clang volume -2 jitter 0.1 range 45 m
 
 # Parried: a ringing clang.
 react on sword.parried
 	as actor
 		at point
-			sound sword_parry volume 0 jitter 0.05 range 50
+			sound sword_parry volume 0 jitter 0.05 range 50 m

@@ -22,8 +22,9 @@
 //
 // What it knows of the kit is by name, from the schema: the items brawl.fist, brawl.dash_strike,
 // brawl.uppercut, brawl.slam, brawl.guard and sword.blade wherever the inventory put them, the
-// fields team.id and brawl.cd_*, the action use2 (the sword's block), the intent teams.join, the
-// events brawl.*.started and sword.swing. A kit that is not running is a key it never presses.
+// field team.id, the skills' motions (whether one is ready: its cooldown), the action use2 (the
+// sword's block), the intent teams.join, the events brawl.*.started and sword.swing. A kit that is
+// not running is a key it never presses.
 //
 // Options: bots.fill (0: none; players a game is filled up to), bots.skill (0.5).
 
@@ -117,9 +118,11 @@ public:
 			return f != nullptr ? FieldHandle{ f->slot, f->scope, f->type } : FieldHandle{};
 		};
 		m_team = field( "team.id" );
-		m_cdDash = field( "brawl.cd_dash" );
-		m_cdUpper = field( "brawl.cd_upper" );
-		m_cdSlam = field( "brawl.cd_slam" );
+		// The kit's skills that wait between uses: their motions (M297: until then fields of the brawl
+		// mod's that the sheets counted down).
+		m_dash = ctx.MotionIndex( "brawl.dash_strike.Strike" );
+		m_upper = ctx.MotionIndex( "brawl.uppercut.Rise" );
+		m_slam = ctx.MotionIndex( "brawl.slam.Slam" );
 		m_block = schema.ActionMask( "use2" );
 		m_join = schema.FindIntent( "teams.join" );
 		m_teams = 0;
@@ -482,7 +485,7 @@ private:
 			in.slotKeys |= b.key;
 			return true;
 		};
-		auto ready = [&]( FieldHandle cooldown ) { return cooldown.Valid() && ctx.GetFloat( me, cooldown ) <= 0.0f; };
+		auto ready = [&]( int motion ) { return ctx.PlayerMotion( b.slot, motion ).ready; };
 		const bool decide = ( now + b.slot ) % 6 == 0;
 		const float eager = 0.3f + 0.5f * m_skill;
 
@@ -497,17 +500,17 @@ private:
 			return;
 		}
 		// The fist and its kit.
-		if ( decide && self.grounded == 0 && to.y < -0.8f && flat < 3.5f && ready( m_cdSlam ) && Random( ctx ) < eager )
+		if ( decide && self.grounded == 0 && to.y < -0.8f && flat < 3.5f && ready( m_slam ) && Random( ctx ) < eager )
 		{
 			press( KitSlam ); // from the air, onto it
 			return;
 		}
-		if ( decide && flat > 4.0f && flat < 7.5f && std::fabs( to.y ) < 1.5f && ready( m_cdDash ) && Random( ctx ) < eager * 0.5f )
+		if ( decide && flat > 4.0f && flat < 7.5f && std::fabs( to.y ) < 1.5f && ready( m_dash ) && Random( ctx ) < eager * 0.5f )
 		{
 			press( KitDash );
 			return;
 		}
-		if ( decide && distance < kNear && self.grounded != 0 && ready( m_cdUpper ) && Random( ctx ) < eager * 0.15f )
+		if ( decide && distance < kNear && self.grounded != 0 && ready( m_upper ) && Random( ctx ) < eager * 0.15f )
 		{
 			press( KitUpper );
 			return;
@@ -527,7 +530,7 @@ private:
 	std::vector<int> m_attacks;
 	FieldHandle m_team;
 	FieldHandle m_teamsCount;
-	FieldHandle m_cdDash, m_cdUpper, m_cdSlam;
+	int m_dash = -1, m_upper = -1, m_slam = -1;
 	ActionBits m_block = 0;
 	int m_join = -1;
 	int m_swing = -1;

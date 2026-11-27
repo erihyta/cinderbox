@@ -7,12 +7,12 @@ cbsheet 1
 react on cannon.fired
 	as actor
 		at point
-			sound impact volume 4 pitch 0.45 jitter 0.05 range 60
-			shake 0.12 for 0.2
+			sound impact volume 4 pitch 0.45 jitter 0.05 range 60 m
+			shake 0.12 for 0.2 s
 
 # A wall broken where a ball hit it (said by the simulation: on the same tick on every screen)
 react on cannon.ball.smash
 	as actor
 		at point
-			sound prop_destroy volume 2 pitch 0.7 jitter 0.1 range 70
-			create dust for 2.5
+			sound prop_destroy volume 2 pitch 0.7 jitter 0.1 range 70 m
+			create dust for 2.5 s

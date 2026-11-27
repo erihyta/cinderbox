@@ -1,11 +1,11 @@
 cinderbox_motions	3
 motion	Slam
 when	event	brawl.slam.used
-if	( brawl.cd_slam <= 0 and not grounded )
+if	( not grounded )
+cooldown	5
 tags	attack
 blocked	guard	pulled
 duration	3
-change	brawl.cd_slam	=	5
 emit	brawl.slam.started
 impulse	self	25	world	vertical	0	-1	0
 step	0	0	grounded

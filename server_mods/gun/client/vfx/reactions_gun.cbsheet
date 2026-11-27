@@ -7,4 +7,4 @@ cbsheet 1
 react on mark.found
 	as target
 		at target attached
-			create mark_zone for 3
+			create mark_zone for 3 s

@@ -6,6 +6,6 @@ cbsheet 1
 param inventory.start 1
 
 use
-	cooldown 1.2
+	cooldown 1.2 s
 	emit cannon.fired
-	launch new cannon.ball speed 36 lift 1 ahead 0.9 seconds 10
+	launch new cannon.ball speed 36 m/s lift 1 m/s ahead 0.9 m seconds 10 s

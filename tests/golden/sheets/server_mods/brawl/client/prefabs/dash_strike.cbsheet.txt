@@ -1,28 +1,21 @@
-rule motion line 16 head 0
-  name: text "Use"
+rule motion line 15 head 0
+  name: text "Strike"
   trigger: text "use"
-  conditions: texts
-    - "brawl.cd_dash <= 0"
   tags: texts
     - "attack"
   blocked: texts
     - "guard"
     - "pulled"
+  cooldown: float 3
   steps: list
     - dict
         statements: list
-          - dict
-              verb: text "change"
-              kind: text "change"
-              text: text "brawl.cd_dash = 3"
-              guard: text ""
-              line: int 19
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "brawl.dash_strike.started"
               guard: text ""
-              line: int 20
+              line: int 19
           - dict
               verb: text "impulse"
               kind: text "part"
@@ -32,7 +25,7 @@ rule motion line 16 head 0
                   speed: float 16
                   replace: int 2
               guard: text ""
-              line: int 21
+              line: int 20
           - dict
               verb: text "move for"
               kind: text "part"
@@ -43,12 +36,12 @@ rule motion line 16 head 0
                   parameters: dict
                     friction: float 0
               guard: text ""
-              line: int 22
-rule motion line 24 head 0
+              line: int 21
+rule motion line 26 head 0
   name: text "Hit"
-  trigger: text "use"
-  conditions: texts
-    - "brawl.cd_dash <= 0"
+  trigger: text "event"
+  event: text "brawl.dash_strike.started"
+  item: text "carried"
   lasts: float 0.05
   steps: list
     - dict
@@ -63,13 +56,13 @@ rule motion line 24 head 0
               holds: texts
               statements: list
                 - dict
-                    line: int 27
+                    line: int 30
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "brawl.dash_strike.hit"
                 - dict
-                    line: int 28
+                    line: int 31
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -80,4 +73,4 @@ rule motion line 24 head 0
                         frame: int 2
                         target: int 1
               guard: text ""
-              line: int 26
+              line: int 29

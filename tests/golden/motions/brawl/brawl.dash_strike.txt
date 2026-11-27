@@ -1,16 +1,15 @@
 cinderbox_motions	3
-motion	Use
+motion	Strike
 when	event	brawl.dash_strike.used
-if	( brawl.cd_dash <= 0 )
+cooldown	3
 tags	attack
 blocked	guard	pulled
-change	brawl.cd_dash	=	3
 emit	brawl.dash_strike.started
 impulse	self	16	move	horizontal
 param	friction	0	0.25
 motion	Hit
-when	event	brawl.dash_strike.used
-if	( brawl.cd_dash <= 0 )
+when	event	brawl.dash_strike.started
+if	( carried.brawl.dash_strike )
 duration	0.05
 probe	4	0
 probe_frame	facing

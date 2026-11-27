@@ -23,13 +23,13 @@ func _initialize() -> void:
 	# Version 0 (the spelling before M285) is not read (M293).
 	var old: Dictionary = names.sheet_problems("on brawl.jab.hit\n    sound res://x.wav\n")
 	_check("version 0: said at its first line", old.has(1) and String(old[1]).contains("no longer read"), old)
-	var offered: PackedStringArray = names.complete("brawl.cd")
-	_check("names offered: brawl.cd -> brawl.cd_dash ...", offered.has("brawl.cd_dash") and offered.has("brawl.cd_slam"), offered)
+	var offered: PackedStringArray = names.complete("brawl.co")
+	_check("names offered: brawl.co -> brawl.combo ...", offered.has("brawl.combo") and offered.has("brawl.combo_left"), offered)
 	_check("... carried.<kind> too", names.complete("carried.brawl.d").has("carried.brawl.dash_strike"))
 	_check("... and the sheet's own words", names.complete("sou").has("sound") and names.complete("pre").has("predict"))
-	_check("a word, a name, a number, a name nobody declares", names.word_kind("sound") == "word" and names.word_kind("brawl.cd_dash") == "name"
+	_check("a word, a name, a number, a name nobody declares", names.word_kind("sound") == "word" and names.word_kind("brawl.combo") == "name"
 		and names.word_kind("3.5") == "number" and names.word_kind("brawl.nope") == "unknown" and names.word_kind("!combat.dead") == "name", [
-			names.word_kind("sound"), names.word_kind("brawl.cd_dash"), names.word_kind("3.5"), names.word_kind("brawl.nope"), names.word_kind("!combat.dead")])
+			names.word_kind("sound"), names.word_kind("brawl.combo"), names.word_kind("3.5"), names.word_kind("brawl.nope"), names.word_kind("!combat.dead")])
 	# Version 1 (M285, docs/sheets.md): its words, its mistakes at its own lines.
 	var v1 := "cbsheet 1\n\nreact on brawl.jab.hitt\n\tas actor\n\t\tsound x\n\nreact on brawl.jab.hit\n\tat point\n"
 	var v1_problems: Dictionary = names.sheet_problems(v1)

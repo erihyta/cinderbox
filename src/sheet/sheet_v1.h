@@ -6,19 +6,20 @@
 //
 //   cbsheet 1
 //
-//   motion Fire on use if gun.ammo > 0 and not gun.reloading
-//       cooldown 0.2
-//       change gun.ammo -= 1
+//   motion Fire on use if gun.rounds > 0 and not gun.reloading
+//       cooldown 0.2 s
+//       change gun.rounds -= 1
 //       emit item.use
 //
 //   react on item.use                       (a reaction: the viewer's)
 //       as holder                           (scopes: the lines under them)
-//           create muzzle_flash under Muzzle for 0.3
+//           at Muzzle attached
+//               create muzzle_flash for 0.3 s
 //           at Muzzle
-//               sound gunshot volume -5 jitter 0.06 range 70
+//               sound gunshot volume -5 jitter 0.06 range 70 m
 //
 //   hud Line                                (one control's lines)
-//       text "READY" if brawl.cd_dash <= 0
+//       text "READY" if ready brawl.dash_strike.Strike
 //
 // The compiler reads a sheet as a tree (sheet_tree.h) and lowers it into rules (sheet_rules.h).
 

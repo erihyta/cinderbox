@@ -3,8 +3,7 @@ cbsheet 1
 # The dash strike: a lunge, 16 m/s, a moment without friction, 3 s apart; whoever is ahead (4 m) is
 # knocked back.
 
-# Its names (the brawl mod's C++ finds them) and its numbers.
-field brawl.cd_dash timer
+# Its names (the brawl mod's C++ finds them).
 event brawl.dash_strike.started
 event brawl.dash_strike.hit
 param inventory.start 1
@@ -13,16 +12,20 @@ tag attack
 tag guard
 status pulled
 
-use if brawl.cd_dash <= 0
+motion Strike on use
 	tags attack
 	blocked by guard, pulled
-	change brawl.cd_dash = 3
+	cooldown 3 s
 	emit brawl.dash_strike.started
-	impulse 16 replace horizontal
-	move for 0.25 friction 0
+	impulse 16 m/s replace horizontal
+	move for 0.25 s friction 0
 
-motion Hit on use if brawl.cd_dash <= 0
-	lasts 0.05
-	cast ray range 4 along facing
+# Whoever is ahead when the lunge starts. (A cast has a motion of its own: a motion with one happens
+# only when it finds something, and the lunge goes either way. For its carrier: the skill is used
+# by its slot's key, not out in the hand.)
+motion Hit on brawl.dash_strike.started
+	for carrier
+	lasts 0.05 s
+	cast ray range 4 m along facing
 		emit brawl.dash_strike.hit
-		impulse 10 along facing
+		impulse 10 m/s along facing

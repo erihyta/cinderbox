@@ -5,4 +5,4 @@ cbsheet 1
 motion DoubleJump on press jump if not grounded and dash.double_jump_on
 	uses 1 refill ground
 	emit dash.double_jump
-	impulse 6.5 along up replace vertical
+	impulse 6.5 m/s along up replace vertical

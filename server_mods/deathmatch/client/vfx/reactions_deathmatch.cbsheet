@@ -13,7 +13,7 @@ react on deathmatch.round_end
 react on deathmatch.round_end if local
 	as actor
 		at point
-			flash rgba(1, 0.85, 0.3, 0.35) for 1
+			flash rgba(1, 0.85, 0.3, 0.35) for 1 s
 
 # RoundStart
 react on game.round_start

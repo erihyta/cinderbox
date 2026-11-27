@@ -7,10 +7,10 @@ cbsheet 1
 react on combat.hurt if local
 	as actor
 		at point
-			flash rgba(0.8, 0.05, 0.05, 0.24) for 0.3
+			flash rgba(0.8, 0.05, 0.05, 0.24) for 0.3 s
 
 # Died
 react on combat.killed if local
 	as target
 		at point
-			flash rgba(0.6, 0, 0, 0.55) for 1.2
+			flash rgba(0.6, 0, 0, 0.55) for 1.2 s

@@ -80,7 +80,7 @@ Which steps launch needs: [the road](#the-road).
 | 4 | [The slice](#4-the-slice) | **paused** (2026-11-21, after M281; continued in [4c](#4c-the-slice-continued)): team deathmatch, `--preset tdm`; ragdolls (M275), the preset and teams (M276), teams chosen and spawned apart (M277), the arena (M278), the sword (M279), the buildings break (M280), bots (M281) | yes: the test of everything else |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | **done** (M282, 2026-11-21): the bat and the guns; what they could not say is step 6's list | yes: one way for every item before modders copy one |
 | 6 | [Sheets improved](#6-sheets-improved) | **done** (M283 to M292, 2026-11-21 and 22): one compiler, plain C++ (M283); the `.cbsheet` file, a resource, and the editor's Sheet screen (M284); version 1, one spelling, every sheet converted (M285); names and numbers declared in the sheet (M286); timers, `wait for X or S` anywhere, emit values, an item's own fields in its motions, the guns' rounds and the bat's heat in their sheets (M287); how skills meet: tags, blocked by, cancels, shared cooldowns, tap and hold, statuses (M288); one sheet for many items: uses, replace, let (M289); where and on what: points, players first, grab, toward, thrown marks, an if for each thing found; telekinesis (M290); sheet tests (.cbtest, cb_sheet test, in CI), Format and mistakes in the Sheet screen, a VS Code grammar (M291); rows a mod publishes for a CbList (the shop's offers written once), version 0 refused, a blast's cover and a shove by momentum (the frag), curves postponed (M292). **Step 6 done** (2026-11-22); what it left: [leftovers](#leftovers-by-area), Sheets and HUDs | yes: the sheet's format settled, with a version |
-| 6.5 | [The sheet compiler, for real](#65-the-sheet-compiler-for-real) | **started** (2026-11-26): from [the step 6 review](docs/step6-review.md); [the plan](docs/step6.5-plan.md), M293 to M297. M293 done: one front end (a sheet read as a tree), version 0 and the converter gone, every rule the same. M294 done: the server compiles every mod's motions from its sheets. M295 done: no limit that shrinks as mods are added (`active` any motion, any number of tags, `every` uncapped). M296 done: one way to say where (`at P attached`), tags declared and checked, `down`, `per second`, `steer`, a field from a param, a HUD reads a motion's cooldown, `item.ruled` derived | yes: 6b makes the sheet compiler the reader for strangers' content |
+| 6.5 | [The sheet compiler, for real](#65-the-sheet-compiler-for-real) | **started** (2026-11-26): from [the step 6 review](docs/step6-review.md); [the plan](docs/step6.5-plan.md), M293 to M297. M293 done: one front end (a sheet read as a tree), version 0 and the converter gone, every rule the same. M294 done: the server compiles every mod's motions from its sheets. M295 done: no limit that shrinks as mods are added (`active` any motion, any number of tags, `every` uncapped). M296 done: one way to say where (`at P attached`), tags declared and checked, `down`, `per second`, `steer`, a field from a param, a HUD reads a motion's cooldown, `item.ruled` derived. M297 built: the shipped sheets on the new words (brawl's `cd_*` fields gone, the bots ask the motions; the guns' numbers once; units; lets); the playtest by hand is the owner's | yes: 6b makes the sheet compiler the reader for strangers' content |
 | 6b | [Cooked items](#6b-cooked-items) | after 6.5 (2026-11-21: before the alpha) | yes: before anyone else's items reach players |
 | 4c | [The slice, continued](#4c-the-slice-continued) | after 6b: what step 4 left, the owner's weapons on the new sheets | yes |
 | 4b | [The alpha](#4b-the-alpha) | after 4c: strangers on one official server, official items only | yes, before 9 to 11 |
@@ -393,11 +393,11 @@ its format's version, and the compiler reads older ones, so words can still be a
 | **One sheet for many items** (Hytale proposal 5): shared across items, each with its own parameters or replacing named parts | `fist.cbsheet` writes the same `find` block four times |
 | **Words for how skills meet** (proposal 5): `blocked by`, a combo with a window, a charge, tap against hold, a cooldown shared by name | the fist guards motions with `not motion.brawl.fist.Finisher`; brawl counts its combo window down in a field |
 | **Text and rows from the server** (proposal 3; shape decided when the step starts): rows a mod publishes for a `CbList`, text fields sent like names and private fields (outside the hash); the layout stays the look's | fields are numbers; the shop's offers are written twice (`hud_shop.tscn`, `kOffers` in `shop.cpp`) |
-| **A motion's state readable** (cooldown left, charges, on) in conditions and HUD lines | brawl rebuilds its cooldowns with five C++ fields and five `while` motions, while a motion's own `cooldown` goes unused |
-| **Rates said**: `change x -= 1 per second` | `change x -= 1` is once in a step but per second in a `while` |
+| **A motion's state readable** (cooldown left, charges, on) in conditions and HUD lines (**done**: conditions M287, HUD lines M296; brawl's cooldown fields gone, M297) | brawl rebuilds its cooldowns with five C++ fields and five `while` motions, while a motion's own `cooldown` goes unused |
+| **Rates said**: `change x -= 1 per second` (**done**, M296) | `change x -= 1` is once in a step but per second in a `while` |
 | **One rule for expressions**: one word bare, anything longer in brackets | an expression ends at "the next option word" |
-| **`let NAME = EXPRESSION`** in a motion | the frag's falloff is written out twice |
-| **A cast and the owner's own effects in one step** | `dash_strike.cbsheet` needs two blocks with a copied condition |
+| **`let NAME = EXPRESSION`** in a motion (**done**: `let`, M289; the frag's falloff once, M297) | the frag's falloff is written out twice |
+| **A cast and the owner's own effects in one step** (**not needed**, M296/M297: the dash strike's cast is a motion on the strike's event, so nothing is copied) | `dash_strike.cbsheet` needs two blocks with a copied condition |
 | **`change` on the item; a timer on a carried item** | the bat's heat, if it is ever more than a look |
 | **Curves as resources** (`curve(res://falloff.tres, reach)` or a curves dictionary on the node) (**postponed**, M292: [leftovers](#leftovers-by-area)) | no shipped sheet used `curve()`; the frag's falloff is a line, and what a blast needed was cover and a shove by momentum (M292); a sheet's `curve()` is refused until this; the simulation still reads a motions file's `curve` lines |
 | **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/sheets.md#planned)) | |
@@ -405,18 +405,24 @@ its format's version, and the compiler reads older ones, so words can still be a
 | **`.rules` becomes `.cbsheet`** (**done**, M284; the VS Code grammar, M291: `tools/vscode-cbsheet`) | the name says what the file is, one family with `.cbmap` |
 | **Last, not needed by the slice: items drawn as data and reactions run from the compiled sheet** | moved to [6b](#6b-cooked-items) (2026-11-17) |
 
-**The dash strike after** (proposed, not valid today); its HUD reads the cooldown itself, and
-brawl's `cd_dash` field and `CoolDash` motion go:
+**The dash strike after** (as built, M297): its HUD reads the cooldown itself, and brawl's
+`cd_dash` field went:
 
 ```
-use
-	cooldown 3
+motion Strike on use
+	tags attack
+	blocked by guard, pulled
+	cooldown 3 s
 	emit brawl.dash_strike.started
-	impulse 16 replace horizontal
-	move for 0.25 friction 0
-	cast ray range 4
+	impulse 16 m/s replace horizontal
+	move for 0.25 s friction 0
+
+motion Hit on brawl.dash_strike.started
+	for carrier
+	lasts 0.05 s
+	cast ray range 4 m along facing
 		emit brawl.dash_strike.hit
-		impulse 10 on target along move
+		impulse 10 m/s along facing
 ```
 
 ### 6.5. The sheet compiler, for real
@@ -437,7 +443,7 @@ strangers' sheets, so it comes first.
 | M294 (**done**, 2026-11-26) | The server compiles the sheet | the bake records the scene's parts a sheet names (shapes, markers, paths) into `motions/<owner>.cfg`; the server, `cb_sheet test` and `cb_sheet check` compile sheets against them, byte for byte what the editor baked; items carry no compiled motions; `CbItem`'s When used fields gone |
 | M295 (**done**, 2026-11-26) | Limits | `active X` for any motion (not a server's first 64; others see up to 16 on at once); tags never dropped (not 32 per server); `every` without a cap; the hashes unchanged |
 | M296 (**done**, 2026-11-26) | The language, made regular | one way to say where (`at P attached`; `under` and `at follow` mistakes that say so); a field's start from a param (the guns' magazine once); tags declared, every name in `tags` / `blocked by` / `cancels` checked; `along down`; `per second` said; `steer ... speed S strength A` (for `force kind velocity`); a HUD reads the local player's `ready` / `cooldown` / `uses` and statuses (view file 12); `item.ruled` derived. Dropped, with reasons (the plan's §5): `as holder` by default, several triggers, one name for item fields, cast and own effects in a step, a word for "this item is used", `back`; columns moved to the leftovers |
-| M297 | Shipped sheets on the new words | brawl's `cd_*` timers gone; no number written twice; units; `let` for repeats; a playtest by hand |
+| M297 (**built**, 2026-11-27; the playtest by hand to come) | Shipped sheets on the new words | brawl's `cd_*` fields gone (the skills' cooldowns their motions', which the HUD and the bots read: `Context::PlayerMotion`); the guns' numbers once (`gun.fire_seconds`, the prediction's `mark.seconds`); units on every number that takes one; the frag's falloff and the telekinesis's point as lets; comments without milestone numbers; `expect ready M` in sheet tests |
 
 ### 6b. Cooked items
 

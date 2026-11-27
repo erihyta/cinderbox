@@ -1,8 +1,8 @@
 [gd_scene format=3]
 
 ; Dash strike: its slot's key (2) uses it, and nothing changes hands. A lunge where you look; whoever is ahead within 4 m
-; at the press is hit and knocked back. 3 s to come back (brawl.cd_dash, counted down by the motion
-; set, shown by the HUD).
+; at the press is hit and knocked back. 3 s to come back (the Strike motion's cooldown, which the
+; HUD shows).
 ;   DashStrike  CbItem     once a press, by its slot's key
 ;     Rules     CbRules    dash_strike.cbsheet: the lunge (16 m/s, 0.25 s without friction, 3 s apart)
 ;                          and the Hit (a line 4 m ahead, at once: 10 m/s on who it hit)

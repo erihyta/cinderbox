@@ -1,8 +1,9 @@
 cbsheet 1
 
-# The ground slam's line: READY in green, or the seconds left.
+# The ground slam's line: READY in green, or the seconds its motion's cooldown has left (the local
+# player's own simulation counts it down).
 hud Line
-	text "[{key:slot4}]  GROUND SLAM  READY" if brawl.cd_slam <= 0
-	text "[{key:slot4}]  GROUND SLAM  {brawl.cd_slam}s" if brawl.cd_slam > 0
-	bind modulate:r = 1 - 0.45 * (brawl.cd_slam <= 0)
-	bind modulate:b = 1 - 0.45 * (brawl.cd_slam <= 0)
+	text "[{key:slot4}]  GROUND SLAM  READY" if ready brawl.slam.Slam
+	text "[{key:slot4}]  GROUND SLAM  {cooldown brawl.slam.Slam}s" if not ready brawl.slam.Slam
+	bind modulate:r = 1 - 0.45 * ready brawl.slam.Slam
+	bind modulate:b = 1 - 0.45 * ready brawl.slam.Slam

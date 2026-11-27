@@ -242,9 +242,9 @@ cbsheet 1
 
 hud Skills/Dash
 	show if carried.brawl.dash_strike
-	text "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
-	text "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
-	bind modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
+	text "[{key:slot2}]  DASH STRIKE  READY" if ready brawl.dash_strike.Strike
+	text "[{key:slot2}]  DASH STRIKE  {cooldown brawl.dash_strike.Strike}s" if not ready brawl.dash_strike.Strike
+	bind modulate:r = 1 - 0.45 * ready brawl.dash_strike.Strike
 ```
 
 | Line | Does |
@@ -535,7 +535,7 @@ react on item.reach
 - **The editor opens a sheet in its Sheet screen** (M284: beside 2D, 3D and Script; double-click a
   `.cbsheet`, or click a node's `sheet`), one tab each, coloured (the sheet's words, the names mods
   declare, numbers, text, comments; a dotted name nobody declares in red), with the names offered
-  while typing (`brawl.cd` offers `brawl.cd_dash`, `carried.` the item kinds), and a line with a
+  while typing (`brawl.co` offers `brawl.combo`, `carried.` the item kinds), and a line with a
   mistake tinted: put the caret on it to read why. What is typed is the scene's at once (its rules
   are built again); Ctrl+S saves the sheets with the scene. A sheet is a resource, so Godot knows
   which scenes use it: one moved or renamed in the FileSystem dock keeps working, and a pack carries
@@ -547,8 +547,9 @@ react on item.reach
 - **A scope holds for the lines indented under it** (M285): one reaction plays a flash, a tracer and
   a shot, each where it belongs. Before M285 a setting held for the actions below it, top to bottom,
   until another line changed it (version 0: not read since M293).
-- **`under` attaches, `at` places**: `create ... under Muzzle` rides on the muzzle; `at Muzzle` puts
-  it there, in the world, once. With neither, it goes where the `CbRules` node is (a `Node3D`).
+- **One way to say where**: `at Muzzle` puts it there, in the world, once (where the node is and
+  how it is turned); `at Muzzle attached` makes it ride on the muzzle. With neither, it goes where
+  the `CbRules` node is (a `Node3D`). (`create ... under` and `at follow` went in M296.)
 - **Short names**: `sound gunshot` is `res://assets/sfx/gunshot.wav`, `create tracer`
   `res://vfx/tracer.tscn`; another file by its full `res://` path.
 - `check_rules.gd` checks it: `godot --headless --path godot --script res://addons/cinderbox_maps/check_rules.gd`.

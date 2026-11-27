@@ -5,4 +5,4 @@ test "the key launches the player ahead"
 	press brawl.uppercut at 0
 	expect event brawl.uppercut.started at 0
 	expect event brawl.uppercut.hit at 0 within 0.5
-	expect brawl.cd_upper > 3 at 0.5
+	expect cooldown Rise > 3 at 0.5

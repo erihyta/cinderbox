@@ -9,8 +9,8 @@ param inventory.start 1
 # Without the marker (a body the arm's pack does not fit) it lets go a moment later anyway.
 motion Throwing on use
 	for carrier
-	cooldown 0.7
-	lasts 0.7
-	wait for grenade.release or 0.3
+	cooldown 0.7 s
+	lasts 0.7 s
+	wait for grenade.release or 0.3 s
 	emit grenade.thrown
-	launch carried speed 17 lift 3 ahead 0.8 seconds 4
+	launch carried speed 17 m/s lift 3 m/s ahead 0.8 m seconds 4 s

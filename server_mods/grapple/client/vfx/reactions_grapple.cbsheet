@@ -7,10 +7,10 @@ cbsheet 1
 react on grapple.fired
 	as actor
 		at actor/Hip
-			sound prop_spawn volume -10 pitch 2 jitter 0.1 range 30
+			sound prop_spawn volume -10 pitch 2 jitter 0.1 range 30 m
 
 # Hit
 react on grapple.hooked
 	as actor
 		at point
-			create land for 2
+			create land for 2 s

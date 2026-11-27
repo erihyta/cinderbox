@@ -145,7 +145,7 @@ agreeing, as in M287 and M289.
 | **M294** (**done**, 2026-11-26: as built, below the table) | **The server compiles the sheet** ([§3.2](#32-the-server-compiles-the-sheet-m294)) | no mod has a `motions/` folder; the server, `cb_sheet test` and `cb_sheet check` compile sheets against baked parts; `CbItem.use_*` gone; the tests and the bots pass |
 | **M295** (**done**, 2026-11-26: as built, below the table) | **Limits** ([§3.3](#33-limits-m295)) | `active` reads any motion; no tag dropped; `every` without a cap; reference hashes refreshed, every compiler agreeing |
 | **M296** (**done**, 2026-11-26: as built, below the table) | **The language, made regular** ([§3.4](#34-the-language-made-regular-m296)) | each change has a `.cbtest` or a golden file; `sheets.md` updated |
-| **M297** | **Shipped sheets on the new words** ([§3.5](#35-shipped-sheets-on-the-new-words-m297)) | no `cd_*` field in brawl; no number written twice in the guns; a playtest by hand of the kit, the sword, the bat and the guns |
+| **M297** (**built**, 2026-11-27: as built, below the table; the playtest by hand is the owner's) | **Shipped sheets on the new words** ([§3.5](#35-shipped-sheets-on-the-new-words-m297)) | no `cd_*` field in brawl; no number written twice in the guns; a playtest by hand of the kit, the sword, the bat and the guns |
 
 **M293 as built** (2026-11-26):
 
@@ -194,6 +194,21 @@ five were dropped and one moved, with the reasons in [§5](#5-reconsidered-and-d
 | `item.ruled` derived (F5) | the server marks a kind ruled when its sheet has motions (it says what its use does, on the use or while it is used); the bat's and the sword's `param item.ruled 1` and the gun mod's declaration went. Checked first that no kind with motions and no mark (the kit's skills, the cannon, the boots, the hook, the shell, the frag) has anything that hears `item.use`. **Found on the way**: "a motion on its use", as planned, leaves out the rifle (`when using.gun.rifle`: held, it fires) and the guard (`use` while held): the item mod would have said `item.use` on the rifle's press, and the gun mod shot once more. A server on the published items marks all 12 of its kinds with motions (the sword, the cannon and the shell on theirs) |
 | Proved | every motion compiles byte for byte as before (`motions_golden`: 17 owners; `down`, `steer`, `per second` are spellings); the sheet goldens changed only by the new lines, and `every_word` and `every_mistake` hold each new word and each new mistake; `motions_meet` reads the clock (a cooldown of 0.97 s, a shared one with it, a status's 0.48 s); `view_codec` carries it; the guns' sheet tests; the Godot checks; the bakes (the pistol gains `gun.capacity`, the bat and the sword lose `item.ruled`) |
 
+**M297 as built** (2026-11-27):
+
+| Planned | Built |
+|---|---|
+| brawl's `cd_*` timers go | the dash strike, the uppercut and the slam wait out their motions' own `cooldown` (3, 4, 5 s); their HUD lines read it (`ready brawl.slam.Slam`, `{cooldown brawl.slam.Slam}s`); the brawl mod declares no `brawl.cd_*` field. **The bots** read those fields to know a skill was ready: a server mod now asks the motion (`Context::MotionIndex` once, `Context::PlayerMotion` when it decides: ready, cooldown left, uses left, as a sheet reads them); `net_bots` counts the skills the bots use (5 in each run) |
+| The dash strike in one motion | **two motions, nothing copied**: `Strike` (the lunge, the cooldown) and `Hit` on the strike's event (a cast: a motion with one happens only when it finds something, and the lunge goes either way). `Hit` is `for carrier` (the skill is used by its slot's key, not out in the hand) and starts on the tick after the lunge (a motion's event is heard on the next tick) |
+| The guns' numbers once | the magazine (M296), and `param gun.fire_seconds` (0.2 s; the rifle's 0.1 s), which `Fire`'s and `Dry`'s cooldowns and the rifle's `every` read |
+| The prediction's mark cooldown from `mark.seconds` | `cooldown mark.seconds` (1 s, the mark mod's own rule; it was 0.95, which let the game show a scan the server then refused) |
+| Units everywhere; `let` for repeats | units on every number whose word takes one (128 lines in 20 sheets: seconds, metres, speeds; not on a momentum); the frag's `falloff` and the telekinesis's `held_point` written once. Every rule as before (a let's words, a unit's number) |
+| Comments without milestone numbers | the shipped sheets say what and why (12 comments) |
+| `sheets.md` follows | its examples on the new words (the pistol, the slam, the HUD); `looks.md`, `motions.md`, `server-mods.md` too |
+| A sheet test reads the clock | `expect ready M`, `cooldown M`, `uses M` (`cb_sheet test`): the dash strike's test waits out its cooldown, the uppercut's reads it |
+| Not done | the gun's `Dry` and `Reload` keep their two reload lines each: through an event the reload would begin a tick later, and a shot could slip in between (the reason §5 gave for dropping several triggers stands without it: one trigger keeps `ready`, `cooldown` and `uses` plain) |
+| Proved | 195 tests; the sheet and motion golden files changed only where a sheet's meaning did (the three skills' cooldowns, the strike's `Hit`, the pistol's prediction; the frag's expression reads the same numbers in another order); the 15 sheet tests; the Godot checks and every mod's bakes (the pistol gains `gun.fire_seconds`); servers on the republished items (26 motions, the tdm preset 15, flight 6); 90 s played unattended with 4 bots (no desync over 128 checksums) |
+
 **Order, and why.** M293 first: every later change is made once, on the tree, not in a text
 rewrite that is about to go. M294 next: it decides what an item carries, which 6b builds on. M295
 before M296, so that the new words (`tag`, `active` in HUDs) do not inherit the old caps. M297 last,
@@ -210,7 +225,7 @@ when the words it uses exist.
 | Replacing the rule dictionaries with typed structs | the look's nodes read them until 6b, which replaces the nodes |
 | A new word so a timed-out marker can skip the recovery | only if the owner picks F3 (c); (a) needs no word |
 | `as holder` the default subject in an item's sheet (M296) | a reaction with no `as` reads the sheet's own entity (`me`): the bat's glow (`react while melee.heat > 0`) reads its own heat that way. A default that changes with where the sheet is would make one line mean two things; `as holder` is one line |
-| A motion with more than one trigger (M296) | the gun's `Dry` and `Reload` share their three lines through an event: one says it (`emit`), a motion `on` it does the lines (M297). One way to start a motion from another (D9), and one trigger keeps `ready`, `cooldown` and `uses` plain |
+| A motion with more than one trigger (M296) | one trigger keeps `ready`, `cooldown` and `uses` plain, and one motion can start another through an event (D9). The gun's `Dry` and `Reload` still copy two lines: M297 weighed sharing them through an event and kept the copy (the reload would begin a tick later) |
 | One name for an item's field in motions and in looks (M296) | in a motion the item is known (the one that runs it); a look is the player's, and `hand.` says which copy it reads. Two places, two questions |
 | A cast and the owner's own effects in one step (M296) | the dash strike's two motions become one with `emit` and `on` (M297); no new kind of step is needed |
 | A word for "this item is used" instead of `using.gun.rifle` (M296) | only the rifle says it, in its own sheet, where its kind's name is plain; a word whose meaning changes with the sheet that `uses` a file reads worse than the name |

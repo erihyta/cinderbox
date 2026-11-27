@@ -103,11 +103,11 @@ motion as text: steps that wait (`wait for grounded`, `wait 0.5`, a
 
 ```
 # prefabs/slam.cbsheet: a dive, and where it lands said on the tick after it touches the ground
-motion Slam on use if brawl.cd_slam <= 0 and not grounded
-	lasts 3
-	change brawl.cd_slam = 5
+motion Slam on use if not grounded
+	cooldown 5 s
+	lasts 3 s
 	emit brawl.slam.started
-	impulse 25 along down replace vertical
+	impulse 25 m/s along down replace vertical
 	wait for grounded
 	emit brawl.slam.landed
 ```

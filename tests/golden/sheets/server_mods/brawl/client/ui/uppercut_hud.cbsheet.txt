@@ -1,22 +1,22 @@
-rule CbFieldBinding line 5 head 0
+rule CbFieldBinding line 6 head 0
   conditions: texts
-    - "brawl.cd_upper <= 0"
+    - "ready.brawl.uppercut.Rise"
   hides: bool false
   text_format: text "[{key:slot3}]  UPPERCUT  READY"
   target: text "Line"
-rule CbFieldBinding line 6 head 0
-  conditions: texts
-    - "brawl.cd_upper > 0"
-  hides: bool false
-  text_format: text "[{key:slot3}]  UPPERCUT  {brawl.cd_upper}s"
-  target: text "Line"
 rule CbFieldBinding line 7 head 0
+  conditions: texts
+    - "not ready.brawl.uppercut.Rise"
   hides: bool false
-  property: text "modulate:r"
-  field: text "1 - 0.45 * (brawl.cd_upper <= 0)"
+  text_format: text "[{key:slot3}]  UPPERCUT  {cooldown.brawl.uppercut.Rise}s"
   target: text "Line"
 rule CbFieldBinding line 8 head 0
   hides: bool false
+  property: text "modulate:r"
+  field: text "1 - 0.45 * ready.brawl.uppercut.Rise"
+  target: text "Line"
+rule CbFieldBinding line 9 head 0
+  hides: bool false
   property: text "modulate:b"
-  field: text "1 - 0.45 * (brawl.cd_upper <= 0)"
+  field: text "1 - 0.45 * ready.brawl.uppercut.Rise"
   target: text "Line"

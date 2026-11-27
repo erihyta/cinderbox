@@ -73,7 +73,7 @@
 			"name": "constant.numeric.cbsheet"
 		},
 		"name": {
-			"comment": "A mod's name: dotted (brawl.cd_dash, gun.rounds).",
+			"comment": "A mod's name: dotted (brawl.combo, gun.rounds).",
 			"match": "\\b[a-z_][a-z0-9_]*(\\.[a-z0-9_]+)+\\b",
 			"name": "variable.other.cbsheet"
 		},

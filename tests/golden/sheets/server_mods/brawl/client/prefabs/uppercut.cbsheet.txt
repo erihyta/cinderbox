@@ -1,8 +1,8 @@
-rule motion line 15 head 0
+rule motion line 14 head 0
   name: text "Rise"
   trigger: text "use"
   conditions: texts
-    - "not linked and brawl.cd_upper <= 0 and grounded"
+    - "not linked and grounded"
   tags: texts
     - "attack"
   blocked: texts
@@ -10,22 +10,17 @@ rule motion line 15 head 0
     - "pulled"
   until: texts
     - "brawl.uppercut.used or pressed.jump"
+  cooldown: float 4
   lasts: float 0.05
   steps: list
     - dict
         statements: list
           - dict
-              verb: text "change"
-              kind: text "change"
-              text: text "brawl.cd_upper = 4"
-              guard: text ""
-              line: int 20
-          - dict
               verb: text "emit"
               kind: text "emit"
               text: text "brawl.uppercut.started"
               guard: text ""
-              line: int 21
+              line: int 20
           - dict
               verb: text "cast"
               range: float 3
@@ -36,13 +31,13 @@ rule motion line 15 head 0
               holds: texts
               statements: list
                 - dict
-                    line: int 23
+                    line: int 22
                     verb: text "emit"
                     only: text ""
                     kind: text "emit"
                     text: text "brawl.uppercut.hit"
                 - dict
-                    line: int 24
+                    line: int 23
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -54,7 +49,7 @@ rule motion line 15 head 0
                         replace: int 1
                         target: int 1
                 - dict
-                    line: int 25
+                    line: int 24
                     verb: text "impulse"
                     only: text ""
                     kind: text "part"
@@ -66,4 +61,4 @@ rule motion line 15 head 0
                         frame: int 3
                         replace: int 1
               guard: text ""
-              line: int 22
+              line: int 21

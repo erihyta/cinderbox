@@ -1,4 +1,4 @@
-rule motion line 100033 head 0
+rule motion line 100035 head 0
   name: text "Fire"
   trigger: text "use"
   conditions: texts
@@ -12,14 +12,14 @@ rule motion line 100033 head 0
               kind: text "change"
               text: text "item:gun.rounds -= 1"
               guard: text ""
-              line: int 100035
+              line: int 100037
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.use"
               guard: text ""
-              line: int 100036
-rule motion line 100039 head 0
+              line: int 100038
+rule motion line 100041 head 0
   name: text "Dry"
   trigger: text "use"
   conditions: texts
@@ -33,26 +33,26 @@ rule motion line 100039 head 0
               kind: text "change"
               text: text "item:gun.reloading = 1"
               guard: text ""
-              line: int 100041
+              line: int 100043
           - dict
               verb: text "change"
               kind: text "change"
               text: text "item:gun.reload_left = 1.5"
               guard: text ""
-              line: int 100042
+              line: int 100044
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.use_failed"
               guard: text ""
-              line: int 100043
+              line: int 100045
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.reload"
               guard: text ""
-              line: int 100044
-rule motion line 100047 head 0
+              line: int 100046
+rule motion line 100049 head 0
   name: text "Reload"
   trigger: text "press"
   action: text "reload"
@@ -66,20 +66,20 @@ rule motion line 100047 head 0
               kind: text "change"
               text: text "item:gun.reloading = 1"
               guard: text ""
-              line: int 100048
+              line: int 100050
           - dict
               verb: text "change"
               kind: text "change"
               text: text "item:gun.reload_left = 1.5"
               guard: text ""
-              line: int 100049
+              line: int 100051
           - dict
               verb: text "emit"
               kind: text "emit"
               text: text "item.reload"
               guard: text ""
-              line: int 100050
-rule motion line 100053 head 0
+              line: int 100052
+rule motion line 100055 head 0
   name: text "Reloaded"
   trigger: text "when"
   expression: text "item:gun.reloading and item:gun.reload_left <= 0"
@@ -92,13 +92,13 @@ rule motion line 100053 head 0
               kind: text "change"
               text: text "item:gun.reloading = 0"
               guard: text ""
-              line: int 100055
+              line: int 100057
           - dict
               verb: text "change"
               kind: text "change"
               text: text "item:gun.rounds = item:gun.magazine"
               guard: text ""
-              line: int 100056
+              line: int 100058
 rule CbReaction line 17 head 14
   when: int 0
   event: text "item.use"
@@ -143,13 +143,13 @@ rule CbReaction line 33 head 28
   volume_db: float -4
   pitch_scale: float 1.8
   max_distance: float 25
-rule CbPrediction line 36 head 0 prediction
+rule CbPrediction line 37 head 0 prediction
   action: text "use2"
   cue: text "item.use2"
   conditions: texts
     - "!hand.gun.reloading and !combat.dead"
-  cooldown: float 0.95
-rule CbReaction line 43 head 40
+  cooldown: float 1
+rule CbReaction line 44 head 41
   when: int 0
   event: text "item.use_failed"
   subject: text "^^"
@@ -158,7 +158,7 @@ rule CbReaction line 43 head 40
   sound: text "res://assets/sfx/dry_click.wav"
   volume_db: float -8
   max_distance: float 12
-rule CbReaction line 49 head 46
+rule CbReaction line 50 head 47
   when: int 0
   event: text "item.reload"
   subject: text "^^"
@@ -167,7 +167,7 @@ rule CbReaction line 49 head 46
   sound: text "res://assets/sfx/reload.wav"
   volume_db: float -10
   max_distance: float 25
-rule CbReaction line 55 head 52
+rule CbReaction line 56 head 53
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -178,7 +178,7 @@ rule CbReaction line 55 head 52
   volume_db: float -16
   pitch_jitter: float 0.3
   max_distance: float 30
-rule CbReaction line 56 head 52
+rule CbReaction line 57 head 53
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -187,7 +187,7 @@ rule CbReaction line 56 head 52
   place: int 1
   scene: text "res://vfx/bullet_spark.tscn"
   scene_lifetime: float 1
-rule CbReaction line 62 head 59
+rule CbReaction line 63 head 60
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -198,7 +198,7 @@ rule CbReaction line 62 head 59
   volume_db: float -8
   pitch_jitter: float 0.15
   max_distance: float 40
-rule CbReaction line 63 head 59
+rule CbReaction line 64 head 60
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -207,7 +207,7 @@ rule CbReaction line 63 head 59
   place: int 1
   scene: text "res://vfx/hit_puff.tscn"
   scene_lifetime: float 1
-rule CbReaction line 69 head 66
+rule CbReaction line 70 head 67
   when: int 0
   event: text "item.hit"
   conditions: texts

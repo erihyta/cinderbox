@@ -1,12 +1,12 @@
 cinderbox_motions	3
 motion	Rise
 when	event	brawl.uppercut.used
-if	( not linked and brawl.cd_upper <= 0 and grounded )
+if	( not linked and grounded )
 until	( brawl.uppercut.used or pressed.jump )
+cooldown	4
 tags	attack
 blocked	guard	pulled
 duration	0.05
-change	brawl.cd_upper	=	4
 emit	brawl.uppercut.started
 probe	3	0
 probe_frame	facing
