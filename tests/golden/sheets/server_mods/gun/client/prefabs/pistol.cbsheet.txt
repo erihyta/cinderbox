@@ -99,7 +99,7 @@ rule motion line 100055 head 0
               text: text "item:gun.rounds = item:gun.magazine"
               guard: text ""
               line: int 100058
-rule CbReaction line 17 head 14
+rule CbReaction line 20 head 17
   when: int 0
   event: text "item.use"
   subject: text "^^"
@@ -107,7 +107,7 @@ rule CbReaction line 17 head 14
   scene_parent: text "Muzzle"
   scene: text "res://vfx/muzzle_flash.tscn"
   scene_lifetime: float 0.3
-rule CbReaction line 19 head 14
+rule CbReaction line 22 head 17
   when: int 0
   event: text "item.use"
   subject: text "^^"
@@ -117,7 +117,7 @@ rule CbReaction line 19 head 14
   volume_db: float -5
   pitch_jitter: float 0.06
   max_distance: float 70
-rule CbReaction line 25 head 22
+rule CbReaction line 28 head 25
   when: int 0
   event: text "item.reach"
   subject: text "^^"
@@ -125,7 +125,7 @@ rule CbReaction line 25 head 22
   place_node: text "Muzzle"
   scene: text "res://vfx/tracer.tscn"
   scene_lifetime: float 0.06
-rule CbReaction line 31 head 28
+rule CbReaction line 34 head 31
   when: int 0
   event: text "item.use2"
   subject: text "^^"
@@ -133,7 +133,7 @@ rule CbReaction line 31 head 28
   place_node: text "Muzzle"
   scene: text "res://vfx/scan_beam.tscn"
   scene_lifetime: float 0.15
-rule CbReaction line 33 head 28
+rule CbReaction line 36 head 31
   when: int 0
   event: text "item.use2"
   subject: text "^^"
@@ -143,13 +143,13 @@ rule CbReaction line 33 head 28
   volume_db: float -4
   pitch_scale: float 1.8
   max_distance: float 25
-rule CbPrediction line 37 head 0 prediction
+rule CbPrediction line 40 head 0 prediction
   action: text "use2"
   cue: text "item.use2"
   conditions: texts
     - "!hand.gun.reloading and !combat.dead"
   cooldown: float 1
-rule CbReaction line 44 head 41
+rule CbReaction line 47 head 44
   when: int 0
   event: text "item.use_failed"
   subject: text "^^"
@@ -158,7 +158,7 @@ rule CbReaction line 44 head 41
   sound: text "res://assets/sfx/dry_click.wav"
   volume_db: float -8
   max_distance: float 12
-rule CbReaction line 50 head 47
+rule CbReaction line 53 head 50
   when: int 0
   event: text "item.reload"
   subject: text "^^"
@@ -167,7 +167,7 @@ rule CbReaction line 50 head 47
   sound: text "res://assets/sfx/reload.wav"
   volume_db: float -10
   max_distance: float 25
-rule CbReaction line 56 head 53
+rule CbReaction line 59 head 56
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -178,7 +178,7 @@ rule CbReaction line 56 head 53
   volume_db: float -16
   pitch_jitter: float 0.3
   max_distance: float 30
-rule CbReaction line 57 head 53
+rule CbReaction line 60 head 56
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -187,7 +187,7 @@ rule CbReaction line 57 head 53
   place: int 1
   scene: text "res://vfx/bullet_spark.tscn"
   scene_lifetime: float 1
-rule CbReaction line 63 head 60
+rule CbReaction line 66 head 63
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -198,7 +198,7 @@ rule CbReaction line 63 head 60
   volume_db: float -8
   pitch_jitter: float 0.15
   max_distance: float 40
-rule CbReaction line 64 head 60
+rule CbReaction line 67 head 63
   when: int 0
   event: text "item.hit"
   conditions: texts
@@ -207,7 +207,7 @@ rule CbReaction line 64 head 60
   place: int 1
   scene: text "res://vfx/hit_puff.tscn"
   scene_lifetime: float 1
-rule CbReaction line 70 head 67
+rule CbReaction line 73 head 70
   when: int 0
   event: text "item.hit"
   conditions: texts

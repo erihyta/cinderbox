@@ -1,9 +1,10 @@
 // Mark: a second use for an item that says it has one. The example of adding a use to items made
 // in the editor, and of a use that is not the item's main one.
 //
-// An item whose scene has the property "mark.range" (the pistol does) marks with the second use
-// button (the item mod's "use2", the right mouse button): a ray that harms nothing, as far as the
-// range, at most once every "mark.seconds" (1). The server keeps nothing about a mark:
+// An item whose sheet has the param "mark.range" (the pistol's does) marks with the second use, the
+// action "use2" (the right mouse button; the item's sheet declares it, as the pistol's does, and so
+// does this mod, the same action): a ray that harms nothing, as far as the range, at most once every
+// "mark.seconds" (1). The server keeps nothing about a mark:
 //
 //   item.use2    a mark was cast: a = who cast it, b = what the ray hit (0: nothing), point = where
 //                it came from, vector = where it ended. The item's own scene shows it (a beam).
