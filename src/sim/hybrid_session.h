@@ -116,7 +116,8 @@ public:
 	// What its game shows of what was said at characters (M297.1), a ring of kHeardHistory: the heard
 	// events, and the own character's as first predicted (its shot's item.use on the tick of the
 	// press). Each once: one predicted again after a state is not shown again, as an own throw is
-	// drawn once.
+	// drawn once. Not one about another character (M297.5: a punch that landed): the server's word
+	// for it comes, as for everyone.
 	const ModEventRecord* ShownEvents() const
 	{
 		return m_shown.data();
@@ -243,6 +244,16 @@ private:
 		PlayerInput input{};
 	};
 	std::vector<Sampled> m_sampled;
+	// What each predicted tick's motions said (M297.5), by tick as m_sampled: the next predicted tick
+	// hears it (StepCharacters' `before`); a tick predicted again says it again.
+	struct Said
+	{
+		uint32_t tick = UINT32_MAX;
+		std::vector<ModEventRecord> events;
+	};
+	std::vector<Said> m_said;
+	const std::vector<ModEventRecord>& SaidAt( uint32_t tick ) const;
+	void StepOwn( uint32_t tick, const PlayerInput& input, bool show );
 	InputFrame m_last;
 	float m_scramble = 0.0f;
 	uint32_t m_stateLag = 0;

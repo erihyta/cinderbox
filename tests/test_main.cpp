@@ -5001,6 +5001,59 @@ void TestMotionsMeet()
 		   stunnedClock.statuses[0].remaining <= 0.5f );
 }
 
+// M297.5: a player's own game predicts its character a tick at a time, and puts the simulation's
+// globals back after each, the event ring with them. What its motions say is heard on the tick after
+// (a marker the clip crossed, a motion's emit), so the next predicted tick is given it
+// (StepCharacters' `before`): without it a motion on such an event never started in the player's own
+// game (a throw on its marker, a strike's hit, a swing's end). And an event about another character
+// is told apart (AboutAnotherCharacter: the server's word, not the player's guess).
+void TestPredictedEventsHeard()
+{
+	ModSchema schema;
+	schema.events = { "t.a", "t.b" };
+	schema.actions.push_back( { "go", 0, "Q" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tA\nwhen\tpress\tgo\nemit\tt.a\n"
+							 "motion\tB\nwhen\tevent\tt.a\nemit\tt.b\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() );
+	// (Each run its own world: a predicted tick moves the character on.)
+	auto run = [&]( bool hearsBefore ) {
+		Simulation sim( TestConfig(), FlatMap() );
+		sim.SetMotions( motions );
+		InputFrame f;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( int i = 0; i < 30; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+		}
+		PlayerInput press;
+		press.actions = 1;
+		const uint32_t t = sim.Tick() + 3;
+		sim.StepCharacters( t, 0, press );
+		const std::vector<ModEventRecord> first = sim.TakePredictedEvents();
+		sim.StepCharacters( t + 1, 0, PlayerInput{}, hearsBefore ? first : std::vector<ModEventRecord>{} );
+		const std::vector<ModEventRecord> second = sim.TakePredictedEvents();
+		auto says = [&]( const std::vector<ModEventRecord>& said, const char* name ) {
+			return std::any_of( said.begin(), said.end(), [&]( const ModEventRecord& e ) { return schema.events[e.type] == name; } );
+		};
+		// (And what is about another character: B another player's body; not B nothing, or itself.)
+		ModEventRecord about;
+		about.netIdA = sim.PlayerNetId( 0 );
+		const bool aboutSelf = sim.AboutAnotherCharacter( about );
+		return std::make_tuple( says( first, "t.a" ), says( second, "t.b" ), aboutSelf );
+	};
+	const auto [saidA, heardB, aboutNobody] = run( true );
+	const auto [saidA2, deafB, aboutNobody2] = run( false );
+	std::printf( "    a press says t.a %d; the next predicted tick, given it, says t.b %d; not given it %d\n", int( saidA ), int( heardB ), int( deafB ) );
+	CHECK( saidA && heardB && saidA2 && deafB == false );
+	CHECK( aboutNobody == false && aboutNobody2 == false );
+}
+
 void TestMotionSteps()
 {
 	ModSchema schema;
@@ -15007,6 +15060,7 @@ int main( int argc, char** argv )
 		{ "motions_while", TestMotionsWhile },
 		{ "motion_timers", TestMotionTimers },
 		{ "motions_meet", TestMotionsMeet },
+		{ "predicted_events_heard", TestPredictedEventsHeard },
 		{ "motion_steps", TestMotionSteps },
 		{ "motion_order", TestMotionOrder },
 		{ "motion_regular", TestMotionRegular },

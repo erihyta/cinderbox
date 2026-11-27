@@ -8334,7 +8334,8 @@ void TestHybridPuppets()
 			if ( s.record.netIdA == fighterId && s.character != 0 )
 			{
 				onServerEvents.insert( { s.record.type, s.record.tick } );
-				if ( s.command )
+				// (M297.5: and what is about another character, a jab that landed: the server's word.)
+				if ( s.command || server.AboutAnotherCharacter( s.record ) )
 				{
 					saidByModsOnServer.insert( { s.record.type, s.record.tick } );
 				}
@@ -8410,8 +8411,8 @@ void TestHybridPuppets()
 		return out;
 	};
 	// The other's game hears every one, once; the fighter's own only what a mod said (the face-off's
-	// word, a hit's combat.damage): the rest (its fist's used, the jab's events) it says itself,
-	// predicting.
+	// word, a hit's combat.damage) and what is about another character (M297.5: a jab that landed):
+	// the rest (its fist's used, the jab's start) it says itself, predicting.
 	const Said all = inWindow( onServerEvents ), saidByMods = inWindow( saidByModsOnServer );
 	const Said watcherHeard = inWindow( heardBy[1] ), fighterHeard = inWindow( heardBy[0] );
 	std::printf( "    the events at the fighter: %zu on the server (%zu a mod's), the other's game heard %zu, its own %zu\n", all.size(), saidByMods.size(),
@@ -8901,6 +8902,82 @@ void TestOwnShots()
 	CHECK( firstShown != 0 && firstShown <= firstServer + 1 );
 }
 
+// M297.5: what a player's own motion says about another character is the server's word. A fighter
+// jabs the player in front of it: its own game predicts the jab, but the hit (brawl.jab.hit, B the
+// other) it shows when the server says it, once each, as the other's game does; nothing of it from
+// its own guess.
+void TestOwnHits()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> mods;
+	mods.push_back( std::make_unique<FaceOffMod>( 1.6f ) );
+	const FaceOffMod* faceOff = static_cast<const FaceOffMod*>( mods.back().get() );
+	Harness h( 48234, {}, {}, { { "test.mods", "brawl" }, { "combat.max_health", "1000000" } }, UseHybridModel, std::move( mods ) );
+	h.AddBot();
+	h.AddBot();
+	Bot& fighter = h.bots[0];
+	h.bots[1].script = []( uint32_t ) { return PlayerInput{}; }; // (it stands where the face-off put it)
+	fighter.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0;
+		if ( faceOff->done && tick > 330 )
+		{
+			in.actions |= tick % 40 < 3 ? kKeyUse : 0;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	// (A jab, a jab, then the finisher, which tosses the other far: both kinds of hit.)
+	const int jab = h.server.Schema().FindEvent( "brawl.jab.hit" ), finisher = h.server.Schema().FindEvent( "brawl.finisher.hit" );
+	CHECK( jab >= 0 && finisher >= 0 );
+	auto isHit = [&]( int type ) { return type == jab || type == finisher; };
+	const uint32_t me = h.server.Sim().PlayerNetId( fighter.client->Slot() );
+	int server = 0, heard = 0, shown = 0, guessed = 0;
+	uint32_t serverSeen = h.server.Sim().Globals().modEventCount, heardSeen = 0;
+	present::Mirror mirror( anim::AnimSet::CreateProcedural() );
+	present::PresentationFrame frame;
+	h.RunUntil( 12.0, [&]( double ) {
+		const SimGlobals& g = h.server.Sim().Globals();
+		for ( ; serverSeen < g.modEventCount; ++serverSeen )
+		{
+			const ModEventRecord& e = g.modEvents[serverSeen % kModEventHistory];
+			server += isHit( int( e.type ) ) && e.netIdA == me ? 1 : 0;
+		}
+		GameClient& w = *fighter.client;
+		Simulation* sim = w.Sim();
+		const HybridSession* hybrid = w.Hybrid();
+		if ( sim == nullptr || hybrid == nullptr )
+		{
+			return;
+		}
+		const uint32_t count = hybrid->HeardCount();
+		for ( heardSeen = std::max( heardSeen, count - std::min( count, HybridSession::kHeardHistory ) ); heardSeen < count; ++heardSeen )
+		{
+			const ModEventRecord& e = hybrid->HeardEvents()[heardSeen % HybridSession::kHeardHistory];
+			heard += isHit( int( e.type ) ) && e.netIdA == me ? 1 : 0;
+		}
+		// (Its own guesses of a hit: what its prediction said, which its game does not show.)
+		present::CaptureFrame( *sim, frame );
+		frame.localNetId = sim->Globals().playerNetIds[w.Slot()];
+		frame.heardCount = hybrid->ShownCount();
+		frame.heard.assign( hybrid->ShownEvents(), hybrid->ShownEvents() + HybridSession::kHeardHistory );
+		mirror.Update( frame, 0.5f, 1.0f / 60.0f );
+		for ( const present::Event& e : mirror.Events() )
+		{
+			shown += e.type == present::EventType::Mod && isHit( int( e.modType ) ) && e.netId == me ? 1 : 0;
+		}
+	} );
+	for ( Bot& b : h.bots )
+	{
+		CheckHybridClient( *b.client );
+	}
+	guessed = shown - heard;
+	std::printf( "    the fighter's hits that landed: on the server %d; told to its own game %d; shown there %d (%d of them its own guess)\n", server, heard,
+				 shown, guessed );
+	CHECK( server >= 3 );
+	CHECK( heard >= server - 1 && heard <= server ); // (the last perhaps still on its way)
+	CHECK( shown == heard );
+}
+
 // The hybrid on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A lost
 // state costs nothing but itself (the next is a few ticks away, against a base the client has); a
 // lost frame comes again in the next packets, and the physics, behind, has waited for it rarely.
@@ -9184,6 +9261,7 @@ int main( int argc, char** argv )
 		{ "seen_back_capped", TestSeenBackCapped },
 		{ "remote_cues", TestRemoteCues },
 		{ "own_shots", TestOwnShots },
+		{ "own_hits", TestOwnHits },
 		{ "hybrid_puppets", TestHybridPuppets },
 		{ "hybrid_own_fields", TestHybridOwnFields },
 		{ "hybrid_reconnect", TestHybridReconnect },

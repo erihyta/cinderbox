@@ -383,8 +383,14 @@ public:
 	// The hybrid's prediction: `slot`'s character (the one that is not a stand-in) and what it holds
 	// do tick `tick` with `input`, against the physics world as it is (in the past: the physics is
 	// stepped by Step(), and nothing here changes it; what the character does to it is the
-	// server's to say, by its events). Tick() stays.
-	void StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInput& input );
+	// server's to say, by its events). Tick() stays. `before`: what its motions said on the predicted
+	// tick before (M297.5): heard on this one, as the server's motions hear what was said late on the
+	// tick before them (a marker the clip crossed, a motion's emit).
+	void StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInput& input, const std::vector<ModEventRecord>& before = {} );
+	// An event about another character (M297.5): one a player's motion says with another's body as
+	// its B (a punch that landed, a pull). What happens to another player is the server's to say: a
+	// player's game does not show its own prediction of one, and the server sends it back.
+	bool AboutAnotherCharacter( const ModEventRecord& record ) const;
 	// What the own character's motions launched while predicted (M249): the server's own copy comes
 	// in its events a round trip and the physics' buffer later, so a client draws this one at once
 	// (HybridSession::OwnLaunches). `position` is its grip, `item` the carried copy thrown (0: a

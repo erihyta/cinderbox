@@ -27,6 +27,7 @@ HybridSession::HybridSession( const SimConfig& config, PlayerSlot localSlot, uin
 {
 	m_sim = std::make_unique<Simulation>( config, map );
 	m_sampled.resize( kMaxAheadCap + 8 );
+	m_said.resize( m_sampled.size() );
 	m_last.tick = UINT32_MAX;
 }
 
@@ -258,11 +259,10 @@ void HybridSession::Reconcile()
 		{
 			break; // (never sampled: from before this session predicted)
 		}
-		m_sim->StepCharacters( t, m_localSlot, s.input );
+		StepOwn( t, s.input, false ); // (its events shown already, when first predicted)
 		depth += 1;
 	}
 	m_sim->TakePredictedLaunches(); // (drawn already, when first predicted)
-	m_sim->TakePredictedEvents();	// (shown already, when first predicted)
 	m_stats.predictNs += NsSince( start );
 	m_stats.resimulatedTicks += depth;
 	m_stats.lastDepth = depth;
@@ -283,12 +283,8 @@ bool HybridSession::Predict( const PlayerInput& input )
 	}
 	m_sampled[m_predicted % m_sampled.size()] = { m_predicted, input };
 	auto start = std::chrono::steady_clock::now();
-	m_sim->StepCharacters( m_predicted, m_localSlot, input );
+	StepOwn( m_predicted, input, true );
 	m_stats.predictNs += NsSince( start );
-	for ( const ModEventRecord& e : m_sim->TakePredictedEvents() )
-	{
-		Show( e );
-	}
 	for ( const Simulation::PredictedLaunch& launch : m_sim->TakePredictedLaunches() )
 	{
 		m_launches.push_back( { launch, m_nextLaunchId++, 0, 0 } );
@@ -299,6 +295,30 @@ bool HybridSession::Predict( const PlayerInput& input )
 	m_last.inputs[m_localSlot] = input;
 	m_predicted += 1;
 	return true;
+}
+
+const std::vector<ModEventRecord>& HybridSession::SaidAt( uint32_t tick ) const
+{
+	static const std::vector<ModEventRecord> none;
+	const Said& said = m_said[tick % m_said.size()];
+	return said.tick == tick ? said.events : none;
+}
+
+// The own character does `tick`, hearing what it said on the tick before; what it says is kept for
+// the next, and (first predicted) shown, but for what is about another character: the server's.
+void HybridSession::StepOwn( uint32_t tick, const PlayerInput& input, bool show )
+{
+	m_sim->StepCharacters( tick, m_localSlot, input, tick > 0 ? SaidAt( tick - 1 ) : std::vector<ModEventRecord>{} );
+	Said& said = m_said[tick % m_said.size()];
+	said.tick = tick;
+	said.events = m_sim->TakePredictedEvents();
+	for ( const ModEventRecord& e : said.events )
+	{
+		if ( show && m_sim->AboutAnotherCharacter( e ) == false )
+		{
+			Show( e );
+		}
+	}
 }
 
 void HybridSession::PhysicsBodies( Simulation& sim, std::vector<BodyAt>& out )
