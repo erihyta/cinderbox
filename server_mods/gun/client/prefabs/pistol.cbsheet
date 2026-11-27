@@ -9,6 +9,9 @@ param gun.capacity 12
 param gun.damage 25
 param mark.range 80 m
 param mark.seconds 1 s
+# Its second use, the right mouse button: the mark mod's scan, for an item that says how far it
+# reaches (mark.range). The action is the pistol's to declare, as the sword declares its block's.
+action use2 key MouseRight
 
 # Flash, ShotSound
 react on item.use
