@@ -36,7 +36,7 @@ namespace cb::sheet
 // compiler does not read.
 int SheetVersion( const std::string& text );
 // What is said of a sheet that is not version 1 (the server reading a mod's sheets, publishing,
-// cb_sheet check, the editor's Sheet screen); empty for a version 1 sheet, or one with nothing in it.
+// cb_sheet check, the editor); empty for a version 1 sheet, or one with nothing in it.
 std::string NotVersion1( const std::string& text );
 
 // A version 1 sheet in the one style: indented with tabs (four columns each), no spaces at the ends

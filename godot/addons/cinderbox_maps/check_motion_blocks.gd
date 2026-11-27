@@ -10,9 +10,8 @@ extends SceneTree
 ## refuses the bake and says its file and line. Exit code 0 when everything held.
 
 const SHEET := "res://addons/cinderbox_maps/check_motion_blocks.cbsheet"
-## The sheet each check writes (a CbSheet of its own, not a file).
-const SCRATCH := "(scratch)"
-var _scratch_sheet := CbSheet.new()
+## The sheet each check writes: a file of its own, removed at the end (a sheet is a text file, M297.3).
+const SCRATCH := "res://addons/cinderbox_maps/check_motion_blocks_scratch.cbsheet"
 
 var _failures := 0
 
@@ -33,15 +32,16 @@ func _set_with(file: String) -> CbMotionSet:
 	set.set_name = "test.moves"
 	var rules := CbRules.new()
 	rules.name = "Rules"
-	rules.sheet = _scratch_sheet if file == SCRATCH else load(file)
+	rules.sheet = file
 	set.add_child(rules)
 	return set
 
 
 ## A check's sheet: its version line, then the lines a check writes (so they start at line 2).
 func _scratch(text: String) -> void:
-	_scratch_sheet = CbSheet.new()
-	_scratch_sheet.text = text if text.begins_with("cbsheet") else "cbsheet 1\n" + text
+	var f := FileAccess.open(SCRATCH, FileAccess.WRITE)
+	f.store_string(text if text.begins_with("cbsheet") else "cbsheet 1\n" + text)
+	f.close()
 
 
 func _refused(what: String, text: String, says: String) -> void:
@@ -99,7 +99,7 @@ func _run() -> void:
 	item.kind = "test.hammer"
 	var item_rules := CbRules.new()
 	item_rules.name = "Rules"
-	item_rules.sheet = _scratch_sheet
+	item_rules.sheet = SCRATCH
 	item.add_child(item_rules)
 	var motions: Dictionary = item.bake_motions()
 	var item_text := String(motions["text"])
@@ -250,7 +250,7 @@ func _run() -> void:
 	bomb.kind = "test.bomb"
 	var bomb_rules := CbRules.new()
 	bomb_rules.name = "Rules"
-	bomb_rules.sheet = _scratch_sheet
+	bomb_rules.sheet = SCRATCH
 	bomb.add_child(bomb_rules)
 	var bomb_baked: Dictionary = bomb.bake_motions()
 	var bomb_text := String(bomb_baked["text"])
@@ -318,7 +318,7 @@ func _item_bake(text: String, kind: String, use: int = 1) -> String:
 	item.use = use
 	var rules := CbRules.new()
 	rules.name = "Rules"
-	rules.sheet = _scratch_sheet
+	rules.sheet = SCRATCH
 	item.add_child(rules)
 	var baked: Dictionary = item.bake_motions()
 	item.free()

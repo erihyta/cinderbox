@@ -14,7 +14,6 @@ add_library(cinderbox_gd SHARED
 	cinderbox_client_world.cpp
 	cinderbox_autobake.cpp
 	cinderbox_rules_editor.cpp
-	cinderbox_sheet.cpp
 	cinderbox_track_player.cpp
 	cinderbox_entity_nodes.cpp
 	cinderbox_hud.cpp
@@ -33,7 +32,7 @@ add_library(cinderbox_gd SHARED
 # The class reference shown in the editor (hover texts, F1): compiled into the extension.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 target_doc_sources(cinderbox_gd
-	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbPrediction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbNames.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbPromptLabel.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbBody.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItem.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbViewCamera.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbMotionSet.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbLinkLook.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbList.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbKey.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbClick.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbDrag.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemIcon.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbSheet.xml")
+	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbPrediction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbNames.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbPromptLabel.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbBody.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItem.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbViewCamera.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbMotionSet.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbLinkLook.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbList.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbKey.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbClick.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbDrag.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemIcon.xml")
 
 target_link_libraries(cinderbox_gd PRIVATE cb_present cb_cue cb_sheet_bake godot::cpp ozz_animation_offline)
 cb_target_warnings(cinderbox_gd)

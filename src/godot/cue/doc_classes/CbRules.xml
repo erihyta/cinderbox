@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="CbRules" inherits="Node3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
-		A scene's reactions and predictions as lines of text: a rules sheet (a [CbSheet], a .cbsheet file) instead of one [CbReaction] or [CbPrediction] node each. A Node3D: what a rule adds with no place of its own goes where this node is.
+		A scene's reactions and predictions as lines of text: a rules sheet (a .cbsheet file, plain text) instead of one [CbReaction] or [CbPrediction] node each. A Node3D: what a rule adds with no place of its own goes where this node is.
 	</brief_description>
 	<description>
-		Logic is text; what is a place or a thing stays a node. Put a [CbRules] where a [CbReaction] would go and give it a sheet ([member sheet]: drag a [code].cbsheet[/code] file onto it). A sheet edited in the editor builds its reactions again at once. When the scene is used, each action of each rule becomes a [CbReaction] under this node (internal: never saved with the scene), so the director, the guard and the Cue Preview treat them as any other.
+		Logic is text; what is a place or a thing stays a node. Put a [CbRules] where a [CbReaction] would go and give it a sheet ([member sheet]: a [code].cbsheet[/code] file's path; pick it, or drag the file onto it). A sheet saved in the editor builds its reactions again. When the scene is used, each action of each rule becomes a [CbReaction] under this node (internal: never saved with the scene), so the director, the guard and the Cue Preview treat them as any other.
 		[codeblock]
 		cbsheet 1
 
@@ -18,17 +18,17 @@
 		    set Barrel surface_material_override/0:emission_energy_multiplier 4 blend 0.2
 		[/codeblock]
 		The first line says the version ([code]cbsheet 1[/code]). A block starts at the line's start: [code]react on EVENT [if EXPRESSION][/code] or [code]react while EXPRESSION[/code] (a reaction), [code]predict ACTION as CUE [if EXPRESSION][/code] (a [CbPrediction]), [code]hud PATH[/code] (HUD lines), [code]motion[/code] and [code]use[/code] (motions the simulation runs, baked with the item or the motion set). A line governs what is indented under it.
-		[b]A reaction[/b]: its settings first ([code]cooldown S[/code], [code]server only[/code]); then scopes, each for the lines under it ([code]as holder|actor|target|me|local|world|PATH[/code], [code]at point|end|beam from PATH|follow|PATH [offset X Y Z][/code], [code]after S[/code], [code]chance P[/code]); and actions, each one [CbReaction]: [code]sound NAME[/code] ([code]assets/sfx/NAME.wav[/code], or a [code]res://[/code] path) [code][volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPR][/code]; [code]create NAME [under PATH] [for S][/code] ([code]vfx/NAME.tscn[/code]); [code]play PLAYER ANIMATION [off ANIMATION][/code]; [code]set PATH PROPERTY VALUE [blend S][/code] or [code]set PATH PROPERTY = EXPRESSION[/code]; [code]call PATH METHOD [ARGUMENTS][/code]; [code]shake AMOUNT [for S][/code]; [code]flash rgba(r, g, b, a) [for S][/code].
-		A sheet without its first line is version 0, the spelling before M285, read until none ships. The whole language: docs/sheets.md.
+		[b]A reaction[/b]: its settings first ([code]cooldown S[/code], [code]server only[/code]); then scopes, each for the lines under it ([code]as holder|actor|target|me|local|world|PATH[/code], [code]at point|end|beam from PATH|PATH [offset X Y Z]|PATH attached[/code], [code]after S[/code], [code]chance P[/code]); and actions, each one [CbReaction]: [code]sound NAME[/code] ([code]assets/sfx/NAME.wav[/code], or a [code]res://[/code] path) [code][volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPR][/code]; [code]create NAME [for S][/code] ([code]vfx/NAME.tscn[/code]); [code]play PLAYER ANIMATION [off ANIMATION][/code]; [code]set PATH PROPERTY VALUE [blend S][/code] or [code]set PATH PROPERTY = EXPRESSION[/code]; [code]call PATH METHOD [ARGUMENTS][/code]; [code]shake AMOUNT [for S][/code]; [code]flash rgba(r, g, b, a) [for S][/code].
+		A sheet without its first line is version 0, the spelling before M285, which is not read. The whole language: docs/sheets.md.
 		[b]Paths[/b] start with an anchor ([code]holder/Head[/code], [code]actor/RightHand[/code], [code]target[/code], [code]me[/code], [code]local@pickup.target[/code], [code]world[/code]), or are a plain path from the node this one is under ([code]Barrel[/code]; [code].[/code] is that node), climbing no higher than the scene. [code]#[/code] starts a comment.
 		[b]Mistakes[/b] are said with their line: on the node in the editor, and when the look is published (a name no mod declares too). A rule with one is left out; the rest of the sheet still works.
-		The editor opens a sheet in its Sheet screen: coloured, the names mods declare offered while typing, mistakes marked on their lines.
+		The editor opens a sheet in its script editor: coloured, the names mods declare offered while typing, mistakes marked on their lines; Project &gt; Tools &gt; Format Sheet lays it out.
 	</description>
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="sheet" type="CbSheet" setter="set_sheet" getter="get_sheet">
-			The rules sheet: a [code].cbsheet[/code] file of this project ([code]res://vfx/brawl.cbsheet[/code]), held as a resource (Godot knows the scene uses it: moved or renamed in the editor, it keeps working). One kept inside the scene works, with a warning: save it as a file.
+		<member name="sheet" type="String" setter="set_sheet" getter="get_sheet" default="&quot;&quot;">
+			The rules sheet: the path of a [code].cbsheet[/code] file of this project ([code]res://vfx/brawl.cbsheet[/code]). A sheet moved or renamed is named here again; until then the node, the bake and publishing say it is not there.
 		</member>
 	</members>
 </class>

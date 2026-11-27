@@ -58,42 +58,42 @@ func _initialize() -> void:
 	_timer = _node3d("Timer", _item)
 	_rules = CbRules.new()
 	_rules.name = "Rules"
-	_rules.sheet = load("res://addons/cinderbox_maps/check_rules_good.cbsheet")
+	_rules.sheet = "res://addons/cinderbox_maps/check_rules_good.cbsheet"
 	_item.add_child(_rules)
 	_rules.owner = _item
 	_bad = CbRules.new()
 	_bad.name = "Bad"
 	_item.add_child(_bad)
 	_bad.owner = _item
-	_bad.sheet = load("res://addons/cinderbox_maps/check_rules_bad.cbsheet")
+	_bad.sheet = "res://addons/cinderbox_maps/check_rules_bad.cbsheet"
 
 
-## A sheet is a resource (M284): a .cbsheet file is its text, whole; a node that uses one builds
-## again when its text changes (the editor's Sheet screen).
+## A sheet is a text file (M297.3): a node holds its path; set again, or saved in the editor, its
+## rules are built again from the file as it is.
 func _check_sheet_file() -> void:
-	var sheet: CbSheet = _rules.sheet
-	_check("a .cbsheet loads as a CbSheet, its text the file's", sheet != null and sheet.text
-		== FileAccess.get_file_as_string("res://addons/cinderbox_maps/check_rules_good.cbsheet"))
-	var path := "user://check_rules_saved.cbsheet"
-	var made := CbSheet.new()
-	made.text = "cbsheet 1\n# saved\nreact while melee.hot\n\tset Barrel visible false\n"
-	_check("a CbSheet saves as a .cbsheet", ResourceSaver.save(made, path) == OK)
-	_check("... which is its text, nothing more", FileAccess.get_file_as_string(path) == made.text)
-	var again := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE) as CbSheet
-	_check("... and loads back the same", again != null and again.text == made.text)
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	var edited := CbSheet.new()
-	edited.text = "cbsheet 1\nreact on test.a\n\tcall Barrel hide\nreact on test.b\n\tcall Timer hide\n"
-	_bad.sheet = edited
+	_check("a sheet is its file's path", _rules.sheet == "res://addons/cinderbox_maps/check_rules_good.cbsheet")
+	var path := "res://addons/cinderbox_maps/check_rules_scratch.cbsheet"
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string("cbsheet 1\nreact on test.a\n\tcall Barrel hide\nreact on test.b\n\tcall Timer hide\n")
+	f.close()
+	_bad.sheet = path
 	_check("another sheet: its rules, at once (2)", _bad.get_reaction_count() == 2 and _bad.get_problems().is_empty())
-	edited.text += "react on test.c\n\tcall Barrel show\n"
-	_check("its text changed (typed in the Sheet screen): built again (3)", _bad.get_reaction_count() == 3)
-	_bad.sheet = null
+	f = FileAccess.open(path, FileAccess.READ_WRITE)
+	f.seek_end()
+	f.store_string("react on test.c\n\tcall Barrel show\n")
+	f.close()
+	_bad.sheet = path
+	_check("its file changed (saved in the script editor): built again (3)", _bad.get_reaction_count() == 3)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_bad.sheet = path
+	_check("a sheet that is not there: nothing, and said (moved or renamed)", _bad.get_reaction_count() == 0
+		and " ".join(_bad.get_warnings()).contains("is not there") and " ".join(_bad.get_problems()).contains("is not there"))
+	_bad.sheet = "user://elsewhere.cbsheet"
+	_check("a sheet outside the project is refused", " ".join(_bad.get_warnings()).contains("not a .cbsheet file of this project"))
+	_bad.sheet = ""
 	_check("no sheet: nothing, and a warning to give it one", _bad.get_reaction_count() == 0
 		and _bad.get_warnings().size() == 1)
-	_bad.sheet = edited
-	_check("a sheet kept inside a scene is warned about (save it as a file)",
-		" ".join(_bad.get_warnings()).contains(".cbsheet file"))
+	_bad.sheet = "res://addons/cinderbox_maps/check_rules_bad.cbsheet"
 
 
 func _process(_delta: float) -> bool:

@@ -11,8 +11,6 @@
 ;   Hit     a rule         a puff where the hook takes hold, when it does (grapple.hooked, said
 ;                          by the hook's line at that point)
 
-[ext_resource type="CbSheet" path="res://vfx/reactions_grapple.cbsheet" id="sheet"]
-
 [node name="GrappleReactions" type="Node3D"]
 
 [node name="Rope" type="CbLinkLook" parent="."]
@@ -21,4 +19,4 @@ scene = "res://vfx/grapple_rope.tscn"
 from = "Hip"
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://vfx/reactions_grapple.cbsheet"

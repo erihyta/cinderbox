@@ -4,9 +4,7 @@
 ; this scene (brawl.cbsheet). The CbRules node reads it; each rule becomes a reaction under it when
 ; the scene is used.
 
-[ext_resource type="CbSheet" path="res://vfx/brawl.cbsheet" id="sheet"]
-
 [node name="BrawlReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://vfx/brawl.cbsheet"

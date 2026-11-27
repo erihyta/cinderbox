@@ -34,7 +34,7 @@ const TEXT_RESOURCE_EXTENSIONS := ["tscn", "tres"]
 ## Plain media: pixels, samples and glyphs, nothing that can name a script.
 const MEDIA_EXTENSIONS := ["ctex", "stex", "sample", "oggvorbisstr", "mp3str", "fontdata",
 	"png", "jpg", "jpeg", "webp", "svg", "wav", "ogg", "mp3", "ttf", "otf"]
-## Sheets (CbSheet, .cbsheet; CbRules uses one): text read as data, line by line; never code.
+## Sheets (.cbsheet, plain text; a CbRules node names one by its path): read as data, line by line; never code.
 const RULES_EXTENSIONS := ["cbsheet"]
 ## Redirect files: they must point at converted resources inside the pack.
 const REDIRECT_EXTENSIONS := ["remap", "import"]

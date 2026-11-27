@@ -4,8 +4,6 @@
 ; and whether it is ready. What it says is the sheet beside it (uppercut_hud.cbsheet). Its row is its own:
 ; the four skills' lines stack at the bottom left.
 
-[ext_resource type="CbSheet" path="res://ui/uppercut_hud.cbsheet" id="sheet"]
-
 [sub_resource type="LabelSettings" id="Small"]
 font_size = 20
 outline_size = 4
@@ -24,4 +22,4 @@ offset_bottom = -206.0
 label_settings = SubResource("Small")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://ui/uppercut_hud.cbsheet"

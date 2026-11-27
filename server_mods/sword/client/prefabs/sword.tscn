@@ -8,8 +8,6 @@
 ;                          at the clip's sword.strike marker) and the block (right button held)
 ; Damage, blocks and parries are the server mod's (sword.cpp).
 
-[ext_resource type="CbSheet" path="res://prefabs/sword.cbsheet" id="sheet"]
-
 [sub_resource type="StandardMaterial3D" id="Steel"]
 albedo_color = Color(0.82, 0.84, 0.88, 1)
 metallic = 0.8
@@ -124,4 +122,4 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.4)
 shape = SubResource("Body")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://prefabs/sword.cbsheet"

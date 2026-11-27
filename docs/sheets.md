@@ -1,6 +1,6 @@
 # Sheets
 
-A **sheet** (a `.cbsheet` file, a `CbSheet` resource a `CbRules` node holds) is an item's, a motion
+A **sheet** (a `.cbsheet` file, plain text, named by a `CbRules` node) is an item's, a motion
 set's, a world's or a HUD's logic as lines of text. Its **motion blocks** are motions the
 simulation runs: every machine (the server, every client) runs the same lines on the same input, so
 what a player does to bodies is predicted on their own screen and rolled back like movement. Its
@@ -24,7 +24,7 @@ a server mod (C++) ──> damage, score, rounds, shops, who wins: the server's 
 
 See also: [motions.md](motions.md) (what motions are, what conditions read, the baked file),
 [looks.md](looks.md#expressions) (the expression language), [looks.md](looks.md#rules-sheets)
-(the editor's Sheet screen).
+(the editor's side: Godot's script editor).
 
 ## A sheet
 
@@ -178,9 +178,10 @@ mod's motions from its sheets) and the tests use it; the cooker will. Every shee
 the mistakes), and every mod's committed bakes are checked to be what its sheets bake to now
 (the Godot checks).
 
-**The file** (M284): a sheet is a `.cbsheet` file, a `CbSheet` resource (the extension's own loader
-and saver: the file is the text, whole), held by a `CbRules` node in the scene (`sheet`). It opens in
-the editor's Sheet screen ([looks.md](looks.md#rules-sheets)).
+**The file**: a sheet is a `.cbsheet` file, plain text, named by a `CbRules` node in the scene by
+its path (`sheet`). It opens in Godot's script editor ([looks.md](looks.md#rules-sheets)). (From
+M284 to M297.2 it was a `CbSheet` resource, opened in a Sheet screen of the editor's own: M297.3
+made it a text file again, as before M284.)
 
 ## What the language may not do
 
@@ -617,7 +618,7 @@ They are the viewer's own player's (another player's read 0: its motions are the
 
 A sheet without the `cbsheet 1` line is version 0, the spelling before M285. **It is not read**
 (since M293): a sheet of version 0 is a mistake at its line 1 wherever a sheet is read (the
-server, publishing, `cb_sheet check`, the Sheet screen). Every shipped sheet was converted in M285;
+server, publishing, `cb_sheet check`, the editor). Every shipped sheet was converted in M285;
 the converter went with version 0's reader. An old sheet is rewritten by hand, with this table:
 
 | Version 0 | Version 1 |
@@ -648,7 +649,7 @@ Not in version 1 (no shipped sheet said them): `side`, `wait off`. (`at here` is
 | `cb_sheet check FILE...` | reads each sheet, its mistakes as `FILE:LINE: why`; exit code 1 if any. Its motions are compiled as the server compiles them (M294), against the parts its owner's bake recorded (`motions/*.cfg` naming it): a node a line names that the scene does not have is said too |
 | `cb_sheet fmt [--check] FILE...` | writes each version 1 sheet in the one style: tabs, no spaces at the ends of lines, one blank line at most; what it means is checked to stay the same |
 | `cb_sheet test FILE.cbtest...` | (M291) runs each [sheet test](#tests) on the real server, headless; what failed as `FILE:LINE: why`; exit code 1 if any did |
-| the editor's Sheet screen | colours, names offered, mistakes on their lines as you type, and above the sheet how many and the first (M291); **Format** (as `cb_sheet fmt`, one undo) ([looks.md](looks.md#rules-sheets)) |
+| Godot's script editor | colours, names offered, mistakes on their lines as you type; **Project > Tools > Format Sheet** (as `cb_sheet fmt`, one undo) ([looks.md](looks.md#rules-sheets)) |
 | VS Code | `tools/vscode-cbsheet`: colours for `.cbsheet` and `.cbtest`, and the `$cb_sheet` problem matcher for `cb_sheet check` and `cb_sheet test` (its README says how to install it) |
 
 `cb_sheet` is built with the tests (`bin/cb_sheet`). `cb_tests sheets_version1` checks that every

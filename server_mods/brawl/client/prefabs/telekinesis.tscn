@@ -7,8 +7,6 @@
 ;   Telekinesis  CbItem   once a press (the left button), its slot's key selects it
 ;     Rules      CbRules  telekinesis.cbsheet: Pull, Hold, Throw
 
-[ext_resource type="CbSheet" path="res://prefabs/telekinesis.cbsheet" id="sheet"]
-
 [sub_resource type="SphereShape3D" id="Body"]
 radius = 0.08
 
@@ -37,4 +35,4 @@ shape = SubResource("Body")
 mesh = SubResource("Mesh")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://prefabs/telekinesis.cbsheet"

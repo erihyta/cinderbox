@@ -13,8 +13,6 @@
 ;
 ; Saving this scene bakes it into res://items/grenade.shell.cfg.
 
-[ext_resource type="CbSheet" path="res://prefabs/shell.cbsheet" id="sheet"]
-
 [sub_resource type="SphereShape3D" id="Body"]
 radius = 0.09
 
@@ -64,4 +62,4 @@ mesh = SubResource("Ball")
 mesh = SubResource("BandMesh")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://prefabs/shell.cbsheet"

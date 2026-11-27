@@ -69,7 +69,7 @@ done, no stranger's bytes go through a Godot loader, and nodes no longer grow wi
 | `BoxMesh` / `QuadMesh` / `SphereMesh` / `CylinderMesh` / `TorusMesh` | 47 / 13 / 4 / 4 / 1 | | `OmniLight3D` | 2 |
 | `Node3D` / `Marker3D` / `BoneAttachment3D` | 24 / 8 / 13 | | `Gradient` / `GradientTexture1D` / `Curve` / `CurveTexture` | 3 / 3 / 2 / 1 |
 | `CollisionShape3D` / `Area3D` (+ shapes) | 19 / 2 | | HUD: `CanvasLayer`, `Label`, `PanelContainer`, `VBox`/`HBox`, `ProgressBar`, `StyleBoxFlat`, `LabelSettings` | 18, 18, 9, 13, 2, 13, 32 |
-| `CbItem`, `CbRules` / `CbSheet`, `CbAnimPack` | 16, 36, 9 | | HUD: `CbFieldLabel`, `CbFieldBinding`, `CbList`, `CbKey`, `CbClick`, `CbDrag`, `CbItemIcon`, `CbPromptLabel`, `CbTextLog`, `CbTextEntry` | 53, 18, 9, 5, 3, 3, 3, 2, 1, 1 |
+| `CbItem`, `CbRules` (its sheet's path), `CbAnimPack` | 16, 36, 9 | | HUD: `CbFieldLabel`, `CbFieldBinding`, `CbList`, `CbKey`, `CbClick`, `CbDrag`, `CbItemIcon`, `CbPromptLabel`, `CbTextLog`, `CbTextEntry` | 53, 18, 9, 5, 3, 3, 3, 2, 1, 1 |
 | animation trees (`AnimationTree`, state machines, blend trees) | 10 + | | `Skeleton3D` (+ `CinderboxSkeleton`, `CbCharacter`) | 12 (+1, +1) |
 
 No mod uses a texture image yet (colours, emission and gradients only), no shader, no 3D model
@@ -173,7 +173,7 @@ through the reader before it is written, so the cooker cannot make what a game w
 | `AudioStreamPlayer3D` | `sound` part | sound, volume, range, autoplay |
 | `AnimationPlayer` | `tracks` | value tracks on parts' fields from the fixed list, method tracks of the fixed methods (an emitter's `restart`, a part's `set_visible`), audio tracks |
 | `CollisionShape3D`, `Area3D`, `CbHitbox` | simulation data, as today's bake | |
-| `CbRules` / `CbSheet` | `sheet` | |
+| `CbRules` | `sheet` (a path: the sheet's text is cooked by it) | |
 | `CbItem`, `CbAnimPack`, `CbCharacter`, skeletons | as today's bakes, and a character's skinned meshes and sockets as `CharacterLook` takes them | |
 | anything else | **not cooked**: the editor says so on the node (a configuration warning) and at Publish, as the bake says today what it cannot draw | |
 

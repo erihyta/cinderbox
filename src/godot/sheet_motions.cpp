@@ -254,11 +254,17 @@ bool BakeSheetMotions( const Node* node, const String& kind, int use, std::strin
 	for ( int64_t s = 0; s < holders.size(); ++s )
 	{
 		const CbRules* holder = Object::cast_to<CbRules>( holders[s] );
-		if ( holder == nullptr || holder->get_sheet().is_null() )
+		if ( holder == nullptr || holder->get_sheet().is_empty() )
 		{
 			continue;
 		}
-		const String path = holder->get_sheet()->get_path();
+		const String path = holder->get_sheet();
+		// (A path that names no sheet is the bake's mistake, said: a file moved or renamed.)
+		if ( const String problem = holder->SheetProblem(); problem.is_empty() == false )
+		{
+			error = problem;
+			return false;
+		}
 		scenes.emplace_back( Object::cast_to<Node>( holders[s] )->get_parent(), node );
 		sheet::SheetSource source;
 		source.name = Std( holder->SheetName() );

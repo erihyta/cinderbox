@@ -1132,6 +1132,10 @@ Dictionary CbItem::bake() const
 			{
 				continue;
 			}
+			if ( const String problem = rules->SheetProblem(); problem.is_empty() == false )
+			{
+				return fail( problem ); // (a sheet moved or renamed: its path says where it was)
+			}
 			CharString utf8 = rules->SheetText().utf8();
 			sheet::Strings ignored;
 			for ( const sheet::Declaration& d : sheet::ReadDeclarations( std::string( utf8.get_data(), size_t( utf8.length() ) ), ignored ) )

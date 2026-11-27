@@ -10,10 +10,8 @@
 ; motion is a field its conditions read. Saving this scene bakes it into
 ; res://motions/MODNAME.moves.cfg; delete the scene and its sheet if the mod has no motions.
 
-[ext_resource type="CbSheet" path="res://motion_sets/MODNAME_moves.cbsheet" id="sheet"]
-
 [node name="Moves" type="CbMotionSet"]
 set_name = "MODNAME.moves"
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://motion_sets/MODNAME_moves.cbsheet"

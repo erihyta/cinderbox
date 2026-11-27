@@ -8,9 +8,7 @@
 ; second use found a player) puts a zone around the marked player ($other) for 2 seconds.
 ; The reactions: the rules sheet beside this scene (reactions_gun.cbsheet).
 
-[ext_resource type="CbSheet" path="res://vfx/reactions_gun.cbsheet" id="sheet"]
-
 [node name="GunReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://vfx/reactions_gun.cbsheet"
