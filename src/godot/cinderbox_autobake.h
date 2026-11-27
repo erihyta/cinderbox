@@ -17,6 +17,7 @@
 // per node (one taken out of the favorites stays out).
 
 #include "cinderbox_motion.h"
+#include "cinderbox_rules_editor.h"
 
 #include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/control.hpp>
@@ -38,6 +39,7 @@ public:
 	void _exit_tree() override;
 	void on_scene_saved( const godot::String& path );
 	void on_test_mod();
+	void on_format_sheet();
 	void _process( double delta ) override;
 
 protected:
@@ -54,6 +56,9 @@ private:
 	godot::String m_testMod;
 
 	godot::Ref<CbMotionInspector> m_motionInspector;
+	// Sheets in the script editor (M297.3): coloured, names offered, mistakes marked; and a Format
+	// item in the Project menu's tools for the one open there.
+	godot::Ref<CbRulesHighlighter> m_sheetHighlighter;
 
 	// "First person": a picture beside the 3D view of what the holder of the item being edited
 	// sees, while the item's Hold preview is on (CbItem::preview_view). It has a world of its own:

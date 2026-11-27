@@ -4,9 +4,14 @@
 #include "cinderbox_item_look.h"
 #include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
 #include "cinderbox_skeleton.h"
+#include "sheet_v1.h"
 
 #include <godot_cpp/classes/directional_light3d.hpp>
+#include <godot_cpp/classes/code_edit.hpp>
 #include <godot_cpp/classes/editor_interface.hpp>
+#include <godot_cpp/classes/editor_toaster.hpp>
+#include <godot_cpp/classes/script_editor.hpp>
+#include <godot_cpp/classes/script_editor_base.hpp>
 #include <godot_cpp/classes/environment.hpp>
 #include <godot_cpp/classes/label.hpp>
 #include <godot_cpp/classes/sub_viewport_container.hpp>
@@ -161,6 +166,44 @@ void CbAutoBakePlugin::OfferTest()
 	add_control_to_container( CONTAINER_TOOLBAR, m_testButton );
 }
 
+// Project > Tools > Format Sheet (M297.3; the Sheet screen's button until then): the sheet open in
+// the script editor, laid out as `cb_sheet format` does, as one change the undo takes back.
+void CbAutoBakePlugin::on_format_sheet()
+{
+	ScriptEditor* scripts = EditorInterface::get_singleton()->get_script_editor();
+	ScriptEditorBase* open = scripts != nullptr ? scripts->get_current_editor() : nullptr;
+	CodeEdit* edit = open != nullptr ? Object::cast_to<CodeEdit>( open->get_base_editor() ) : nullptr;
+	auto say = [&]( const String& what, EditorToaster::Severity severity ) {
+		if ( EditorToaster* toaster = EditorInterface::get_singleton()->get_editor_toaster() )
+		{
+			toaster->push_toast( what, severity );
+		}
+	};
+	if ( edit == nullptr || edit->get_text().begins_with( "cbsheet" ) == false )
+	{
+		say( "Format Sheet: open a sheet (.cbsheet) in the script editor first.", EditorToaster::SEVERITY_WARNING );
+		return;
+	}
+	CharString utf8 = edit->get_text().utf8();
+	std::string formatted, why;
+	if ( sheet::FormatVersion1( std::string( utf8.get_data(), size_t( utf8.length() ) ), formatted, why ) == false )
+	{
+		say( "Not formatted: " + String::utf8( why.c_str() ), EditorToaster::SEVERITY_ERROR );
+		return;
+	}
+	const String text = String::utf8( formatted.c_str() );
+	if ( text == edit->get_text() )
+	{
+		return;
+	}
+	const int line = edit->get_caret_line();
+	edit->begin_complex_operation();
+	edit->select_all();
+	edit->insert_text_at_caret( text );
+	edit->end_complex_operation();
+	edit->set_caret_line( std::min( line, edit->get_line_count() - 1 ) );
+}
+
 void CbAutoBakePlugin::on_test_mod()
 {
 	if ( m_testScript.is_empty() )
@@ -260,20 +303,29 @@ void CbAutoBakePlugin::_enter_tree()
 	OfferNodes();
 	OfferTest();
 	MakeViewPanel();
-	// Before M284 a sheet was a .cbsheet text file the script editor opened (this added "rules" to the
-	// editor's text files); a sheet is a .cbsheet resource now, opened in the Sheet screen
-	// (cinderbox_sheet.h). Taken out of an older editor's settings.
+	// A sheet is a text file (M297.3; from M284 to M297.2 a resource, in a Sheet screen of its own):
+	// the editor opens .cbsheet files in its script editor, with the sheet's highlighter.
+	if ( ScriptEditor* scripts = EditorInterface::get_singleton()->get_script_editor() )
+	{
+		m_sheetHighlighter.instantiate();
+		scripts->register_syntax_highlighter( m_sheetHighlighter );
+	}
 	Ref<EditorSettings> settings = EditorInterface::get_singleton()->get_editor_settings();
 	const String key = "docks/filesystem/textfile_extensions";
-	if ( settings.is_valid() && settings->has_setting( key ) )
+	if ( settings.is_valid() )
 	{
-		PackedStringArray extensions = String( settings->get_setting( key ) ).split( "," );
+		PackedStringArray extensions = settings->has_setting( key ) ? String( settings->get_setting( key ) ).split( ",", false ) : PackedStringArray();
 		if ( extensions.has( "rules" ) )
 		{
-			extensions.remove_at( extensions.find( "rules" ) );
-			settings->set_setting( key, String( "," ).join( extensions ) );
+			extensions.remove_at( extensions.find( "rules" ) ); // (the name before M284)
 		}
+		if ( extensions.has( "cbsheet" ) == false )
+		{
+			extensions.push_back( "cbsheet" );
+		}
+		settings->set_setting( key, String( "," ).join( extensions ) );
 	}
+	add_tool_menu_item( "Format Sheet", callable_mp( this, &CbAutoBakePlugin::on_format_sheet ) );
 	set_process( true );
 }
 
@@ -282,6 +334,12 @@ void CbAutoBakePlugin::_exit_tree()
 	disconnect( "scene_saved", Callable( this, "on_scene_saved" ) );
 	remove_inspector_plugin( m_motionInspector );
 	m_motionInspector.unref();
+	remove_tool_menu_item( "Format Sheet" );
+	if ( ScriptEditor* scripts = EditorInterface::get_singleton()->get_script_editor(); scripts != nullptr && m_sheetHighlighter.is_valid() )
+	{
+		scripts->unregister_syntax_highlighter( m_sheetHighlighter );
+	}
+	m_sheetHighlighter.unref();
 	if ( m_viewPanel != nullptr )
 	{
 		remove_control_from_container( CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, m_viewPanel );

@@ -3,8 +3,6 @@
 ; The kit's HUD: the combo, where it is and how it looks; what it says is the rules sheet beside this
 ; scene (hud_brawl.cbsheet). Each skill's line is its own HUD (CbItem.hud), shown while it is carried.
 
-[ext_resource type="CbSheet" path="res://ui/hud_brawl.cbsheet" id="sheet"]
-
 [sub_resource type="LabelSettings" id="Combo"]
 font_size = 30
 font_color = Color(1, 0.8, 0.3, 1)
@@ -25,4 +23,4 @@ horizontal_alignment = 1
 label_settings = SubResource("Combo")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://ui/hud_brawl.cbsheet"

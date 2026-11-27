@@ -2,8 +2,8 @@
 
 Colours for sheets (`.cbsheet`) and sheet tests (`.cbtest`), comments with `#`, and
 `cb_sheet check`'s (and `cb_sheet test`'s) mistakes as problems, for whoever writes sheets outside
-Godot. The Godot editor's Sheet screen does more: the mods' names offered as you type, mistakes
-marked as you type, Format.
+Godot. In Godot, the script editor does more for a sheet: the mods' names offered as you type,
+mistakes marked as you type, and Format (Project > Tools > Format Sheet).
 
 ## Install
 

@@ -80,7 +80,7 @@ public:
 	godot::PackedStringArray complete( const godot::String& prefix ) const;
 	// What a word is, for its colour (names::WordKind).
 	godot::String word_kind( const godot::String& word ) const;
-	// A version 1 sheet in the one style (the Sheet screen's Format, cb_sheet fmt); "" when it cannot be.
+	// A version 1 sheet in the one style (the editor's Format Sheet, cb_sheet fmt); "" when it cannot be.
 	godot::String format_sheet( const godot::String& text ) const;
 
 protected:

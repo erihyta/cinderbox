@@ -474,8 +474,8 @@ World node: a workshop item cannot reach the game's HUD or menus.
 ### Rules sheets
 
 Many reactions are one rule each: a node, an inspector, a dozen values. A **rules sheet** is the
-same reactions as lines of text, in a `.cbsheet` file beside the scene (a `CbSheet` resource); a
-`CbRules` node holds it (`sheet`, set like any resource: drag the file onto it). Logic is text; what is a place or a thing (a mesh to light up, a socket) stays a node,
+same reactions as lines of text, in a `.cbsheet` file beside the scene (plain text); a `CbRules`
+node names it (`sheet`: the file's path, picked or dragged onto it). Logic is text; what is a place or a thing (a mesh to light up, a socket) stays a node,
 and a rule names it by its path.
 
 ```
@@ -533,16 +533,16 @@ react on item.reach
 - **Mistakes say their line**: on the node in the editor, and at publish (a name no mod declares:
   `res://vfx/brawl.cbsheet line 22: event: no mod declares "brawl.upercut.hit" (did you mean
   brawl.uppercut.hit?)`). A rule with one is left out; the rest works.
-- **The editor opens a sheet in its Sheet screen** (M284: beside 2D, 3D and Script; double-click a
-  `.cbsheet`, or click a node's `sheet`), one tab each, coloured (the sheet's words, the names mods
-  declare, numbers, text, comments; a dotted name nobody declares in red), with the names offered
-  while typing (`brawl.co` offers `brawl.combo`, `carried.` the item kinds), and a line with a
-  mistake tinted: put the caret on it to read why. What is typed is the scene's at once (its rules
-  are built again); Ctrl+S saves the sheets with the scene. A sheet is a resource, so Godot knows
-  which scenes use it: one moved or renamed in the FileSystem dock keeps working, and a pack carries
-  it with its scene (`*.cbsheet` in the export filter too; the game's pack check allows them as
-  data). A sheet kept inside a scene (made with New CbSheet) works, and the node warns: save it as a
-  file, which tools, the bake and the cooker read.
+- **The editor opens a sheet in its script editor** (double-click a `.cbsheet`), coloured (the
+  sheet's words, the names mods declare, numbers, text, comments; a dotted name nobody declares in
+  red), with the names offered while typing (`brawl.co` offers `brawl.combo`, `carried.` the item
+  kinds), and a line with a mistake tinted: put the caret on it to read why. Saved (Ctrl+S), the
+  scene's rules are built again. **Project > Tools > Format Sheet** lays out the sheet open there
+  (as `cb_sheet fmt`, one undo). A sheet is a text file (M297.3; from M284 to M297.2 a `CbSheet`
+  resource, in a Sheet screen of its own): the node holds its path, so a sheet moved or renamed is
+  named again on the node, and until then the node, the bake and publishing say "the sheet ... is
+  not there". A pack carries it by the export filter (`*.cbsheet`); the game's pack check allows
+  sheets as data.
 - **Every look of the game is written so** (M166): the game's own `vfx/reactions.cbsheet`, the
   pistol's and the bat's sheets, and every mod's `reactions_<mod>.cbsheet`: 48 nodes became 13 sheets.
 - **A scope holds for the lines indented under it** (M285): one reaction plays a flash, a tracer and

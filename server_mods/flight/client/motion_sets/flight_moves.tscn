@@ -8,10 +8,8 @@
 ;
 ; Saving this scene bakes it into res://motions/flight.moves.cfg.
 
-[ext_resource type="CbSheet" path="res://motion_sets/flight_moves.cbsheet" id="sheet"]
-
 [node name="Moves" type="CbMotionSet"]
 set_name = "flight.moves"
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://motion_sets/flight_moves.cbsheet"

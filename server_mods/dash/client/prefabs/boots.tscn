@@ -12,8 +12,6 @@
 ; The server mod (server_mods/dash/dash.cpp) takes the item from here (declare.ItemsOfLook()),
 ; declares the fields and events the use reads and says, and gives the charges back.
 
-[ext_resource type="CbSheet" path="res://prefabs/boots.cbsheet" id="sheet"]
-
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.12, 0.14, 0.28)
 
@@ -54,4 +52,4 @@ mesh = SubResource("Shaft")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09, 0.08)
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://prefabs/boots.cbsheet"

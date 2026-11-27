@@ -5,9 +5,7 @@
 ; names what it is about from the cue ($at). They are the rules sheet beside it (reactions.cbsheet).
 ; A mod adds its own reactions_<name>.tscn, or replaces this file to change the game's.
 
-[ext_resource type="CbSheet" path="res://vfx/reactions.cbsheet" id="sheet"]
-
 [node name="GameReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://vfx/reactions.cbsheet"

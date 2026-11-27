@@ -72,3 +72,5 @@ cinderbox_names.cfg
 
 # repomix packs of the repository (.repomixignore says what they leave out)
 repomix-output.*
+# The Godot checks' scratch sheets (written and removed by each run)
+godot/addons/cinderbox_maps/check_*_scratch.cbsheet

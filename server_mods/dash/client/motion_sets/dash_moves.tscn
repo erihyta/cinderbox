@@ -10,10 +10,8 @@
 ;
 ; Saving this scene bakes it into res://motions/dash.moves.cfg.
 
-[ext_resource type="CbSheet" path="res://motion_sets/dash_moves.cbsheet" id="sheet"]
-
 [node name="Moves" type="CbMotionSet"]
 set_name = "dash.moves"
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://motion_sets/dash_moves.cbsheet"

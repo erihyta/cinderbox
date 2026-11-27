@@ -7,8 +7,6 @@
 ;     Rules     CbRules    uppercut.cbsheet: Rise (grounded, 4 s apart; a line 3 m ahead, at once:
 ;                          12 m/s up on who it hit, 6 up on you)
 
-[ext_resource type="CbSheet" path="res://prefabs/uppercut.cbsheet" id="sheet"]
-
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
 
@@ -39,4 +37,4 @@ shape = SubResource("Body")
 mesh = SubResource("Mesh")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://prefabs/uppercut.cbsheet"

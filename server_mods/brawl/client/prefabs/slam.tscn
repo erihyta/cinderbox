@@ -9,8 +9,6 @@
 ;   Shockwave   Area3D     the region the landing finds players in: a cylinder 5 m around the feet
 ;                          (its shape is not the item's body)
 
-[ext_resource type="CbSheet" path="res://prefabs/slam.cbsheet" id="sheet"]
-
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
 
@@ -51,4 +49,4 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 shape = SubResource("Wave")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://prefabs/slam.cbsheet"

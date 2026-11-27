@@ -2,9 +2,7 @@
 
 ; The sword's sounds (M279): its rules sheet, reactions_sword.cbsheet.
 
-[ext_resource type="CbSheet" path="res://vfx/reactions_sword.cbsheet" id="sheet"]
-
 [node name="SwordReactions" type="Node3D"]
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://vfx/reactions_sword.cbsheet"

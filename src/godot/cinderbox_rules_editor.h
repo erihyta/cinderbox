@@ -1,9 +1,10 @@
 #pragma once
 
-// A sheet (.cbsheet) in the editor's Sheet screen (cinderbox_sheet.h): its words coloured, the names
-// the server's mods declare offered while typing, and what cannot be read or names nobody declares
-// marked on its line, with why when the caret is there. The Sheet screen gives each sheet's text box
-// one, and the highlighter takes care of the text box it is given.
+// A sheet (.cbsheet) in Godot's script editor (M297.3; a text file it opens, as before M284): its
+// words coloured, the names the server's mods declare offered while typing, and what cannot be read
+// or names nobody declares marked on its line, with why when the caret is there. Registered with the
+// script editor (CbAutoBakePlugin), which gives one to each sheet it opens; the highlighter takes care
+// of the text box it is given.
 //
 // What it says is the names library's (cue_names.h: SheetProblems, Completions, WordKind), which
 // tools and checks read too (CbNames); this is only the editor's side of it.

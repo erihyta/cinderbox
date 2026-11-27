@@ -8,8 +8,6 @@
 ; The fading of the combo is the motion set's (motion_sets/brawl_moves.tscn); the damage is the
 ; server mod's (brawl.cpp), on the hit events.
 
-[ext_resource type="CbSheet" path="res://prefabs/fist.cbsheet" id="sheet"]
-
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
 
@@ -38,4 +36,4 @@ shape = SubResource("Body")
 mesh = SubResource("Mesh")
 
 [node name="Rules" type="CbRules" parent="."]
-sheet = ExtResource("sheet")
+sheet = "res://prefabs/fist.cbsheet"
