@@ -64,7 +64,8 @@ PredictScan   CbPrediction   action "use2"   cue "item.use2"               (in p
 
 **A use a sheet can say needs no prediction** (step 5, M282): the pistol's shot, the rifle's and
 the bat's swing are motions in their sheets, which every simulation runs, so your own is seen at
-once and is never a guess. A prediction is for what only a server mod says (the mark mod's scan).
+once and is never a guess (your game's prediction says their events; the server says them to
+everyone else: M297.1). A prediction is for what only a server mod says (the mark mod's scan).
 
 | Step | What happens |
 |---|---|

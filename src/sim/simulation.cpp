@@ -2358,6 +2358,10 @@ void Simulation::RecordModEvent( const ModEventRecord& record )
 {
 	m_globals.modEvents[m_globals.modEventCount % kModEventHistory] = record;
 	m_globals.modEventCount += 1;
+	if ( m_predicting )
+	{
+		m_predictedEvents.push_back( record ); // (the ring above is put back after the step)
+	}
 	if ( m_keepStepEvents )
 	{
 		// (A mod's for everyone is in the frames. What a character did itself goes with it anyway: a
