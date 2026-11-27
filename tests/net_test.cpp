@@ -9005,6 +9005,17 @@ void TestHybridOwnThrow()
 }
 } // namespace
 
+// Under ThreadSanitizer or AddressSanitizer a crash is the sanitizer's to report: it says where, in
+// the right way (M296.1). The handler below calls backtrace, which is not safe in a signal: TSan
+// stops the program on that call, before the stack is printed (net_hybrid_far, once in M296's CI).
+#if defined( __SANITIZE_THREAD__ ) || defined( __SANITIZE_ADDRESS__ )
+#define CB_SANITIZER_SAYS_CRASHES 1
+#elif defined( __has_feature )
+#if __has_feature( thread_sanitizer ) || __has_feature( address_sanitizer )
+#define CB_SANITIZER_SAYS_CRASHES 1
+#endif
+#endif
+
 #if defined( _WIN32 )
 // A crash says where: the return addresses from this executable's start, for llvm-symbolizer
 // (--relative-address) with its .pdb.
@@ -9048,7 +9059,7 @@ int main( int argc, char** argv )
 	ULONG guarantee = 64 * 1024;
 	SetThreadStackGuarantee( &guarantee );
 	timeBeginPeriod( 1 );
-#else
+#elif !defined( CB_SANITIZER_SAYS_CRASHES )
 	{
 		static char own[256 * 1024];
 		stack_t alternate{};
