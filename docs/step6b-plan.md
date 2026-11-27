@@ -279,7 +279,7 @@ playtest compares what is on the screen.
 | # | Question | Options | Leaning |
 |---|---|---|---|
 | E1 | The item's shape | one `.cbitem` file / loose files named by hash with a manifest | **decided (the owner, 2026-11-27): one file** (one download, one hash to name, one place for caps); the store may serve chunks alone later |
-| E2 | Sounds | PCM (16-bit, as today's WAVs, bigger) / Ogg Vorbis (smaller, a decoder to fuzz: stb_vorbis) / both | **PCM first** (today's sounds are short; no decoder on the boundary); Ogg Vorbis when an item's sounds grow |
+| E2 | Sounds | PCM (16-bit, as today's WAVs, bigger) / Ogg Vorbis (smaller, a decoder to fuzz: stb_vorbis) / both | **decided (the owner, 2026-11-27): WAV, for now**: an item carries its sounds as `.wav` files, which Godot reads (`AudioStreamWAV`): the one kind of a mod's bytes a Godot loader still reads after M305. PCM chunks read by our own reader stay an option ([ROADMAP leftovers](../ROADMAP.md#leftovers-by-area), Sounds, optional) |
 | E3 | Texture formats | desktop blocks (BC1, BC3, BC4, BC5, BC7) / those and mobile (ETC2, ASTC) | **desktop only** (no mobile build planned); no mod has a texture yet |
 | E4 | Materials | a `StandardMaterial3D` field list now, our own shipped shaders later / our shaders now | **the field list now** (Godot's own shader; the shipped-shaders plan of 2026-11-21 later) |
 | E5 | Particles | `GPUParticles3D` cooked as emitter fields / our own particle system | **cooked fields** on Godot's particles (its shader is ours to trust) |
